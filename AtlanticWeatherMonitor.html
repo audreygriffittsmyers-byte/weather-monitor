@@ -623,7 +623,7 @@ async function fetchSPC(code) {
     let bestLabel = null;
     features.forEach(f => {
       const dn = f.attributes?.dn ?? f.attributes?.DN ?? 0;
-      const lbl = f.attributes?.label2 || f.attributes?.label || f.attributes?.LABEL2 || f.attributes?.LABEL || '';
+      const lbl = f.attributes?.label || f.attributes?.LABEL || '';
       if (dn > bestDN) { bestDN = dn; bestLabel = lbl.toUpperCase(); }
     });
     spcResults[code] = { st: 'ok', label: bestLabel };
