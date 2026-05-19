@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Atlantic Aviation — NWS Weather Monitor</title>
+<style>
+  @keyframes spin  { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #E8E8E8; color: #1a1a1a; font-family: Arial, sans-serif; font-size: 13px; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #E8E8E8; }
+  ::-webkit-scrollbar-thumb { background: #b0b8c4; border-radius: 2px; }
+  button { font-family: inherit; cursor: pointer; transition: opacity .15s; border: none; }
+  button:hover { opacity: .85; }
+  input { font-family: inherit; }
+  a { color: #0E2841; }
+
+  /* Layout */
+  #app     { display: flex; flex-direction: column; height: 100vh; }
+  #header  { background: #0E2841; padding: 10px 18px; display: flex; align-items: center; gap: 14px; flex-shrink: 0; flex-wrap: wrap; }
+  #tabs    { background: #0E2841; border-bottom: 3px solid #1a4060; display: flex; padding-left: 18px; flex-shrink: 0; }
+  #body    { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+  #sidebar { width: 256px; border-right: 1px solid #c8d0d8; display: flex; flex-direction: column; flex-shrink: 0; background: #ffffff; }
+  #sidebar-controls { padding: 8px 10px; border-bottom: 1px solid #c8d0d8; display: flex; flex-direction: column; gap: 6px; background: #ffffff; }
+  #sidebar-list { flex: 1; overflow-y: auto; background: #ffffff; }
+  #main    { flex: 1; overflow-y: auto; min-width: 0; background: #E8E8E8; }
+
+  /* Spinner */
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #c8d0d8; border-top-color: #0E2841; border-radius: 50%; animation: spin .6s linear infinite; flex-shrink: 0; vertical-align: middle; }
+
+  /* Dot */
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Sidebar items */
+  .fbo-item { display: flex; align-items: center; gap: 6px; padding: 7px 12px; cursor: pointer; border-left: 3px solid transparent; border-bottom: 1px solid #e8e8e8; }
+  .fbo-item:hover { background: #f0f4f7; }
+  .fbo-item.selected { background: #dce8f0; border-left-color: #0E2841; }
+  .fbo-code { font-family: monospace; font-size: 11px; font-weight: 700; width: 72px; flex-shrink: 0; color: #0E2841; }
+  .fbo-loc  { flex: 1; font-size: 10px; color: #556070; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fbo-badge-wrap { width: 22px; display: flex; justify-content: center; flex-shrink: 0; }
+  .fbo-count { color: #fff; font-size: 9px; font-weight: 700; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+
+  /* Alert cards */
+  .alert-card { border-radius: 4px; margin-bottom: 6px; overflow: hidden; border: 1px solid #c8d0d8; }
+  .alert-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; background: #ffffff; }
+  .alert-header:hover { background: #f5f7f9; }
+  .alert-event { font-size: 12px; font-weight: 700; color: #0E2841; }
+  .alert-hl { font-size: 11px; color: #556070; }
+  .alert-toggle { color: #8a9aaa; font-size: 10px; margin-left: auto; flex-shrink: 0; }
+  .alert-body { padding: 10px 12px 12px; background: #f2f5f8; border-top: 1px solid #c8d0d8; }
+  .alert-meta { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; font-size: 10px; color: #556070; }
+  .alert-meta b { font-weight: 600; color: #0E2841; }
+  .alert-instruction { background: #ffffff; border: 1px solid #c8d0d8; border-radius: 3px; padding: 8px 10px; font-size: 11px; color: #1a2a3a; line-height: 1.65; }
+
+  /* Zone lane */
+  .zone-lane { border-radius: 4px; overflow: hidden; margin-bottom: 6px; border: 1px solid #c8d0d8; }
+  .zone-header { padding: 5px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .zone-label { font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+  .zone-body { padding: 8px 12px; min-height: 36px; display: flex; flex-wrap: wrap; gap: 5px; background: #ffffff; align-items: center; }
+  .zone-chip { display: flex; align-items: center; gap: 4px; background: #E8E8E8; border: 1px solid #c8d0d8; border-radius: 3px; padding: 2px 8px; }
+  .zone-chip span { font-family: monospace; font-size: 11px; font-weight: 700; color: #0E2841; }
+  .zone-chip button { background: transparent; border: none; color: #c0392b; font-size: 14px; cursor: pointer; padding: 0; line-height: 1; }
+
+  /* Suggestion tray */
+  #suggest-tray { background: #f2f5f8; border: 1px solid #c8d0d8; border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; display: none; }
+  .sug-chip { display: inline-flex; align-items: center; gap: 5px; background: #ffffff; border: 1px solid #c8d0d8; border-radius: 4px; padding: 3px 8px; margin: 2px; }
+  .sug-chip span { font-family: monospace; font-size: 11px; font-weight: 700; color: #0E2841; }
+  .sug-city { font-size: 10px; color: #556070; }
+  .sug-btn { border-radius: 3px; font-size: 9px; font-weight: 700; padding: 2px 7px; cursor: pointer; border: none; }
+
+  /* Output box */
+  #output-box { background: #ffffff; border: 1px solid #c8d0d8; border-radius: 4px; overflow: hidden; }
+  #output-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; border-bottom: 1px solid #c8d0d8; background: #0E2841; }
+  #output-pre { margin: 0; padding: 12px 14px; font-family: monospace; font-size: 12px; color: #1a2a3a; white-space: pre-wrap; line-height: 1.8; }
+
+  /* Empty state */
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 10px; }
+
+  /* Clear / no-alerts */
+  .clear-box { background: #ffffff; border: 1px solid #c8d0d8; border-radius: 6px; padding: 24px 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <div id="header">
+    <div>
+      <div style="font-size:13px;font-weight:700;color:#ffffff;font-family:Arial,sans-serif;letter-spacing:.04em">ATLANTIC AVIATION</div>
+      <div style="font-size:9px;color:#c8d4de;letter-spacing:.14em;text-transform:uppercase">NWS Weather Operations Monitor</div>
+    </div>
+    <div style="flex:1"></div>
+    <div id="status-badges" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap"></div>
+    <span id="scan-prog" style="font-size:9px;color:#c8d0d8;display:none;animation:pulse 1s infinite"></span>
+    <button id="scan-btn" style="background:#ffffff;border:1px solid #ffffff;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:.04em">▶ Scan All</button>
+  </div>
+
+  <!-- TABS -->
+  <div id="tabs">
+    <button class="tab active" data-tab="monitor" style="background:transparent;border:none;border-bottom:2px solid #ffffff;color:#ffffff;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Live Monitor</button>
+    <button class="tab" data-tab="build" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Alert Builder</button>
+  </div>
+
+  <!-- BODY -->
+  <div id="body">
+
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+      <div id="sidebar-controls">
+        <input id="search" placeholder="Code, city, state..." style="background:#ffffff;border:1px solid #c8d0d8;border-radius:4px;color:#1a2a3a;font-size:10px;padding:5px 8px;outline:none;width:100%"/>
+        <div style="display:flex;gap:4px">
+          <button id="btn-all" class="filter-btn active" style="flex:1;background:#0E2841;border:1px solid #0E2841;color:#ffffff;border-radius:3px;padding:3px 0;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.07em">All</button>
+          <button id="btn-active" class="filter-btn" style="flex:1;background:transparent;border:1px solid #c8d0d8;color:#556070;border-radius:3px;padding:3px 0;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.07em">Active (0)</button>
+        </div>
+      </div>
+      <div id="sidebar-list"></div>
+    </div>
+
+    <!-- MAIN PANEL -->
+    <div id="main">
+
+      <!-- Monitor panel -->
+      <div id="panel-monitor">
+        <div class="empty-state">
+          <div style="font-size:36px">🌩</div>
+          <div style="font-size:12px;color:#1e3a5f">Select a location or click Scan All</div>
+          <div id="covered-count" style="font-size:10px;color:#1e293b"></div>
+        </div>
+      </div>
+
+      <!-- Builder panel -->
+      <div id="panel-build" style="display:none;padding:20px;max-width:680px">
+        <div style="margin-bottom:14px">
+          <div style="font-size:14px;font-weight:700;color:#0E2841;margin-bottom:4px">Alert Zone Builder</div>
+          <div style="font-size:11px;color:#556070;line-height:1.6">Assign FBO codes to SPC risk zones. Suggested zones are based on active NWS alert severity. Copy the output and paste it into the alert chat to build the document.</div>
+        </div>
+        <div id="suggest-tray">
+          <div style="font-size:9px;color:#0E2841;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Alerted — Not Yet Assigned</div>
+          <div id="suggest-chips"></div>
+        </div>
+        <div id="zone-lanes"></div>
+        <div id="output-box">
+          <div id="output-header">
+            <span style="font-size:10px;color:#c8d0d8;text-transform:uppercase;letter-spacing:.08em;font-weight:700">Paste into alert chat</span>
+            <button id="copy-btn" style="background:transparent;border:1px solid #c8d0d8;border-radius:4px;color:#ffffff;font-size:10px;font-weight:700;padding:3px 12px">Copy</button>
+          </div>
+          <pre id="output-pre">(no zones assigned yet)</pre>
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /body -->
+</div><!-- /app -->
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────────
+const COORDS = {
+  "6N5":[40.758,-73.9855],ABQ:[35.0402,-106.609],ADS:[32.9686,-96.8364],
+  AGC:[40.3544,-79.9302],ANE:[45.145,-93.2113],APC:[38.2132,-122.2807],
+  ASE:[39.2232,-106.869],AUS:[30.1975,-97.6664],BAF:[42.1578,-72.7157],
+  BCT:[26.3785,-80.1077],BDL:[41.9389,-72.6832],BDR:[41.1635,-73.1262],
+  BED:[42.47,-71.2896],"BFI-MX":[47.53,-122.3019],BFL:[35.4336,-119.0568],
+  BHM:[33.5629,-86.7535],BNA:[36.1245,-86.6782],BUR:[34.2007,-118.3585],
+  CHS:[32.8986,-80.0405],CLE:[41.4117,-81.8498],CPR:[42.908,-106.4644],
+  CRP:[27.7704,-97.5011],CRQ:[33.1283,-117.28],DAL:[32.8471,-96.8517],
+  DTS:[30.4001,-86.4715],"EAS(Corp)":[33.0198,-96.6989],ELM:[42.1599,-76.8916],
+  ELP:[31.8072,-106.3779],EUG:[44.1246,-123.2119],"EUG - MX":[44.1246,-123.2119],
+  FAI:[64.8154,-147.8564],"FAI - South":[64.8154,-147.8564],
+  FAT:[36.7762,-119.7181],FMN:[36.7412,-108.2299],FRG:[40.7288,-73.4135],
+  FXE:[26.1973,-80.1707],GPI:[48.3105,-114.2557],"GPI-MX":[48.3105,-114.2557],
+  HDN:[40.4812,-107.2182],HNL:[21.3187,-157.9225],HOU:[29.6454,-95.2789],
+  "HPN-E":[41.067,-73.7076],"HPN-W":[41.067,-73.7076],HYA:[41.6693,-70.2804],
+  IAD:[38.9531,-77.4565],IAH:[29.9902,-95.3368],ILG:[39.6787,-75.6065],
+  ITO:[19.7214,-155.0484],JAN:[32.3112,-90.0759],JNU:[58.355,-134.5763],
+  JZI:[32.6009,-80.0026],KOA:[19.7388,-156.0456],KTN:[55.3556,-131.7137],
+  LAS:[36.08,-115.1522],LAX:[33.9425,-118.4081],LGB:[33.8177,-118.1516],
+  LIH:[21.976,-159.3388],LIT:[34.7294,-92.2243],LNK:[40.851,-96.7592],
+  "LNK--MX":[40.851,-96.7592],LNY:[20.7856,-156.9514],MCO:[28.4312,-81.3081],
+  MDW:[41.7868,-87.7522],MKC:[39.1232,-94.5927],MMU:[40.7995,-74.4149],
+  MSY:[29.9934,-90.258],MTJ:[38.5098,-107.8938],OGG:[20.8986,-156.4305],
+  OKC:[35.3931,-97.6007],OMA:[41.3032,-95.894],OPF:[25.907,-80.2786],
+  ORH:[42.2673,-71.8757],ORL:[28.5455,-81.3329],OXC:[41.4786,-73.1352],
+  PBI:[26.6832,-80.0956],PDK:[33.8756,-84.302],PDX:[45.5887,-122.5975],
+  "PDX-MX":[45.5887,-122.5975],PHF:[37.1317,-76.493],PHL:[39.8719,-75.2411],
+  PIT:[40.4915,-80.2329],PNE:[40.0819,-75.0107],PSP:[33.8297,-116.5067],
+  PVD:[41.7258,-71.4282],PWA:[35.5342,-97.6471],PWK:[42.1142,-87.9015],
+  RDU:[35.8776,-78.7875],RIL:[39.5263,-107.7266],RNO:[39.4991,-119.7681],
+  SAF:[35.617,-106.0883],SBA:[34.4262,-119.8401],SBN:[41.7087,-86.3173],
+  SCK:[37.8942,-121.2277],SDF:[38.1744,-85.736],SDL:[33.6229,-111.9105],
+  SGJ:[29.9592,-81.3397],SIT:[57.0471,-135.3616],SJC:[37.3626,-121.929],
+  SKF:[29.3842,-98.5811],SLC:[40.7884,-111.9778],SMO:[34.0158,-118.4509],
+  SRQ:[27.3954,-82.5544],SUA:[27.1817,-80.2211],SUN:[43.5044,-114.2963],
+  SWF:[41.5041,-74.1048],TEB:[40.85,-74.0608],TRM:[33.6267,-116.16],
+  TUL:[36.1984,-95.8881],TUS:[32.1161,-110.941],UAO:[45.2471,-122.7697],
+  UES:[43.0411,-88.2371],"ANC-E":[61.1743,-149.9963],"ANC-W":[61.1743,-149.9963],
+};
+
+const FBO_LIST = [
+  {code:"6N5",city:"New York",state:"NY"},{code:"ABQ",city:"Albuquerque",state:"NM"},
+  {code:"ADS",city:"Addison",state:"TX"},{code:"AGC",city:"West Mifflin",state:"PA"},
+  {code:"ANC-E",city:"Anchorage",state:"AK"},{code:"ANC-W",city:"Anchorage",state:"AK"},
+  {code:"ANE",city:"Blaine",state:"MN"},{code:"APC",city:"Napa",state:"CA"},
+  {code:"ASE",city:"Aspen",state:"CO"},{code:"AUS",city:"Austin",state:"TX"},
+  {code:"BAF",city:"Westfield",state:"MA"},{code:"BCT",city:"Boca Raton",state:"FL"},
+  {code:"BDL",city:"Windsor Locks",state:"CT"},{code:"BDR",city:"Stratford",state:"CT"},
+  {code:"BED",city:"Concord",state:"MA"},{code:"BFI-MX",city:"Seattle",state:"WA"},
+  {code:"BFL",city:"Bakersfield",state:"CA"},{code:"BHM",city:"Birmingham",state:"AL"},
+  {code:"BNA",city:"Nashville",state:"TN"},{code:"BUR",city:"Burbank",state:"CA"},
+  {code:"CHS",city:"N. Charleston",state:"SC"},{code:"CLE",city:"Cleveland",state:"OH"},
+  {code:"CPR",city:"Casper",state:"WY"},{code:"CRP",city:"Corpus Christi",state:"TX"},
+  {code:"CRQ",city:"Carlsbad",state:"CA"},{code:"DAL",city:"Dallas",state:"TX"},
+  {code:"DTS",city:"Destin",state:"FL"},{code:"EAS(Corp)",city:"Plano",state:"TX"},
+  {code:"ELM",city:"Horseheads",state:"NY"},{code:"ELP",city:"El Paso",state:"TX"},
+  {code:"EUG",city:"Eugene",state:"OR"},{code:"EUG - MX",city:"Eugene",state:"OR"},
+  {code:"FAI",city:"Fairbanks",state:"AK"},{code:"FAI - South",city:"Fairbanks",state:"AK"},
+  {code:"FAT",city:"Fresno",state:"CA"},{code:"FMN",city:"Farmington",state:"NM"},
+  {code:"FRG",city:"Farmingdale",state:"NY"},{code:"FXE",city:"Ft. Lauderdale",state:"FL"},
+  {code:"GPI",city:"Kalispell",state:"MT"},{code:"GPI-MX",city:"Kalispell",state:"MT"},
+  {code:"HDN",city:"Hayden",state:"CO"},{code:"HNL",city:"Honolulu",state:"HI"},
+  {code:"HOU",city:"Houston",state:"TX"},{code:"HPN-E",city:"White Plains",state:"NY"},
+  {code:"HPN-W",city:"White Plains",state:"NY"},{code:"HYA",city:"Hyannis",state:"MA"},
+  {code:"IAD",city:"Dulles",state:"VA"},{code:"IAH",city:"Houston",state:"TX"},
+  {code:"ILG",city:"New Castle",state:"DE"},{code:"ITO",city:"Hilo",state:"HI"},
+  {code:"JAN",city:"Jackson",state:"MS"},{code:"JNU",city:"Juneau",state:"AK"},
+  {code:"JZI",city:"Johns Island",state:"SC"},{code:"KOA",city:"Kona",state:"HI"},
+  {code:"KTN",city:"Ketchikan",state:"AK"},{code:"LAS",city:"Las Vegas",state:"NV"},
+  {code:"LAX",city:"Los Angeles",state:"CA"},{code:"LGB",city:"Long Beach",state:"CA"},
+  {code:"LIH",city:"Lihue",state:"HI"},{code:"LIT",city:"Little Rock",state:"AR"},
+  {code:"LNK",city:"Lincoln",state:"NE"},{code:"LNK--MX",city:"Lincoln",state:"NE"},
+  {code:"LNY",city:"Lanai City",state:"HI"},{code:"MCO",city:"Orlando",state:"FL"},
+  {code:"MDW",city:"Chicago",state:"IL"},{code:"MKC",city:"Kansas City",state:"MO"},
+  {code:"MMU",city:"Morristown",state:"NJ"},{code:"MSY",city:"Kenner",state:"LA"},
+  {code:"MTJ",city:"Montrose",state:"CO"},{code:"OGG",city:"Kahului",state:"HI"},
+  {code:"OKC",city:"Oklahoma City",state:"OK"},{code:"OMA",city:"Omaha",state:"NE"},
+  {code:"OPF",city:"Opa Locka",state:"FL"},{code:"ORH",city:"Worcester",state:"MA"},
+  {code:"ORL",city:"Orlando",state:"FL"},{code:"OXC",city:"Oxford",state:"CT"},
+  {code:"PBI",city:"W. Palm Beach",state:"FL"},{code:"PDK",city:"Atlanta",state:"GA"},
+  {code:"PDX",city:"Portland",state:"OR"},{code:"PDX-MX",city:"Portland",state:"OR"},
+  {code:"PHF",city:"Newport News",state:"VA"},{code:"PHL",city:"Philadelphia",state:"PA"},
+  {code:"PIT",city:"Moon Township",state:"PA"},{code:"PNE",city:"Philadelphia",state:"PA"},
+  {code:"PSP",city:"Palm Springs",state:"CA"},{code:"PVD",city:"Warwick",state:"RI"},
+  {code:"PWA",city:"Bethany",state:"OK"},{code:"PWK",city:"Wheeling",state:"IL"},
+  {code:"RDU",city:"Morrisville",state:"NC"},{code:"RIL",city:"Rifle",state:"CO"},
+  {code:"RNO",city:"Reno",state:"NV"},{code:"SAF",city:"Santa Fe",state:"NM"},
+  {code:"SBA",city:"Santa Barbara",state:"CA"},{code:"SBN",city:"South Bend",state:"IN"},
+  {code:"SCK",city:"Stockton",state:"CA"},{code:"SDF",city:"Louisville",state:"KY"},
+  {code:"SDL",city:"Scottsdale",state:"AZ"},{code:"SGJ",city:"St. Augustine",state:"FL"},
+  {code:"SIT",city:"Sitka",state:"AK"},{code:"SJC",city:"San Jose",state:"CA"},
+  {code:"SKF",city:"San Antonio",state:"TX"},{code:"SLC",city:"Salt Lake City",state:"UT"},
+  {code:"SMO",city:"Santa Monica",state:"CA"},{code:"SRQ",city:"Sarasota",state:"FL"},
+  {code:"SUA",city:"Stuart",state:"FL"},{code:"SUN",city:"Hailey",state:"ID"},
+  {code:"SWF",city:"New Windsor",state:"NY"},{code:"TEB",city:"Teterboro",state:"NJ"},
+  {code:"TRM",city:"Thermal",state:"CA"},{code:"TUL",city:"Tulsa",state:"OK"},
+  {code:"TUS",city:"Tucson",state:"AZ"},{code:"UAO",city:"Aurora",state:"OR"},
+  {code:"UES",city:"Waukesha",state:"WI"},
+];
+
+const COVERED = FBO_LIST.filter(f => COORDS[f.code]);
+
+// ── Severity ──────────────────────────────────────────────────────────────────
+function getBucket(event = '') {
+  if (/Tornado Warning|Flash Flood Emergency/.test(event)) return 'EXTREME';
+  if (/Tornado Watch|Severe Thunderstorm Warning|Blizzard|Ice Storm Warning|Flash Flood Warning|Winter Storm Warning/.test(event)) return 'SEVERE';
+  if (/Severe Thunderstorm Watch|Flash Flood Watch|Winter Storm Watch|High Wind Warning|Excessive Heat Warning|Flood Warning/.test(event)) return 'MODERATE';
+  if (/Warning/.test(event)) return 'SEVERE';
+  if (/Watch/.test(event)) return 'MODERATE';
+  return 'LOW';
+}
+const ORD  = {EXTREME:0,SEVERE:1,MODERATE:2,LOW:3,NONE:4};
+const SBADGE = {EXTREME:'#dc2626',SEVERE:'#ea580c',MODERATE:'#ca8a04',LOW:'#16a34a',NONE:'#334155'};
+const STEXT  = {EXTREME:'#fca5a5',SEVERE:'#fdba74',MODERATE:'#fcd34d',LOW:'#86efac',NONE:'#334155'};
+const SBG    = {EXTREME:'#2d0000',SEVERE:'#2d1000',MODERATE:'#2d2200',LOW:'#0a1e10',NONE:'#0c1220'};
+const SBORDER= {EXTREME:'#dc2626',SEVERE:'#ea580c',MODERATE:'#ca8a04',LOW:'#16a34a',NONE:'#1e293b'};
+const SUGGEST= {EXTREME:'Moderate',SEVERE:'Enhanced',MODERATE:'Slight',LOW:'Marginal'};
+
+const ZONES = ['Moderate','Enhanced','Slight','Marginal'];
+const ZBG   = {Moderate:'#EA3232',Enhanced:'#E97132',Slight:'#FFC000',Marginal:'#196B24'};
+const ZTXT  = {Moderate:'#fff',Enhanced:'#000',Slight:'#000',Marginal:'#fff'};
+
+function topBucket(alerts) {
+  return alerts && alerts.length ? alerts[0].bucket : 'NONE';
+}
+
+function fmtTime(dt) {
+  if (!dt) return '--';
+  return dt.toLocaleString('en-US', {month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const results  = {};   // code -> {st, alerts, error}
+let selected   = null;
+let openAlert  = null;
+let activeTab  = 'monitor';
+let searchVal  = '';
+let onlyActive = false;
+let scanning   = false;
+let stopScan   = false;
+let scanD = 0, scanT = 0;
+
+// Builder state
+const zoneAssign = {Moderate:[],Enhanced:[],Slight:[],Marginal:[]};
+
+// ── NWS fetch ─────────────────────────────────────────────────────────────────
+const NWS = 'https://api.weather.gov';
+
+async function fetchAlerts(code) {
+  const c = COORDS[code];
+  if (!c) throw new Error('No coordinates on file');
+  const [lat, lon] = c;
+  const url = `${NWS}/alerts/active?point=${lat.toFixed(4)},${lon.toFixed(4)}&status=actual&limit=25`;
+  const r = await fetch(url, {
+    headers: {
+      'User-Agent': 'AtlanticAviationWeatherOps/2.0 (ops@atlanticaviation.com)',
+      'Accept': 'application/geo+json'
+    }
+  });
+  if (!r.ok) throw new Error(`NWS API returned ${r.status}`);
+  const d = await r.json();
+  return (d.features || []).map(f => {
+    const p = f.properties;
+    return {
+      id: f.id,
+      event: p.event,
+      headline: p.headline,
+      description: p.description,
+      instruction: p.instruction,
+      onset:   p.onset   ? new Date(p.onset)   : null,
+      expires: p.expires ? new Date(p.expires) : null,
+      sender:  p.senderName,
+      bucket:  getBucket(p.event),
+    };
+  }).sort((a, b) => ORD[a.bucket] - ORD[b.bucket]);
+}
+
+async function loadFBO(code) {
+  if (results[code]?.st === 'loading') return;
+  results[code] = {st:'loading', alerts:[]};
+  renderSidebarItem(code);
+  if (selected === code) renderDetail();
+  try {
+    const alerts = await fetchAlerts(code);
+    results[code] = {st:'ok', alerts};
+  } catch(e) {
+    results[code] = {st:'error', error: e.message, alerts:[]};
+  }
+  renderSidebarItem(code);
+  if (selected === code) renderDetail();
+  updateHeader();
+  updateActiveCount();
+  refreshBuilder();
+}
+
+async function doScanAll() {
+  if (scanning) { stopScan = true; return; }
+  stopScan = false; scanning = true;
+  const fbos = COVERED;
+  scanD = 0; scanT = fbos.length;
+  updateScanBtn();
+  const BATCH = 6;
+  for (let i = 0; i < fbos.length; i += BATCH) {
+    if (stopScan) break;
+    await Promise.all(fbos.slice(i, i+BATCH).map(f => {
+      if (results[f.code]?.st === 'ok') return Promise.resolve();
+      return loadFBO(f.code);
+    }));
+    scanD = Math.min(i + BATCH, fbos.length);
+    updateScanBtn();
+    if (i + BATCH < fbos.length) await new Promise(r => setTimeout(r, 500));
+  }
+  scanning = false;
+  updateScanBtn();
+}
+
+// ── Render helpers ────────────────────────────────────────────────────────────
+function updateHeader() {
+  const alerted = COVERED.filter(f => results[f.code]?.alerts?.length > 0);
+  const eN = alerted.filter(f => results[f.code].alerts[0].bucket === 'EXTREME').length;
+  const sN = alerted.filter(f => results[f.code].alerts[0].bucket === 'SEVERE').length;
+  const mN = alerted.filter(f => results[f.code].alerts[0].bucket === 'MODERATE').length;
+  const badges = document.getElementById('status-badges');
+  badges.innerHTML = '';
+  const mk = (n, label, bg, color) => {
+    if (!n) return;
+    const s = document.createElement('span');
+    s.style.cssText = `background:${bg};color:${color};font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px`;
+    s.textContent = `${n} ${label}`;
+    badges.appendChild(s);
+  };
+  mk(eN, 'EXTREME', '#7f1d1d', '#fca5a5');
+  mk(sN, 'SEVERE',  '#7c2d12', '#fdba74');
+  mk(mN, 'MODERATE','#713f12', '#fcd34d');
+  if (alerted.length) {
+    const s = document.createElement('span');
+    s.style.cssText = 'background:#1e293b;color:#475569;font-size:9px;padding:2px 7px;border-radius:3px';
+    s.textContent = `${alerted.length} alerted`;
+    badges.appendChild(s);
+  }
+}
+
+function updateScanBtn() {
+  const btn  = document.getElementById('scan-btn');
+  const prog = document.getElementById('scan-prog');
+  if (scanning) {
+    btn.style.background = '#ffffff';
+    btn.style.borderColor = '#ffffff';
+    btn.style.color = '#c0392b';
+    btn.textContent = '■ Stop';
+    prog.textContent = `${scanD}/${scanT}`;
+    prog.style.display = 'inline';
+  } else {
+    btn.style.background = '#ffffff';
+    btn.style.borderColor = '#ffffff';
+    btn.style.color = '#0E2841';
+    btn.textContent = '▶ Scan All';
+    prog.style.display = 'none';
+  }
+}
+
+function updateActiveCount() {
+  const n = COVERED.filter(f => results[f.code]?.alerts?.length > 0).length;
+  document.getElementById('btn-active').textContent = `Active (${n})`;
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function renderSidebar() {
+  const q = searchVal.toLowerCase();
+  const list = COVERED.filter(f => {
+    if (q && !f.code.toLowerCase().includes(q) && !f.city.toLowerCase().includes(q) && !f.state.toLowerCase().includes(q)) return false;
+    if (onlyActive && !(results[f.code]?.alerts?.length > 0)) return false;
+    return true;
+  }).sort((a, b) => {
+    const sa = results[a.code] ? ORD[topBucket(results[a.code].alerts)] : 5;
+    const sb = results[b.code] ? ORD[topBucket(results[b.code].alerts)] : 5;
+    return sa !== sb ? sa - sb : a.code.localeCompare(b.code);
+  });
+
+  const container = document.getElementById('sidebar-list');
+  container.innerHTML = '';
+  list.forEach(fbo => {
+    const el = makeSidebarItem(fbo);
+    container.appendChild(el);
+  });
+  document.getElementById('covered-count').textContent = `Live NWS alerts for ${COVERED.length} US FBO locations`;
+}
+
+function makeSidebarItem(fbo) {
+  const r = results[fbo.code];
+  const bkt = topBucket(r?.alerts);
+  const badge = SBADGE[bkt];
+  const textColor = r?.alerts?.length ? STEXT[bkt] : '#334155';
+  const n = r?.alerts?.length || 0;
+
+  const div = document.createElement('div');
+  div.className = 'fbo-item' + (selected === fbo.code ? ' selected' : '');
+  div.dataset.code = fbo.code;
+
+  let badgeHTML = '';
+  if (r?.st === 'loading') badgeHTML = '<span class="spin"></span>';
+  else if (r?.st === 'error') badgeHTML = `<span style="font-size:9px;color:#ef4444" title="${r.error}">ERR</span>`;
+  else if (n > 0) badgeHTML = `<span class="fbo-count" style="background:${badge}">${n}</span>`;
+  else if (r) badgeHTML = `<span style="font-size:9px;color:#0f1e2e">✓</span>`;
+
+  div.innerHTML = `
+    <span class="fbo-code" style="color:${textColor}">${fbo.code}</span>
+    <span class="fbo-loc">${fbo.city}, ${fbo.state}</span>
+    <div class="fbo-badge-wrap">${badgeHTML}</div>
+  `;
+  div.addEventListener('click', () => selectFBO(fbo.code));
+  return div;
+}
+
+function renderSidebarItem(code) {
+  const existing = document.querySelector(`[data-code="${CSS.escape(code)}"]`);
+  const fbo = COVERED.find(f => f.code === code);
+  if (!fbo) return;
+  const newEl = makeSidebarItem(fbo);
+  if (existing) existing.replaceWith(newEl);
+}
+
+function selectFBO(code) {
+  selected = code;
+  openAlert = null;
+  document.querySelectorAll('.fbo-item').forEach(el => el.classList.toggle('selected', el.dataset.code === code));
+  if (!results[code] || results[code].st === 'error') loadFBO(code);
+  else renderDetail();
+}
+
+// ── Detail panel ──────────────────────────────────────────────────────────────
+function renderDetail() {
+  const panel = document.getElementById('panel-monitor');
+  if (!selected) {
+    panel.innerHTML = `<div class="empty-state"><div style="font-size:36px">🌩</div><div style="font-size:13px;color:#556070">Select a location or click Scan All</div><div id="covered-count" style="font-size:11px;color:#8a9aaa">Live NWS alerts for ${COVERED.length} US FBO locations</div></div>`;
+    return;
+  }
+  const fbo = COVERED.find(f => f.code === selected);
+  const r   = results[selected];
+  const coords = COORDS[selected];
+  const forecastLink = coords ? `https://forecast.weather.gov/MapClick.php?textField1=${coords[0]}&textField2=${coords[1]}` : '#';
+
+  let content = `
+    <div style="padding:18px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <div style="font-size:20px;font-weight:700;color:#0E2841;font-family:Arial,sans-serif">${fbo.code}</div>
+          <div style="font-size:12px;color:#556070;margin-top:2px">${fbo.city}, ${fbo.state}</div>
+          ${coords ? `<div style="font-size:10px;color:#8a9aaa;margin-top:3px">${coords[0].toFixed(4)}N, ${Math.abs(coords[1]).toFixed(4)}W &nbsp;·&nbsp; <a href="${forecastLink}" target="_blank" style="font-size:10px;color:#0E2841">NWS forecast ↗</a></div>` : ''}
+        </div>
+        <button onclick="loadFBO('${selected.replace(/'/g,"\\'")}'); renderDetail();" style="background:#E8E8E8;border:1px solid #c8d0d8;color:#0E2841;border-radius:4px;padding:4px 12px;font-size:10px;font-weight:700">Refresh</button>
+      </div>`;
+
+  if (!r || r.st === 'loading') {
+    content += `<div style="display:flex;align-items:center;gap:8px;color:#556070;font-size:12px"><span class="spin"></span> Querying NWS...</div>`;
+  } else if (r.st === 'error') {
+    content += `<div style="background:#fff0f0;border:1px solid #e0a0a0;border-radius:4px;padding:12px;color:#8b2020;font-size:12px">${r.error}<div style="font-size:10px;color:#a05050;margin-top:4px">NWS API may be briefly unavailable. Try refreshing.</div></div>`;
+  } else if (r.alerts.length === 0) {
+    content += `<div class="clear-box"><div style="font-size:28px;margin-bottom:6px">✓</div><div style="color:#1a6b30;font-weight:700;font-size:13px">No Active NWS Alerts</div><div style="color:#556070;font-size:11px;margin-top:3px">No watches, warnings, or advisories in effect</div></div>`;
+  } else {
+    content += `<div style="font-size:10px;color:#556070;margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">${r.alerts.length} active product${r.alerts.length !== 1 ? 's' : ''}</div>`;
+    r.alerts.forEach((a, idx) => {
+      const open = openAlert === a.id;
+      const bg = SBG[a.bucket]; const border = SBORDER[a.bucket]; const tc = STEXT[a.bucket];
+      const hl = a.headline ? a.headline.replace(/^[^—\-]+[—\-]\s*/, '').substring(0, 80) : '';
+      content += `
+        <div class="alert-card" style="background:${bg};border:1px solid ${border}88" id="acard-${idx}">
+          <div class="alert-header" style="background:${bg}" onclick="toggleAlert('${a.id.replace(/'/g,"\\'")}')">
+            <span class="dot" style="background:${SBADGE[a.bucket]}"></span>
+            <div style="flex:1">
+              <span class="alert-event" style="color:${tc}">${a.event}</span>
+              ${hl ? `<span style="font-size:10px;color:${tc};opacity:.7"> — ${hl}</span>` : ''}
+            </div>
+            <span class="alert-toggle" style="color:${tc};opacity:.6">${open ? '▲' : '▼'}</span>
+          </div>
+          ${open ? `
+          <div class="alert-body" style="background:${bg};border-top:1px solid ${border}44">
+            <div class="alert-meta" style="color:${tc};opacity:.8">
+              <span>Onset: <b>${fmtTime(a.onset)}</b></span>
+              <span>Expires: <b>${fmtTime(a.expires)}</b></span>
+              ${a.sender ? `<span>By: <b>${a.sender}</b></span>` : ''}
+            </div>
+            ${a.instruction ? `<div class="alert-instruction">${a.instruction.substring(0, 600)}${a.instruction.length > 600 ? '…' : ''}</div>` : ''}
+          </div>` : ''}
+        </div>`;
+    });
+  }
+  content += '</div>';
+  panel.innerHTML = content;
+}
+
+function toggleAlert(id) {
+  openAlert = openAlert === id ? null : id;
+  renderDetail();
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(b => {
+    const active = b.dataset.tab === tab;
+    b.style.borderBottomColor = active ? '#ffffff' : 'transparent';
+    b.style.color = active ? '#ffffff' : '#7a9ab8';
+  });
+  document.getElementById('panel-monitor').style.display = tab === 'monitor' ? '' : 'none';
+  document.getElementById('panel-build').style.display   = tab === 'build'   ? '' : 'none';
+  if (tab === 'build') refreshBuilder();
+}
+
+// ── Builder ───────────────────────────────────────────────────────────────────
+function refreshBuilder() {
+  if (activeTab !== 'build') return;
+  const assigned = new Set(Object.values(zoneAssign).flat());
+
+  // Suggestions
+  const suggested = COVERED.filter(f =>
+    results[f.code]?.st === 'ok' &&
+    results[f.code].alerts.length > 0 &&
+    !assigned.has(f.code)
+  ).map(f => ({...f, sug: SUGGEST[topBucket(results[f.code].alerts)]}))
+   .sort((a,b) => ORD[topBucket(results[a.code].alerts)] - ORD[topBucket(results[b.code].alerts)]);
+
+  const tray = document.getElementById('suggest-tray');
+  const chips = document.getElementById('suggest-chips');
+  if (suggested.length > 0) {
+    chips.innerHTML = suggested.map(({code, city, sug}) => {
+      const bkt = topBucket(results[code].alerts);
+      return `<span class="sug-chip">
+        <span class="dot" style="background:${SBADGE[bkt]}"></span>
+        <span>${code}</span>
+        <span class="sug-city">${city}</span>
+        ${sug ? `<button class="sug-btn" onclick="assignCode('${code}','${sug}')" style="background:${ZBG[sug]};color:${ZTXT[sug]}">${sug} ↵</button>` : ''}
+        <button class="sug-btn" onclick="promptAssign('${code}')" style="background:transparent;border:1px solid #1e3a5f;color:#475569">?</button>
+      </span>`;
+    }).join('');
+    tray.style.display = 'block';
+  } else {
+    tray.style.display = 'none';
+  }
+
+  // Zone lanes
+  const lanes = document.getElementById('zone-lanes');
+  lanes.innerHTML = ZONES.map(zone => {
+    const chips = zoneAssign[zone].map(code => `
+      <span class="zone-chip">
+        <span>${code}</span>
+        <button onclick="unassignCode('${code}')">×</button>
+      </span>`).join('');
+    return `
+      <div class="zone-lane" style="border:1px solid ${ZBG[zone]}44">
+        <div class="zone-header" style="background:${ZBG[zone]}">
+          <span class="zone-label" style="color:${ZTXT[zone]}">${zone}</span>
+          <div style="display:flex;gap:4px">
+            <button onclick="promptAdd('${zone}')" style="background:transparent;border:1px solid ${ZTXT[zone]}55;border-radius:3px;color:${ZTXT[zone]};font-size:9px;padding:1px 7px">+ Add</button>
+            ${zoneAssign[zone].length > 0 ? `<button onclick="clearZone('${zone}')" style="background:transparent;border:1px solid ${ZTXT[zone]}33;border-radius:3px;color:${ZTXT[zone]}88;font-size:9px;padding:1px 5px">Clear</button>` : ''}
+          </div>
+        </div>
+        <div class="zone-body">${chips || '<span style="font-size:10px;color:#1e293b;font-style:italic">none</span>'}</div>
+      </div>`;
+  }).join('');
+
+  // Output
+  const out = ZONES.filter(z => zoneAssign[z].length > 0).map(z => `${z}: ${zoneAssign[z].join(', ')}`).join('\n') || '(no zones assigned yet)';
+  document.getElementById('output-pre').textContent = out;
+}
+
+function assignCode(code, zone) {
+  ZONES.forEach(z => { zoneAssign[z] = zoneAssign[z].filter(c => c !== code); });
+  if (zone) zoneAssign[zone].push(code);
+  refreshBuilder();
+}
+function unassignCode(code) { assignCode(code, null); }
+function clearZone(zone) { zoneAssign[zone] = []; refreshBuilder(); }
+function promptAssign(code) {
+  const v = prompt(`Zone for ${code}:\n1 Moderate  2 Enhanced  3 Slight  4 Marginal`);
+  const m = {'1':'Moderate','2':'Enhanced','3':'Slight','4':'Marginal'};
+  if (m[v]) assignCode(code, m[v]);
+}
+function promptAdd(zone) {
+  const v = prompt(`Add code(s) to ${zone} (comma-separated):`);
+  if (!v) return;
+  v.split(',').map(s => s.trim().toUpperCase()).filter(Boolean).forEach(c => assignCode(c, zone));
+}
+
+// ── Wire up events ────────────────────────────────────────────────────────────
+document.getElementById('scan-btn').addEventListener('click', doScanAll);
+
+document.getElementById('search').addEventListener('input', e => {
+  searchVal = e.target.value;
+  renderSidebar();
+});
+
+document.getElementById('btn-all').addEventListener('click', () => {
+  onlyActive = false;
+  document.getElementById('btn-all').style.background = '#0E2841';
+  document.getElementById('btn-all').style.borderColor = '#0E2841';
+  document.getElementById('btn-all').style.color = '#ffffff';
+  document.getElementById('btn-active').style.background = 'transparent';
+  document.getElementById('btn-active').style.borderColor = '#c8d0d8';
+  document.getElementById('btn-active').style.color = '#556070';
+  renderSidebar();
+});
+
+document.getElementById('btn-active').addEventListener('click', () => {
+  onlyActive = true;
+  document.getElementById('btn-active').style.background = '#0E2841';
+  document.getElementById('btn-active').style.borderColor = '#0E2841';
+  document.getElementById('btn-active').style.color = '#ffffff';
+  document.getElementById('btn-all').style.background = 'transparent';
+  document.getElementById('btn-all').style.borderColor = '#c8d0d8';
+  document.getElementById('btn-all').style.color = '#556070';
+  renderSidebar();
+});
+
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+document.getElementById('copy-btn').addEventListener('click', () => {
+  const out = document.getElementById('output-pre').textContent;
+  navigator.clipboard.writeText(out).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    btn.style.background = '#1a5c2e';
+    btn.style.borderColor = '#2e8b45';
+    btn.style.color = '#ffffff';
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.style.background = 'transparent';
+      btn.style.borderColor = '#c8d0d8';
+      btn.style.color = '#ffffff';
+    }, 2000);
+  });
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+renderSidebar();
+updateHeader();
+updateActiveCount();
+document.getElementById('covered-count').textContent = `Live NWS alerts for ${COVERED.length} US FBO locations`;
+</script>
+</body>
+</html>
