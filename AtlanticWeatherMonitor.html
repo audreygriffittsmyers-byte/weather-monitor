@@ -308,13 +308,11 @@ const NWS = 'https://api.weather.gov';
 async function fetchAlerts(code) {
   const c = COORDS[code];
   if (!c) throw new Error('No coordinates on file');
-  const [lat, lon] = c;
-  const url = `${NWS}/alerts/active?point=${lat.toFixed(4)},${lon.toFixed(4)}&status=actual&limit=25`;
-  const r = await fetch(url, {
-    headers: {
-      'Accept': 'application/geo+json'
-    }
-  });
+  const fbo = FBO_LIST.find(f => f.code === code);
+  if (!fbo) throw new Error('FBO not found');
+
+  const url = `${NWS}/alerts/active?area=${fbo.state}&status=actual&limit=50`;
+  const r = await fetch(url);
   if (!r.ok) throw new Error(`NWS API returned ${r.status}`);
   const d = await r.json();
   return (d.features || []).map(f => {
