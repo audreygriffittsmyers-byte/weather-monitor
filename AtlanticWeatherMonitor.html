@@ -593,12 +593,18 @@ function switchTab(tab) {
 const spcResults = {};  // code -> { st, label }
 
 const SPC_LABEL_MAP = {
-  'TSTM': { label: 'Thunderstorm', bg: '#c8e6c9', text: '#1a3320', order: 6 },
-  'MRGL': { label: 'Marginal',     bg: '#196B24', text: '#ffffff', order: 5 },
-  'SLGT': { label: 'Slight',       bg: '#FFC000', text: '#000000', order: 4 },
-  'ENH':  { label: 'Enhanced',     bg: '#E97132', text: '#000000', order: 3 },
-  'MDT':  { label: 'Moderate',     bg: '#EA3232', text: '#ffffff', order: 2 },
-  'HIGH': { label: 'High',         bg: '#EC30F0', text: '#ffffff', order: 1 },
+  'TSTM':                    { label: 'Thunderstorm', bg: '#c8e6c9', text: '#1a3320', order: 6 },
+  'GENERAL THUNDERSTORMS RISK': { label: 'Thunderstorm', bg: '#c8e6c9', text: '#1a3320', order: 6 },
+  'MRGL':                    { label: 'Marginal',     bg: '#196B24', text: '#ffffff', order: 5 },
+  'MARGINAL RISK':           { label: 'Marginal',     bg: '#196B24', text: '#ffffff', order: 5 },
+  'SLGT':                    { label: 'Slight',       bg: '#FFC000', text: '#000000', order: 4 },
+  'SLIGHT RISK':             { label: 'Slight',       bg: '#FFC000', text: '#000000', order: 4 },
+  'ENH':                     { label: 'Enhanced',     bg: '#E97132', text: '#000000', order: 3 },
+  'ENHANCED RISK':           { label: 'Enhanced',     bg: '#E97132', text: '#000000', order: 3 },
+  'MDT':                     { label: 'Moderate',     bg: '#EA3232', text: '#ffffff', order: 2 },
+  'MODERATE RISK':           { label: 'Moderate',     bg: '#EA3232', text: '#ffffff', order: 2 },
+  'HIGH':                    { label: 'High',         bg: '#EC30F0', text: '#ffffff', order: 1 },
+  'HIGH RISK':               { label: 'High',         bg: '#EC30F0', text: '#ffffff', order: 1 },
 };
 
 async function fetchSPC(code) {
@@ -612,14 +618,15 @@ async function fetchSPC(code) {
     if (!r.ok) throw new Error(`${r.status}`);
     const d = await r.json();
     const features = d.features || [];
-    // Get highest risk zone (lowest order number)
-    let best = null;
+    // Pick the feature with the highest DN value (highest risk)
+    let bestDN = -1;
+    let bestLabel = null;
     features.forEach(f => {
-      const lbl = f.attributes?.LABEL2 || f.attributes?.LABEL || '';
-      const mapped = SPC_LABEL_MAP[lbl.toUpperCase()];
-      if (mapped && (!best || mapped.order < SPC_LABEL_MAP[best].order)) best = lbl.toUpperCase();
+      const dn = f.attributes?.dn ?? f.attributes?.DN ?? 0;
+      const lbl = f.attributes?.label2 || f.attributes?.label || f.attributes?.LABEL2 || f.attributes?.LABEL || '';
+      if (dn > bestDN) { bestDN = dn; bestLabel = lbl.toUpperCase(); }
     });
-    spcResults[code] = { st: 'ok', label: best };
+    spcResults[code] = { st: 'ok', label: bestLabel };
   } catch(e) {
     spcResults[code] = { st: 'error', label: null };
   }
