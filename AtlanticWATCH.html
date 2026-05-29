@@ -3170,6 +3170,7 @@ function decodeTAFFull(code) {
     const timeTo   = f.timeTo   ? new Date(f.timeTo).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
     const changeType = f.fcstType || f.changeType || '';
     const changeLabel = { BECMG:'Becoming', TEMPO:'Temporarily', FM:'From', PROB30:'30% chance', PROB40:'40% chance' }[changeType] || changeType;
+    const ctColor = { FM:'#2563eb', BASE:'#2563eb', TEMPO:'#d97706', PROB30:'#7c3aed', PROB40:'#7c3aed', BECMG:'#0d9488' }[changeType] || '#556070';
 
     const windTxt = f.wspd != null
       ? (f.wspd === 0 ? 'Calm' : 'From the ' + decodeWindDir(f.wdir) + ' at ' + f.wspd + ' kts' + (f.wgst ? ', gusting ' + f.wgst + ' kts' : ''))
@@ -3181,7 +3182,7 @@ function decodeTAFFull(code) {
     html += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:8px 12px;margin-bottom:6px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">'
       + (f.flightCategory ? '<span style="background:' + catColor + ';color:#fff;font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px">' + f.flightCategory + '</span>' : '')
-      + (changeLabel ? '<span style="font-size:9px;font-weight:700;color:#0E2841;text-transform:uppercase">' + changeLabel + '</span>' : '')
+      + (changeLabel ? '<span style="background:' + ctColor + ';color:#fff;font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px;text-transform:uppercase">' + changeLabel + '</span>' : '')
       + '<span style="font-size:10px;color:#556070">' + timeFrom + (timeTo ? ' \u2014 ' + timeTo : '') + '</span>'
       + '</div>'
       + '<table style="width:100%;border-collapse:collapse;font-size:11px">';
