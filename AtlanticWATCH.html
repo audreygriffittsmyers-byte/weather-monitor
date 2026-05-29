@@ -3158,65 +3158,135 @@ function decodeMetarFull(obs) {
 function decodeTAFFull(code) {
   const taf = tafData[code];
   if (!taf) return '';
-  const forecasts = taf.fcsts || taf.forecast || taf.fcstGroups || [];
-  if (!forecasts.length) return '';
+  const raw = taf.rawTAF || '';
+  if (!raw) return '';
 
+  // ── Parse raw TAF string into period groups ──────────────────────────────
+  // Split on change group keywords: FM, TEMPO, BECMG, PROB30, PROB40
+  // Each group starts with one of these tokens
+  const GROUP_RE = /\b(FM\d{6}Z?|TEMPO|BECMG|PROB30|PROB40)\b/g;
+
+  // Find all group start positions in the raw string
+  const splits = [];
+  let m;
+  while ((m = GROUP_RE.exec(raw)) !== null) {
+    splits.push({ pos: m.index, token: m[1] });
+  }
+
+  // Base period is everything before the first group token (or whole string if none)
+  const basePart = splits.length ? raw.substring(0, splits[0].pos) : raw;
+  const periods = [{ token: 'BASE', text: basePart }];
+  splits.forEach((s, i) => {
+    const end = i + 1 < splits.length ? splits[i + 1].pos : raw.length;
+    periods.push({ token: s.token.replace(/\d+Z?$/, '').replace(/\d+/, ''), raw_token: s.token, text: raw.substring(s.pos, end) });
+  });
+
+  // ── Colour map ────────────────────────────────────────────────────────────
+  const COLOR = { BASE:'#2563eb', FM:'#2563eb', TEMPO:'#d97706', BECMG:'#0d9488', PROB:'#7c3aed' };
+  const LABEL = { BASE:'Base', FM:'From', TEMPO:'Temporarily', BECMG:'Becoming', PROB:'Probability' };
+
+  // ── Parse helpers ─────────────────────────────────────────────────────────
+  function parseWind(txt) {
+    const m = txt.match(/\b(\d{3}|VRB)(\d{2,3})(G(\d{2,3}))?KT\b/);
+    if (!m) return '';
+    const dir = m[1] === 'VRB' ? 'Variable' : m[1] + '°';
+    const spd = parseInt(m[2]);
+    const gst = m[4] ? ', gusting ' + m[4] + ' kts' : '';
+    return 'From ' + dir + ' at ' + spd + ' kts' + gst;
+  }
+  function parseVis(txt) {
+    // P6SM = more than 6sm, 9999 = 10+
+    if (/\bP6SM\b/.test(txt) || /\b9999\b/.test(txt)) return '6+ miles';
+    const m = txt.match(/\b(\d+(?:\/\d+)?SM)\b/);
+    return m ? m[1] : '';
+  }
+  function parseWx(txt) {
+    const codes = {
+      'TS':'Thunderstorm','RA':'Rain','SN':'Snow','SH':'Showers',
+      'FG':'Fog','BR':'Mist','DZ':'Drizzle','GR':'Hail',
+      'TSRA':'Thunderstorm with rain','TSSN':'Thunderstorm with snow',
+      '-RA':'Light rain','+RA':'Heavy rain','-SN':'Light snow','+SN':'Heavy snow',
+      'SHRA':'Rain showers','RASN':'Rain and snow','FZRA':'Freezing rain',
+      'VCTS':'Thunderstorm in vicinity','VCSH':'Showers in vicinity'
+    };
+    const found = [];
+    Object.keys(codes).forEach(k => { if (txt.includes(k)) found.push(codes[k]); });
+    return found.slice(0,2).join(', ');
+  }
+  function parseSky(txt) {
+    const layers = [];
+    const re = /(FEW|SCT|BKN|OVC)(\d{3})/g;
+    const words = { FEW:'Few', SCT:'Scattered', BKN:'Broken', OVC:'Overcast' };
+    let sm;
+    while ((sm = re.exec(txt)) !== null) {
+      layers.push(words[sm[1]] + ' clouds at ' + (parseInt(sm[2]) * 100) + ' ft');
+    }
+    if (/\bSKC\b|\bCLR\b/.test(txt)) layers.push('Clear skies');
+    if (/\bCAVOK\b/.test(txt)) layers.push('CAVOK');
+    return layers.join(', ');
+  }
+  function parseFMTime(token) {
+    // FM141200Z or FM1200 -- day + HHMM
+    const m = token.match(/FM(\d{2})(\d{2})(\d{2})Z?/);
+    if (m) {
+      const day = parseInt(m[1]), hh = m[2], mm = m[3];
+      const now = new Date();
+      const dt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day, parseInt(hh), parseInt(mm)));
+      return dt.toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' });
+    }
+    return '';
+  }
+
+  // ── Build HTML ────────────────────────────────────────────────────────────
   let html = '<div style="margin-top:12px;border-top:1px solid #e8e8e8;padding-top:10px">'
     + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Decoded TAF</div>';
 
-  forecasts.slice(0, 8).forEach(f => {
-    const catColor = { VFR:'#16a34a', MVFR:'#2563eb', IFR:'#dc2626', LIFR:'#7c3aed' }[f.flightCategory] || '#8a9aaa';
-    const timeFrom = f.timeFrom ? new Date(f.timeFrom).toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
-    const timeTo   = f.timeTo   ? new Date(f.timeTo).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
-    // Try API field first, fall back to parsing the raw TAF string
-    var changeType = f.fcstType || f.changeType || f.type || f.changeIndicator || '';
-    // Normalise: some APIs return 'FROM', 'TEMPO' etc with different casing
-    changeType = changeType.toUpperCase().trim();
-    // If still empty, try to derive from rawTAF using the period start time
-    if (!changeType && taf.rawTAF && f.timeFrom) {
-      var rawLines = taf.rawTAF.replace(/\s+/g, ' ');
-      // FM groups: FM1234Z or FM141200Z
-      if (/\bFM\d{4,6}Z?\b/.test(rawLines) && f.timeFrom) changeType = 'FM';
-      // TEMPO / BECMG / PROB markers
-      if (/\bTEMPO\b/.test(rawLines)) {
-        // Check if this period index corresponds to a TEMPO group
-        var tempoIdx = rawLines.indexOf('TEMPO');
-        if (tempoIdx !== -1) changeType = changeType || 'TEMPO';
-      }
+  // Use existing fcsts array for timestamps if available, raw parse for change type
+  const fcsts = taf.fcsts || taf.forecast || taf.fcstGroups || [];
+
+  periods.slice(0, 8).forEach((p, idx) => {
+    const typeKey = p.token;
+    const color = COLOR[typeKey] || '#556070';
+    const label = LABEL[typeKey] || typeKey;
+
+    // Get time from fcsts array if available, else parse FM token
+    let timeStr = '';
+    if (fcsts[idx]) {
+      const f = fcsts[idx];
+      const tf = f.timeFrom ? new Date(f.timeFrom).toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
+      const tt = f.timeTo   ? new Date(f.timeTo).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
+      timeStr = tf + (tt ? ' \u2014 ' + tt : '');
+    } else if (p.raw_token && p.raw_token.startsWith('FM')) {
+      timeStr = parseFMTime(p.raw_token);
     }
-    // First period with no change type = BASE forecast
-    if (!changeType) changeType = 'BASE';
-    const changeLabel = { BECMG:'Becoming', TEMPO:'Temporarily', FM:'From', PROB30:'30% chance', PROB40:'40% chance' }[changeType] || changeType;
-    const ctColor = { FM:'#2563eb', BASE:'#2563eb', TEMPO:'#d97706', PROB30:'#7c3aed', PROB40:'#7c3aed', BECMG:'#0d9488' }[changeType] || '#556070';
 
-    const windTxt = f.wspd != null
-      ? (f.wspd === 0 ? 'Calm' : 'From the ' + decodeWindDir(f.wdir) + ' at ' + f.wspd + ' kts' + (f.wgst ? ', gusting ' + f.wgst + ' kts' : ''))
-      : '';
-    const visTxt  = f.visib != null ? (f.visib >= 10 ? '10+ miles' : f.visib + ' miles') : '';
-    const wxTxt   = f.wxString ? decodeWx(f.wxString) : '';
-    const skyTxt  = f.clouds && f.clouds.length ? decodeSkyCondition(f.clouds) : '';
+    const wind = parseWind(p.text);
+    const vis  = parseVis(p.text);
+    const wx   = parseWx(p.text);
+    const sky  = parseSky(p.text);
 
-    html += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:8px 12px;margin-bottom:6px">'
-      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">'
-      + (f.flightCategory ? '<span style="background:' + catColor + ';color:#fff;font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px">' + f.flightCategory + '</span>' : '')
-      + (changeLabel ? '<span style="background:' + ctColor + ';color:#fff;font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px;text-transform:uppercase">' + changeLabel + '</span>' : '')
-      + '<span style="font-size:10px;color:#556070">' + timeFrom + (timeTo ? ' \u2014 ' + timeTo : '') + '</span>'
-      + '</div>'
-      + '<table style="width:100%;border-collapse:collapse;font-size:11px">';
+    // Flight cat from fcsts if available
+    const fcatRaw = fcsts[idx] ? fcsts[idx].flightCategory : '';
+    const fcatColor = { VFR:'#16a34a', MVFR:'#2563eb', IFR:'#dc2626', LIFR:'#7c3aed' }[fcatRaw] || '';
 
-    if (windTxt) html += '<tr><td style="padding:2px 6px;color:#556070;font-weight:600;width:30%;white-space:nowrap">Wind</td><td style="padding:2px 6px;color:#1a2a3a">' + windTxt + '</td></tr>';
-    if (visTxt)  html += '<tr><td style="padding:2px 6px;color:#556070;font-weight:600">Visibility</td><td style="padding:2px 6px;color:#1a2a3a">' + visTxt + '</td></tr>';
-    if (wxTxt)   html += '<tr><td style="padding:2px 6px;color:#556070;font-weight:600">Weather</td><td style="padding:2px 6px;color:#1a2a3a">' + wxTxt + '</td></tr>';
-    if (skyTxt)  html += '<tr><td style="padding:2px 6px;color:#556070;font-weight:600">Sky</td><td style="padding:2px 6px;color:#1a2a3a">' + skyTxt + '</td></tr>';
-
+    html += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:8px 12px;margin-bottom:6px">';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap">';
+    if (fcatRaw) html += '<span style="background:' + fcatColor + ';color:#fff;font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px">' + fcatRaw + '</span>';
+    html += '<span style="background:' + color + ';color:#fff;font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px;text-transform:uppercase">' + label + '</span>';
+    if (timeStr) html += '<span style="font-size:10px;color:#556070">' + timeStr + '</span>';
+    html += '</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
+    if (wind) html += '<tr><td style="padding:2px 6px;color:#556070;font-weight:600;width:30%">Wind</td><td style="padding:2px 6px;color:#1a2a3a">' + wind + '</td></tr>';
+    if (vis)  html += '<tr><td style="padding:2px 6px;color:#556070;font-weight:600">Visibility</td><td style="padding:2px 6px;color:#1a2a3a">' + vis + '</td></tr>';
+    if (wx)   html += '<tr><td style="padding:2px 6px;color:#556070;font-weight:600">Weather</td><td style="padding:2px 6px;color:#1a2a3a">' + wx + '</td></tr>';
+    if (sky)  html += '<tr><td style="padding:2px 6px;color:#556070;font-weight:600">Sky</td><td style="padding:2px 6px;color:#1a2a3a">' + sky + '</td></tr>';
     html += '</table></div>';
   });
 
-  // Raw TAF collapsible
-  if (taf.rawTAF) {
+  if (raw) {
     html += '<details style="margin-top:4px">'
       + '<summary style="font-size:9px;color:#8a9aaa;cursor:pointer">Raw TAF</summary>'
-      + '<div style="font-size:9px;color:#8a9aaa;font-family:monospace;margin-top:4px;word-break:break-all">' + taf.rawTAF + '</div>'
+      + '<div style="font-size:9px;color:#8a9aaa;font-family:monospace;margin-top:4px;word-break:break-all">' + raw + '</div>'
       + '</details>';
   }
   html += '</div>';
