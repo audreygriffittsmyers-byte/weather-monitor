@@ -1932,6 +1932,7 @@ function clearRangeRings() {
 function drawRangeRings(lat, lon) {
   if (!leafletMap) return;
   clearRangeRings();
+  leafletMap.setView([lat, lon], 10, {animate: true, duration: 0.5});
   var M = 1609.34;
   var DEG_PER_MILE = 1 / 69.0; // approx degrees lat per mile
   var rings = [
