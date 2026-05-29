@@ -3168,7 +3168,24 @@ function decodeTAFFull(code) {
     const catColor = { VFR:'#16a34a', MVFR:'#2563eb', IFR:'#dc2626', LIFR:'#7c3aed' }[f.flightCategory] || '#8a9aaa';
     const timeFrom = f.timeFrom ? new Date(f.timeFrom).toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
     const timeTo   = f.timeTo   ? new Date(f.timeTo).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
-    const changeType = f.fcstType || f.changeType || '';
+    // Try API field first, fall back to parsing the raw TAF string
+    var changeType = f.fcstType || f.changeType || f.type || f.changeIndicator || '';
+    // Normalise: some APIs return 'FROM', 'TEMPO' etc with different casing
+    changeType = changeType.toUpperCase().trim();
+    // If still empty, try to derive from rawTAF using the period start time
+    if (!changeType && taf.rawTAF && f.timeFrom) {
+      var rawLines = taf.rawTAF.replace(/\s+/g, ' ');
+      // FM groups: FM1234Z or FM141200Z
+      if (/\bFM\d{4,6}Z?\b/.test(rawLines) && f.timeFrom) changeType = 'FM';
+      // TEMPO / BECMG / PROB markers
+      if (/\bTEMPO\b/.test(rawLines)) {
+        // Check if this period index corresponds to a TEMPO group
+        var tempoIdx = rawLines.indexOf('TEMPO');
+        if (tempoIdx !== -1) changeType = changeType || 'TEMPO';
+      }
+    }
+    // First period with no change type = BASE forecast
+    if (!changeType) changeType = 'BASE';
     const changeLabel = { BECMG:'Becoming', TEMPO:'Temporarily', FM:'From', PROB30:'30% chance', PROB40:'40% chance' }[changeType] || changeType;
     const ctColor = { FM:'#2563eb', BASE:'#2563eb', TEMPO:'#d97706', PROB30:'#7c3aed', PROB40:'#7c3aed', BECMG:'#0d9488' }[changeType] || '#556070';
 
