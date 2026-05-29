@@ -2209,15 +2209,17 @@ function flightCatColor(cat) {
 }
 
 function windDirArrow(deg) {
-  if (deg === null || deg === undefined) return '';
+  if (deg === null || deg === undefined || isNaN(deg)) return '↻'; // variable
+  // Arrow points FROM the direction wind originates
+  // Index 0=N: wind from N blows south, arrow points down ↓
   const arrows = ['↓','↙','←','↖','↑','↗','→','↘'];
-  return arrows[Math.round(deg / 45) % 8];
+  return arrows[Math.round(((deg % 360) + 360) / 45) % 8];
 }
 
 function windDirLabel(deg) {
-  if (deg === null || deg === undefined) return '';
+  if (deg === null || deg === undefined || isNaN(deg)) return 'VRB';
   const dirs = ['N','NE','E','SE','S','SW','W','NW'];
-  return dirs[Math.round(deg / 45) % 8];
+  return dirs[Math.round(((deg % 360) + 360) / 45) % 8];
 }
 
 
@@ -3189,7 +3191,7 @@ function decodeTAFFull(code) {
   function parseWind(txt) {
     const m = txt.match(/\b(\d{3}|VRB)(\d{2,3})(G(\d{2,3}))?KT\b/);
     if (!m) return '';
-    const dir = m[1] === 'VRB' ? 'Variable' : m[1] + '°';
+    const dir = (m[1] === 'VRB' || m[1] === '000') ? 'Variable' : m[1] + '°';
     const spd = parseInt(m[2]);
     const gst = m[4] ? ', gusting ' + m[4] + ' kts' : '';
     return 'From ' + dir + ' at ' + spd + ' kts' + gst;
