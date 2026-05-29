@@ -1931,8 +1931,16 @@ function clearRangeRings() {
 
 function drawRangeRings(lat, lon) {
   if (!leafletMap) return;
-  clearRangeRings();
+  // Zoom first, then draw rings after animation settles
   leafletMap.setView([lat, lon], 10, {animate: true, duration: 0.5});
+  leafletMap.once("moveend", function() {
+    clearRangeRings();
+    _drawRingShapes(lat, lon);
+  });
+}
+
+function _drawRingShapes(lat, lon) {
+  if (!leafletMap) return;
   var M = 1609.34;
   var DEG_PER_MILE = 1 / 69.0; // approx degrees lat per mile
   var rings = [
