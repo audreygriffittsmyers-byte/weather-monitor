@@ -65,6 +65,9 @@
   .zone-chip span { font-family: monospace; font-size: 11px; font-weight: 700; color: #0E2841; }
   .zone-chip button { background: transparent; border: none; color: #c0392b; font-size: 14px; cursor: pointer; padding: 0; line-height: 1; }
 
+  .ring-label { background: transparent !important; border: none !important; box-shadow: none !important; font-size: 9px !important; font-weight: 700; color: #556070; padding: 0 !important; }
+  .ring-label::before { display: none !important; }
+
   /* Suggestion tray */
   #suggest-tray { background: #f2f5f8; border: 1px solid #c8d0d8; border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; display: none; }
   .sug-chip { display: inline-flex; align-items: center; gap: 5px; background: #ffffff; border: 1px solid #c8d0d8; border-radius: 4px; padding: 3px 8px; margin: 2px; }
@@ -854,6 +857,8 @@ function selectFBO(code) {
   selected = code;
   openAlert = null;
   document.querySelectorAll('.fbo-item').forEach(el => el.classList.toggle('selected', el.dataset.code === code));
+  var _rc = COORDS[code];
+  if (_rc && leafletMap && mapInitialized) { drawRangeRings(_rc[0], _rc[1]); }
   if (!results[code] || results[code].st === 'error') loadFBO(code);
   else renderDetail();
   // Fetch METAR on demand if not yet loaded
@@ -1704,6 +1709,7 @@ let mapMarkers      = [];
 let mapLayer        = 'both';
 let mapInitialized  = false;
 let radarLayer      = null;
+let rangeRingLayers = [];
 let spcPolyLayer    = null;
 let firePolyLayer   = null;
 let wpcPolyLayer    = null;
@@ -1918,6 +1924,33 @@ function drawRadar() {
     { opacity:0.65, zIndex:10, attribution:'Radar: Iowa Mesonet' }
   ).addTo(leafletMap);
 }
+function clearRangeRings() {
+  rangeRingLayers.forEach(function(l) { if (leafletMap) leafletMap.removeLayer(l); });
+  rangeRingLayers = [];
+}
+
+function drawRangeRings(lat, lon) {
+  if (!leafletMap) return;
+  clearRangeRings();
+  var M = 1609.34;
+  var rings = [
+    {miles:5,  color:"#16a34a", o:0.65},
+    {miles:10, color:"#2563eb", o:0.50},
+    {miles:20, color:"#9333ea", o:0.40}
+  ];
+  rings.forEach(function(r) {
+    var circle = L.circle([lat, lon], {
+      radius: r.miles * M, color: r.color, weight: 1.5,
+      fill: false, opacity: r.o, dashArray: "5 5", interactive: false
+    }).addTo(leafletMap);
+    circle.bindTooltip(r.miles + "mi", {
+      permanent: true, direction: "right", offset: [4, 0],
+      className: "ring-label", opacity: 0.75
+    });
+    rangeRingLayers.push(circle);
+  });
+}
+
 function removeRadar() {
   if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
 }
