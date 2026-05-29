@@ -461,7 +461,9 @@ function fmtTime(dt) {
 // ── State ─────────────────────────────────────────────────────────────────────
 const results  = {};   // code -> {st, alerts, error}
 let selected   = null;
-let openAlert  = null;
+let openAlert        = null;
+let dismissedAlerts  = new Set();
+let showAcknowledged = false;
 let activeTab  = 'map';
 let searchVal  = '';
 let onlyActive = false;
@@ -967,33 +969,44 @@ function renderDetail() {
   } else if (r.alerts.length === 0) {
     content += `<div class="clear-box"><div style="font-size:28px;margin-bottom:6px">✓</div><div style="color:#1a6b30;font-weight:700;font-size:13px">No Active NWS Alerts</div><div style="color:#556070;font-size:11px;margin-top:3px">No watches, warnings, or advisories in effect</div></div>`;
   } else {
-    content += `<div style="font-size:10px;color:#556070;margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">${r.alerts.length} active product${r.alerts.length !== 1 ? 's' : ''}</div>`;
-    r.alerts.forEach((a, idx) => {
-      const open = openAlert === a.id;
-      const bg = SBG[a.bucket]; const border = SBORDER[a.bucket]; const tc = STEXT[a.bucket];
-      const hl = a.headline ? a.headline.replace(/^[^—\-]+[—\-]\s*/, '').substring(0, 80) : '';
-      content += `
-        <div class="alert-card" style="background:${bg};border:1px solid ${border}88" id="acard-${idx}">
-          <div class="alert-header" style="background:${bg}" onclick="toggleAlert('${a.id.replace(/'/g,"\\'")}')">
-            <span class="dot" style="background:${SBADGE[a.bucket]}"></span>
-            <div style="flex:1">
-              <span class="alert-event" style="color:${tc}">${a.event}</span>
-              ${hl ? `<span style="font-size:10px;color:${tc};opacity:.7"> — ${hl}</span>` : ''}
-            </div>
-            <span class="alert-toggle" style="color:${tc};opacity:.6">${open ? '▲' : '▼'}</span>
-          </div>
-          ${open ? `
-          <div class="alert-body" style="background:${bg};border-top:1px solid ${border}44">
-            <div class="alert-meta" style="color:rgba(255,255,255,0.95)">
-              <span>Onset: <b>${fmtTime(a.onset)}</b></span>
-              <span>Expires: <b>${fmtTime(a.expires)}</b></span>
-              ${a.distMiles !== null && a.distMiles !== undefined ? `<span>Distance: <b>~${a.distMiles} mi</b></span>` : ''}
-              ${a.sender ? `<span>By: <b>${a.sender}</b></span>` : ''}
-            </div>
-            ${a.instruction ? `<div class="alert-instruction">${a.instruction.substring(0, 600)}${a.instruction.length > 600 ? '…' : ''}</div>` : ''}
-          </div>` : ''}
-        </div>`;
-    });
+    var newAlerts  = r.alerts.filter(function(a){ return !dismissedAlerts.has(a.id); });
+    var ackAlerts  = r.alerts.filter(function(a){ return  dismissedAlerts.has(a.id); });
+    var activeList = showAcknowledged ? ackAlerts : newAlerts;
+    content += '<div style="display:flex;gap:0;margin-bottom:10px;border:1px solid #c8d0d8;border-radius:4px;overflow:hidden">'
+      + '<button onclick="showAcknowledged=false;renderDetail()" style="flex:1;padding:6px;font-size:10px;font-weight:700;border:none;cursor:pointer;background:' + (!showAcknowledged?"#0E2841":"#f0f4f7") + ';color:' + (!showAcknowledged?"#fff":"#556070") + '">New (' + newAlerts.length + ')</button>'
+      + '<button onclick="showAcknowledged=true;renderDetail()" style="flex:1;padding:6px;font-size:10px;font-weight:700;border:none;cursor:pointer;background:' + (showAcknowledged?"#0E2841":"#f0f4f7") + ';color:' + (showAcknowledged?"#fff":"#556070") + '">Acknowledged (' + ackAlerts.length + ')</button>'
+      + '</div>';
+    if (activeList.length === 0) {
+      content += '<div class="clear-box"><div style="font-size:22px;margin-bottom:4px">' + (showAcknowledged?"\uD83D\uDCCB":"\u2713") + '</div>'
+        + '<div style="color:' + (showAcknowledged?"#556070":"#1a6b30") + ';font-weight:700;font-size:13px">' + (showAcknowledged?"No acknowledged alerts":"No Active NWS Alerts") + '</div></div>';
+    } else {
+      activeList.forEach(function(a) {
+        var open   = openAlert === a.id;
+        var bg     = SBG[a.bucket]; var border = SBORDER[a.bucket]; var tc = STEXT[a.bucket];
+        var hl     = a.headline ? a.headline.replace(/^[^\u2014\-]+[\u2014\-]\s*/,"").substring(0,80) : "";
+        var isDism = dismissedAlerts.has(a.id);
+        var sid    = a.id.replace(/'/g,"\\'");
+        content += '<div class="alert-card" style="background:' + bg + ';border:1px solid ' + border + '88;' + (isDism?"opacity:0.7":"") + '">'
+          + '<div class="alert-header" style="background:' + bg + '" onclick="toggleAlert(\''  + sid + '\')">'
+          + '<span class="dot" style="background:' + SBADGE[a.bucket] + '"></span>'
+          + '<div style="flex:1"><span class="alert-event" style="color:' + tc + '">' + a.event + '</span>'
+          + (hl ? '<span style="font-size:10px;color:' + tc + ';opacity:.7"> \u2014 ' + hl + '</span>' : "") + '</div>'
+          + '<button onclick="event.stopPropagation();' + (isDism?"undismissAlert":"dismissAlert") + '(\''  + sid + '\')" '
+          + 'style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:3px;padding:2px 8px;font-size:9px;font-weight:700;cursor:pointer;margin-right:6px;flex-shrink:0">'
+          + (isDism?"Restore":"Dismiss") + '</button>'
+          + '<span class="alert-toggle" style="color:' + tc + ';opacity:.6">' + (open?"\u25b2":"\u25bc") + '</span></div>';
+        if (open) {
+          content += '<div class="alert-body" style="background:' + bg + ';border-top:1px solid ' + border + '44">'
+            + '<div class="alert-meta" style="color:rgba(255,255,255,0.95)">'
+            + '<span>Onset: <b>' + fmtTime(a.onset) + '</b></span>'
+            + '<span>Expires: <b>' + fmtTime(a.expires) + '</b></span>'
+            + (a.distMiles !== null && a.distMiles !== undefined ? '<span>Distance: <b>~' + a.distMiles + ' mi</b></span>' : "")
+            + (a.sender ? '<span>By: <b>' + a.sender + '</b></span>' : "") + '</div>'
+            + (a.instruction ? '<div class="alert-instruction">' + a.instruction.substring(0,600) + (a.instruction.length>600?"\u2026":"") + '</div>' : "") + '</div>';
+        }
+        content += '</div>';
+      });
+    }
   }
   content += '</div>';
 
@@ -3301,6 +3314,7 @@ function decodeTAFFull(code) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadMyLocations();
+loadDismissed();
 updateLocFilterBtn();
 renderSidebar();
 updateHeader();
@@ -3404,6 +3418,21 @@ function checkForNewAlerts() {
 
 
 // ── Location filter ───────────────────────────────────────────────────────────
+
+function loadDismissed() {
+  try {
+    var s = localStorage.getItem("watch_dismissed_alerts");
+    if (s) {
+      var cutoff = Date.now() - 24*60*60*1000;
+      dismissedAlerts = new Set(JSON.parse(s).filter(function(x){return x[1]>cutoff;}).map(function(x){return x[0];}));
+    }
+  } catch(e) {}
+}
+function saveDismissed() {
+  try { localStorage.setItem("watch_dismissed_alerts", JSON.stringify(Array.from(dismissedAlerts).map(function(id){return [id,Date.now()];}))); } catch(e) {}
+}
+function dismissAlert(id) { dismissedAlerts.add(id); saveDismissed(); renderDetail(); }
+function undismissAlert(id) { dismissedAlerts.delete(id); saveDismissed(); renderDetail(); }
 
 function loadMyLocations() {
   try {
