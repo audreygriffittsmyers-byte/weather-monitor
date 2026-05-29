@@ -1944,22 +1944,22 @@ function _drawRingShapes(lat, lon) {
   var M = 1609.34;
   var DEG_PER_MILE = 1 / 69.0; // approx degrees lat per mile
   var rings = [
-    {miles:5,  color:"#16a34a", o:0.65},
-    {miles:10, color:"#2563eb", o:0.50},
-    {miles:20, color:"#9333ea", o:0.40}
+    {miles:5,  color:"#ffffff", o:0.95, label:"#16a34a"},
+    {miles:10, color:"#ffffff", o:0.85, label:"#2563eb"},
+    {miles:20, color:"#ffffff", o:0.70, label:"#9333ea"}
   ];
   rings.forEach(function(r) {
     // Draw the circle
     var circle = L.circle([lat, lon], {
-      radius: r.miles * M, color: r.color, weight: 1.5,
-      fill: false, opacity: r.o, dashArray: "5 5", interactive: false
+      radius: r.miles * M, color: r.color, weight: 3,
+      fill: false, opacity: r.o, dashArray: "6 4", interactive: false
     }).addTo(leafletMap);
     rangeRingLayers.push(circle);
     // Place label at the top (north) of the ring, away from the pin
     var labelLat = lat + (r.miles * DEG_PER_MILE);
     var labelMarker = L.marker([labelLat, lon], {
       icon: L.divIcon({
-        html: '<span style="font-size:9px;font-weight:700;color:' + r.color + ';background:rgba(255,255,255,0.75);padding:1px 4px;border-radius:2px;white-space:nowrap">' + r.miles + 'mi</span>',
+        html: '<span style="font-size:9px;font-weight:700;color:' + (r.label||r.color) + ';background:rgba(255,255,255,0.9);padding:1px 5px;border-radius:2px;white-space:nowrap;border:1px solid ' + (r.label||r.color) + '">' + r.miles + 'mi</span>',
         className: "",
         iconAnchor: [16, 8]
       }),
@@ -3253,8 +3253,12 @@ function decodeTAFFull(code) {
     let timeStr = '';
     if (fcsts[idx]) {
       const f = fcsts[idx];
-      const tf = f.timeFrom ? new Date(f.timeFrom).toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
-      const tt = f.timeTo   ? new Date(f.timeTo).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
+      var _dtf = f.timeFrom ? new Date(f.timeFrom) : null;
+      var _dtt = f.timeTo   ? new Date(f.timeTo)   : null;
+      if (_dtf && _dtf.getFullYear() < 2020) _dtf = null;
+      if (_dtt && _dtt.getFullYear() < 2020) _dtt = null;
+      var tf = _dtf ? _dtf.toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
+      var tt = _dtt ? _dtt.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', timeZoneName:'short' }) : '';
       timeStr = tf + (tt ? ' \u2014 ' + tt : '');
     } else if (p.raw_token && p.raw_token.startsWith('FM')) {
       timeStr = parseFMTime(p.raw_token);
