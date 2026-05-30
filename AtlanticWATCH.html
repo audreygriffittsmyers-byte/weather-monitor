@@ -275,6 +275,11 @@
           <!-- Layer toggles -->
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="radar-toggle" onchange="toggleRadar(this.checked)" checked style="cursor:pointer"/> Radar</label>
+            <div style="display:flex;gap:1px;background:#E8E8E8;border-radius:3px;padding:2px" title="Loop speed">
+              <button class="radar-speed-btn" data-speed="0.5" onclick="setRadarSpeed(0.5)" style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">0.5x</button>
+              <button class="radar-speed-btn" data-speed="1"   onclick="setRadarSpeed(1)"   style="background:#0E2841;color:#fff;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">1x</button>
+              <button class="radar-speed-btn" data-speed="2"   onclick="setRadarSpeed(2)"   style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">2x</button>
+            </div>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="spc-poly-toggle" onchange="toggleSPCPolygons(this.checked)" checked style="cursor:pointer"/> SPC Conv</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="fire-poly-toggle" onchange="toggleFirePolygons(this.checked)" checked style="cursor:pointer"/> Fire Wx</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="wpc-poly-toggle" onchange="toggleWPCPolygons(this.checked)" checked style="cursor:pointer"/> WPC Rain</label>
@@ -1722,6 +1727,10 @@ let mapMarkers      = [];
 let mapLayer        = 'both';
 let mapInitialized  = false;
 let radarLayer      = null;
+let radarSpeed      = 1;
+let radarLoopTimer  = null;
+let radarFrameIdx   = 0;
+const RADAR_FRAME_COUNT = 6;
 let rangeRingLayers = [];
 let spcPolyLayer    = null;
 let firePolyLayer   = null;
@@ -1930,12 +1939,48 @@ async function drawNWSPolygons() {
 }
 
 // ── Radar ─────────────────────────────────────────────────────────────────────
-function drawRadar() {
-  if (radarLayer) return;
+function _radarTs() {
+  var now = Math.floor(Date.now()/300000)*300000;
+  var frames = [];
+  for(var i=0;i<RADAR_FRAME_COUNT;i++) frames.push(now-(RADAR_FRAME_COUNT-1-i)*300000);
+  return frames;
+}
+function _showRadarFrame(idx) {
+  if (!leafletMap) return;
+  if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
+  var t = _radarTs()[idx];
   radarLayer = L.tileLayer(
-    `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?t=${Date.now()}`,
-    { opacity:0.65, zIndex:10, attribution:'Radar: Iowa Mesonet' }
+    'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?t='+t,
+    { opacity: idx===RADAR_FRAME_COUNT-1 ? 0.65 : 0.45, zIndex:10, attribution:'Radar: Iowa Mesonet' }
   ).addTo(leafletMap);
+}
+function _startRadarLoop() {
+  if (radarLoopTimer) return;
+  var ms = {0.5:1000,1:500,2:250}[radarSpeed] || 500;
+  radarLoopTimer = setInterval(function() {
+    if (!showRadar || !leafletMap) return;
+    radarFrameIdx = (radarFrameIdx+1) % RADAR_FRAME_COUNT;
+    _showRadarFrame(radarFrameIdx);
+  }, ms);
+}
+function _stopRadarLoop() {
+  if (radarLoopTimer) { clearInterval(radarLoopTimer); radarLoopTimer = null; }
+  if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
+}
+function drawRadar() {
+  _stopRadarLoop();
+  radarFrameIdx = RADAR_FRAME_COUNT-1;
+  _showRadarFrame(radarFrameIdx);
+  _startRadarLoop();
+}
+function setRadarSpeed(s) {
+  radarSpeed = s;
+  document.querySelectorAll('.radar-speed-btn').forEach(function(b) {
+    var active = parseFloat(b.dataset.speed) === s;
+    b.style.background = active ? '#0E2841' : 'transparent';
+    b.style.color = active ? '#fff' : '#556070';
+  });
+  if (showRadar) { _stopRadarLoop(); _startRadarLoop(); }
 }
 function clearRangeRings() {
   rangeRingLayers.forEach(function(l) { if (leafletMap) leafletMap.removeLayer(l); });
@@ -1983,12 +2028,10 @@ function _drawRingShapes(lat, lon) {
   });
 }
 
-function removeRadar() {
-  if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
-}
+function removeRadar() { _stopRadarLoop(); }
 function toggleRadar(on) {
   showRadar = on;
-  on ? (drawRadar(), startRadarRefresh()) : removeRadar();
+  on ? drawRadar() : removeRadar();
 }
 function toggleSPCPolygons(on)  { showSPCPolys  = on; drawSPCPolygons(); }
 function toggleFirePolygons(on) { showFirePolys = on; drawFirePolygons(); }
@@ -2327,11 +2370,13 @@ function startAutoRefresh() {
 
 function startRadarRefresh() {
   if (radarRefreshInterval) return;
-  radarRefreshInterval = setInterval(() => {
+  radarRefreshInterval = setInterval(function() {
     if (!showRadar || !leafletMap) return;
-    if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
-    drawRadar();
-  }, 2 * 60 * 1000);
+    _stopRadarLoop();
+    radarFrameIdx = RADAR_FRAME_COUNT-1;
+    _showRadarFrame(radarFrameIdx);
+    _startRadarLoop();
+  }, 2*60*1000);
 }
 
 // ── Smart map mode detection ──────────────────────────────────────────────────
