@@ -1,4 +1,4 @@
-// Atlantic Aviation WATCH — Cloudflare Worker
+// Atlantic Aviation WATCH — Cloudflare Worker v2
 // Deploy at: https://lucky-flower-26db.audreygriffitts-myers.workers.dev
 
 const CORS = {
