@@ -1204,17 +1204,36 @@ function renderMyLocDetail() {
     panel.innerHTML = '<div class="empty-state"><div style="font-size:36px">📍</div><div style="font-size:13px;color:#556070">GPS not active. Tap the 🎯 button to enable.</div></div>';
     return;
   }
+  // Resolve nearest ICAO via NWS points API -- returns closest obs station
+  // regardless of whether it is an Atlantic FBO
   var nearest = _getNearbyFBOs(userLat, userLon, 1)[0];
-  var icao = nearest ? toICAO(nearest.code) : null;
+  var icao = nearest ? toICAO(nearest.code) : null; // fallback
+  // Try NWS points API for true nearest station
+  fetch("https://api.weather.gov/points/" + userLat.toFixed(4) + "," + userLon.toFixed(4))
+    .then(function(r){ return r.json(); })
+    .then(function(pt){
+      var obsUrl = pt.properties && pt.properties.observationStations;
+      if (!obsUrl) return _renderMyLocWithICAO(icao, nearest);
+      return fetch(obsUrl).then(function(r){ return r.json(); }).then(function(stations){
+        var features = stations.features || [];
+        var nwsICAO = features.length ? features[0].properties.stationIdentifier : null;
+        _renderMyLocWithICAO(nwsICAO || icao, nearest, nwsICAO);
+      });
+    })
+    .catch(function(){ _renderMyLocWithICAO(icao, nearest); });
+}
+
+function _renderMyLocWithICAO(icao, nearest, nwsStation) {
   var coordStr = userLat.toFixed(4) + "°N, " + Math.abs(userLon).toFixed(4) + "°W";
   var nwsLink = "https://forecast.weather.gov/MapClick.php?textField1=" + userLat.toFixed(4) + "&textField2=" + userLon.toFixed(4);
+  var stationLabel = nwsStation ? nwsStation + " (nearest station)" : (icao || "unknown");
 
   panel.innerHTML = '<div style="padding:18px">'
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">'
     + "<div>"
     + '<div style="font-size:20px;font-weight:700;color:#0E2841">📍 My Location</div>'
     + '<div style="font-size:12px;color:#556070;margin-top:2px">' + coordStr + "</div>"
-    + (icao ? '<div style="font-size:10px;color:#8a9aaa;margin-top:3px">Nearest station: <b>' + icao + "</b> (" + (nearest ? nearest.dist : "?") + ' mi) &nbsp;·&nbsp; <a href="' + nwsLink + '" target="_blank" style="font-size:10px;color:#0E2841">NWS forecast ↗</a></div>' : "")
+    + (icao ? '<div style="font-size:10px;color:#8a9aaa;margin-top:3px">Nearest station: <b>' + stationLabel + '</b> &nbsp;·&nbsp; <a href="' + nwsLink + '" target="_blank" style="font-size:10px;color:#0E2841">NWS forecast ↗</a></div>' : "")
     + "</div>"
     + '<button onclick="renderMyLocDetail()" style="background:#E8E8E8;border:1px solid #c8d0d8;color:#0E2841;border-radius:4px;padding:4px 12px;font-size:10px;font-weight:700">Refresh</button>'
     + "</div>"
