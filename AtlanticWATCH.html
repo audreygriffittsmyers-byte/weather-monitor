@@ -279,9 +279,9 @@
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="radar-toggle" onchange="toggleRadar(this.checked)" checked style="cursor:pointer"/> Radar</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="sat-toggle" onchange="toggleSatellite(this.checked)" style="cursor:pointer"/> Satellite</label>
             <div id="sat-product-btns" style="display:none;gap:1px;background:#E8E8E8;border-radius:3px;padding:2px">
-              <button class="sat-product-btn" data-product="goes_east_vis"            onclick="setSatProduct('goes_east_vis')"            style="background:#0E2841;color:#fff;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">VIS</button>
-              <button class="sat-product-btn" data-product="goes_east_longwave_ir"    onclick="setSatProduct('goes_east_longwave_ir')"    style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">IR</button>
-              <button class="sat-product-btn" data-product="goes_east_water_vapor"    onclick="setSatProduct('goes_east_water_vapor')"    style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">WV</button>
+              <button class="sat-product-btn" data-product="global_visible_imagery_mosaic"    onclick="setSatProduct('global_visible_imagery_mosaic')"            style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">VIS</button>
+              <button class="sat-product-btn" data-product="global_longwave_imagery_mosaic"   onclick="setSatProduct('global_longwave_imagery_mosaic')"    style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">IR</button>
+              <button class="sat-product-btn" data-product="global_water_vapor_imagery_mosaic" onclick="setSatProduct('global_water_vapor_imagery_mosaic')"    style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">WV</button>
             </div>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="spc-poly-toggle" onchange="toggleSPCPolygons(this.checked)" checked style="cursor:pointer"/> SPC Conv</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="fire-poly-toggle" onchange="toggleFirePolygons(this.checked)" checked style="cursor:pointer"/> Fire Wx</label>
@@ -1777,7 +1777,7 @@ let showNWSPolys    = true;
 let showRadar       = true;
 let showSatellite   = false;
 let satLayer        = null;
-let satProduct      = "goes_east_vis"; // goes_east_vis | goes_east_longwave_ir | goes_east_water_vapor
+let satProduct      = "global_longwave_imagery_mosaic"; // global layer names from nowCOAST WMS
 
 // Cached polygon data
 let spcPolygons  = null;
