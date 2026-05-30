@@ -923,6 +923,7 @@ function renderDetail() {
   // METAR conditions block
   const obs = obsData[selected];
   if (obs) content += renderDeiceCard(obs);
+  if (obs) content += renderStressCard(obs);
   content += renderGSPCard(selected);
   if (obs) {
     const fcBg = flightCatColor(obs.flightCat);
@@ -3592,6 +3593,67 @@ function getDeiceStatus(obs) {
       msg:'Temp ' + t.toFixed(1) + '\u00b0C -- verify cold-start procedures' };
   }
   return null;
+}
+
+
+// ── Ramp Worker Stress Index ──────────────────────────────────────────────────
+function getRampStressStatus(obs) {
+  if (!obs) return null;
+  var temp = obs.tempF;
+  var hi   = obs.heatIndex;   // already calculated
+  var wc   = obs.windChill;   // already calculated
+  if (temp == null) return null;
+
+  // Heat stress -- use heat index if available, else temp
+  var effectiveHeat = (hi != null && hi > temp) ? hi : temp;
+  if (effectiveHeat >= 103) {
+    return { level:'critical', color:'#dc2626',
+      label:'HEAT STRESS \u2014 DANGER',
+      msg:'Heat index ' + effectiveHeat + '\u00b0F. Mandatory rest breaks, hydration required. Limit continuous outdoor exposure.' };
+  }
+  if (effectiveHeat >= 95) {
+    return { level:'high', color:'#d97706',
+      label:'HEAT ADVISORY',
+      msg:'Heat index ' + effectiveHeat + '\u00b0F. Frequent rest and hydration. Watch for heat exhaustion.' };
+  }
+  if (effectiveHeat >= 85) {
+    return { level:'caution', color:'#ca8a04',
+      label:'HEAT CAUTION',
+      msg:'Heat index ' + effectiveHeat + '\u00b0F. Stay hydrated. Monitor crew for signs of heat illness.' };
+  }
+
+  // Cold stress -- use wind chill if available, else temp
+  var effectiveCold = (wc != null && wc < temp) ? wc : temp;
+  if (effectiveCold <= 0) {
+    return { level:'critical', color:'#7c3aed',
+      label:'EXTREME COLD \u2014 DANGER',
+      msg:'Wind chill ' + effectiveCold + '\u00b0F. Frostbite risk within minutes. Limit outdoor exposure, require insulated PPE.' };
+  }
+  if (effectiveCold <= 15) {
+    return { level:'high', color:'#2563eb',
+      label:'COLD STRESS \u2014 HIGH',
+      msg:'Wind chill ' + effectiveCold + '\u00b0F. Frostbite possible. Require layered PPE, rotate crews frequently.' };
+  }
+  if (effectiveCold <= 28) {
+    return { level:'moderate', color:'#0891b2',
+      label:'COLD ADVISORY',
+      msg:'Wind chill ' + effectiveCold + '\u00b0F. Monitor crew comfort. Gloves, hat, and warm layers recommended.' };
+  }
+
+  return null;
+}
+
+function renderStressCard(obs) {
+  var s = getRampStressStatus(obs);
+  if (!s) return '';
+  var icons = { critical:'\u26a0\ufe0f', high:'\ud83d\udfe0', caution:'\ud83d\udfe1', moderate:'\ud83d\udd35' };
+  var icon = s.level === 'critical' ? '\u26a0' : (s.level === 'high' ? '\ud83d\udfe0' : (s.level === 'caution' ? '\u2600' : '\ud83d\udd35'));
+  return '<div style="background:#f8f9fa;border:1px solid ' + s.color + '44;border-left:4px solid ' + s.color + ';'
+    + 'border-radius:4px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:10px">'
+    + '<span style="font-size:18px">' + icon + '</span>'
+    + '<div><div style="font-size:10px;font-weight:700;color:' + s.color + ';text-transform:uppercase;letter-spacing:.06em">'
+    + s.label + '</div>'
+    + '<div style="font-size:10px;color:#556070;margin-top:1px">' + s.msg + '</div></div></div>';
 }
 
 function renderDeiceCard(obs) {
