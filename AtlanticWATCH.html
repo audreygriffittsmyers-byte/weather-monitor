@@ -991,6 +991,8 @@ function renderDetail() {
   // NAS status card
   var nasCard = renderNASCard(selected);
   if (nasCard) content += nasCard;
+  var tfrCard = renderTFRCard(selected);
+  if (tfrCard) content += tfrCard;
   var notamCard = renderNOTAMCard(selected);
   if (notamCard) content += notamCard;
   else if (notamData[selected] === undefined) {
@@ -2422,6 +2424,8 @@ function startAutoRefresh() {
   setInterval(() => scanAllObs(), 10 * 60 * 1000);
   // NAS status: every 5 minutes
   setInterval(() => fetchNAS(), 5 * 60 * 1000);
+  // TFR list: every 10 minutes
+  setInterval(() => fetchTFR(), 10 * 60 * 1000);
 
   // SPC polygon cache: clear every 30 minutes
   setInterval(() => {
@@ -2577,7 +2581,8 @@ function renderTAFStrip(code) {
 
 // ── 7-Day Forecast ────────────────────────────────────────────────────────────
 const forecastData  = {}; // code -> 7-day periods array
-let   nasPrograms   = []; // [{type,arpt,reason,avg,max,end}]
+let   nasPrograms   = [];
+let   tfrList       = []; // [{notam_id,type,facility,state,description,creation_date}] // [{type,arpt,reason,avg,max,end}]
 const hourlyData    = {}; // code -> hourly periods array
 let   hourlyWindow  = 12; // hours to show: 4/8/12/24/48
 
@@ -3551,6 +3556,55 @@ function setSatProduct(p) {
   if (showSatellite) drawSatellite();
 }
 
+
+// ── FAA TFR List (direct from FAA) ───────────────────────────────────────────
+async function fetchTFR() {
+  try {
+    const r = await fetch(PROXY + '?type=tfr');
+    if (!r.ok) return;
+    const data = await r.json();
+    if (Array.isArray(data)) tfrList = data;
+    if (selected) renderDetail();
+  } catch(e) {}
+}
+
+function getTFRsForCode(code) {
+  if (!tfrList.length) return [];
+  var fbo = COVERED.find(function(f){ return f.code === code; });
+  if (!fbo) return [];
+  var state = (fbo.state || '').toUpperCase().trim();
+  return tfrList.filter(function(t) {
+    return t.state && t.state.toUpperCase().trim() === state;
+  }).slice(0, 5);
+}
+
+function renderTFRCard(code) {
+  var tfrs = getTFRsForCode(code);
+  if (!tfrs.length) return '';
+  var TYPE_COLOR = {
+    'VIP':'#7c3aed', 'SECURITY':'#7c3aed',
+    'HAZARDS':'#d97706', 'DISASTER':'#d97706',
+    'FIRE':'#ea580c', 'STADIUM':'#2563eb',
+    'MILITARY':'#374151', 'SPECIAL':'#0891b2'
+  };
+  var html = '<div style="margin-bottom:12px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Active TFRs in State (' + tfrs.length + ')</div>';
+  tfrs.forEach(function(t) {
+    var typeKey = (t.type||'').toUpperCase().split(' ')[0];
+    var color = TYPE_COLOR[typeKey] || '#556070';
+    html += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-left:3px solid ' + color + ';border-radius:4px;padding:6px 10px;margin-bottom:5px">';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">';
+    if (t.type) html += '<span style="background:' + color + ';color:#fff;font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px">' + t.type + '</span>';
+    if (t.notam_id) html += '<span style="font-size:9px;font-weight:700;color:#0E2841">NOTAM ' + t.notam_id + '</span>';
+    if (t.creation_date) html += '<span style="font-size:9px;color:#8a9aaa;margin-left:auto">' + t.creation_date + '</span>';
+    html += '</div>';
+    if (t.description) html += '<div style="font-size:10px;color:#556070;line-height:1.4">' + t.description.substring(0,150) + (t.description.length>150?'...':'') + '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
 // ── GPS User Location ─────────────────────────────────────────────────────────
 let userLat       = null;
 let userLon       = null;
@@ -3977,6 +4031,7 @@ loadMyLocations();
 loadDismissed();
 updateLocFilterBtn();
 fetchNAS();
+fetchTFR();
 renderSidebar();
 updateHeader();
 updateActiveCount();
