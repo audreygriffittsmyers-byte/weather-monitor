@@ -3546,7 +3546,15 @@ function _doPrint(codes, notes) {
       +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Conditions</th></tr>';
     withObs.forEach(function(code){
       var obs=obsData[code]; var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
-      var fc=obs.flightCat||'--'; var fcColor=FC_COLOR[fc]||'#8a9aaa';
+      var fc=obs.flightCat||(function(){
+        var v=parseFloat(obs.visib); var cld=obs.clouds&&obs.clouds.length?obs.clouds[0]:null;
+        var cbase=cld&&cld.base!=null?cld.base:9999;
+        if(v<1||cbase<200) return 'LIFR';
+        if(v<3||cbase<500) return 'IFR';
+        if(v<5||cbase<1000) return 'MVFR';
+        return 'VFR';
+      })()||'--';
+      var fcColor=FC_COLOR[fc]||'#8a9aaa';
       var cond=[];
       if(obs.windKts!=null) cond.push(windDirLabel(obs.windDir)+' '+obs.windKts+'kt'+(obs.windGustKts?' G'+obs.windGustKts:''));
       if(obs.visib!=null) cond.push(obs.visib+'SM');
@@ -3612,7 +3620,7 @@ function _doPrint(codes, notes) {
     var spc1=spcData&&spcData[1]?spcData[1][code]:null;
     if(spc1&&spc1.st==='ok'&&spc1.label){
       var spcColors={MRGL:'#196B24',SLGT:'#FFC000',ENH:'#E97132',MDT:'#EA3232',HIGH:'#EA3232'};
-      var spcLbls={MRGL:'Marginal',SLGT:'Slight',ENH:'Enhanced',MDT:'Moderate',HIGH:'High'};
+      var spcLbls={MRGL:'Marginal',SLGT:'Slight',ENH:'Enhanced',MDT:'Moderate',HIGH:'High',TSTM:'General Thunderstorm Risk'};
       var sc=spcColors[spc1.label]||'#556070';
       html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">SPC Day 1</span> '
         +'<span style="background:'+sc+';color:#fff;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700">'+(spcLbls[spc1.label]||spc1.label)+'</span>'
@@ -3634,15 +3642,24 @@ function _doPrint(codes, notes) {
     if(fcast&&fcast.length){
       html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">7-Day Forecast</span>'
         +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">';
-      fcast.slice(0,7).forEach(function(p){
-        if(!p) return;
-        var pname=(p.name||'').substring(0,3);
-        var ptemp=p.temperature!=null?p.temperature+'°':'--';
-        var pshort=(p.shortForecast||'').substring(0,18);
-        html+='<div style="font-size:9px;text-align:center;padding:3px 5px;border:1px solid #e8e8e8;border-radius:3px;min-width:44px">'
+      // Pair day/night periods
+      var fcastPairs=[];
+      for(var pi=0;pi<fcast.length;pi+=2){
+        var day=fcast[pi], night=fcast[pi+1];
+        if(day) fcastPairs.push({day:day,night:night});
+      }
+      fcastPairs.slice(0,7).forEach(function(pair){
+        var p=pair.day, n=pair.night;
+        var pname=(p.name||'').replace(/\s*(Night|Overnight)$/i,'').substring(0,3);
+        var hi=p.temperature!=null?p.temperature+'°':'--';
+        var lo=n&&n.temperature!=null?n.temperature+'°':'--';
+        var pshort=(p.shortForecast||'').substring(0,16);
+        var hasHazard=/thunder|severe|tornado|warning|watch/i.test(p.shortForecast||'');
+        var border=hasHazard?'#ea580c':'#e8e8e8';
+        html+='<div style="font-size:9px;text-align:center;padding:3px 5px;border:1px solid '+border+';border-radius:3px;min-width:48px">'
           +'<div style="font-weight:700;color:#0E2841">'+pname+'</div>'
-          +'<div>'+ptemp+'</div>'
-          +'<div style="color:#556070">'+pshort+'</div></div>';
+          +'<div style="color:#1a2a3a">'+hi+'<span style="color:#8a9aaa">/'+lo+'</span></div>'
+          +'<div style="color:#556070;font-size:8px">'+pshort+'</div></div>';
       });
       html+='</div></div>';
     }
@@ -4340,8 +4357,8 @@ function decodeMetarFull(obs) {
   html += '</table>';
   // Raw METAR collapsible
   if (obs.rawOb) {
-    html += '<details style="margin-top:6px">'
-      + '<summary style="font-size:9px;color:#8a9aaa;cursor:pointer">Raw METAR</summary>'
+    html += '<div style="margin-top:6px">'
+      + '<div style="font-size:9px;color:#8a9aaa;margin-bottom:2px">Raw METAR</div>'
       + '<div style="font-size:9px;color:#8a9aaa;font-family:monospace;margin-top:4px;word-break:break-all">' + obs.rawOb + '</div>'
       + '</details>';
   }
@@ -4482,10 +4499,10 @@ function decodeTAFFull(code) {
   });
 
   if (raw) {
-    html += '<details style="margin-top:4px">'
-      + '<summary style="font-size:9px;color:#8a9aaa;cursor:pointer">Raw TAF</summary>'
+    html += '<div style="margin-top:4px">'
+      + '<div style="font-size:9px;color:#8a9aaa;margin-bottom:2px">Raw TAF</div>'
       + '<div style="font-size:9px;color:#8a9aaa;font-family:monospace;margin-top:4px;word-break:break-all">' + raw + '</div>'
-      + '</details>';
+      + '</div>';
   }
   html += '</div>';
   return html;
