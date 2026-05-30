@@ -3464,9 +3464,11 @@ function drawSatellite() {
       tile.style.opacity = '0.75';
       var url = PROXY + '?type=satellite&layer=' + satProduct
         + '&z=' + coords.z + '&x=' + coords.x + '&y=' + coords.y;
+      tile.crossOrigin = 'anonymous';
       tile.onload = function() { done(null, tile); };
-      tile.onerror = function(e) { done(e, tile); };
+      tile.onerror = function(e) { console.warn('Sat tile error:', url, e); done(e, tile); };
       tile.src = url;
+      console.log('Sat tile requested:', url);
       return tile;
     }
   });
