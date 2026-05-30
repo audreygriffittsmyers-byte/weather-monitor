@@ -918,6 +918,7 @@ function renderDetail() {
 
   // METAR conditions block
   const obs = obsData[selected];
+  if (obs) content += renderDeiceCard(obs);
   if (obs) {
     const fcBg = flightCatColor(obs.flightCat);
     content += `<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">
@@ -2348,7 +2349,8 @@ function _parseMetarObj(m, icao) {
   const gustKts = m.wgst !== null && m.wgst !== undefined ? Math.round(m.wgst) : null;
   return {
     tempF:        cToF(m.temp),
-    tempC:        m.temp !== null ? Math.round(m.temp * 10) / 10 : null,
+    tempC:        m.temp !== null && m.temp !== undefined ? Math.round(m.temp * 10) / 10 : null,
+    dewpointC:    m.dewp !== null && m.dewp !== undefined ? Math.round(m.dewp * 10) / 10 : null,
     dewpointF:    cToF(m.dewp),
     windKts,
     windMph:      ktsToMph(windKts),
@@ -3549,6 +3551,48 @@ function setSatProduct(p) {
     b.style.color = active ? '#fff' : '#556070';
   });
   if (showSatellite) drawSatellite();
+}
+
+
+// ── De-ice / Frost Conditions ─────────────────────────────────────────────
+function getDeiceStatus(obs) {
+  if (!obs || obs.tempC === null || obs.tempC === undefined) return null;
+  var t = obs.tempC;
+  var cond = (obs.condition || '').toUpperCase();
+  var hasPrecip = /RA|SN|DZ|SH|GR|PL|UP/.test(cond);
+  if (/FZRA|FZDZ|FZFG/.test(cond)) {
+    return { level:'critical', label:'FREEZING PRECIP', color:'#7c3aed',
+      msg:'Freezing precipitation active -- immediate de-ice required' };
+  }
+  if (hasPrecip && t <= 2) {
+    return { level:'high', label:'DE-ICE REQUIRED', color:'#dc2626',
+      msg:'Precipitation with temp ' + t.toFixed(1) + '\u00b0C -- de-icing required' };
+  }
+  if (hasPrecip && t <= 5) {
+    return { level:'medium', label:'DE-ICE LIKELY', color:'#d97706',
+      msg:'Precipitation with temp ' + t.toFixed(1) + '\u00b0C -- de-icing likely needed' };
+  }
+  if (t <= 3 && obs.dewpointC !== null && obs.dewpointC !== undefined && (t - obs.dewpointC) <= 2) {
+    return { level:'medium', label:'FROST RISK', color:'#d97706',
+      msg:'Temp ' + t.toFixed(1) + '\u00b0C, low dew point spread -- frost possible' };
+  }
+  if (t <= 0) {
+    return { level:'low', label:'COLD OPS', color:'#2563eb',
+      msg:'Temp ' + t.toFixed(1) + '\u00b0C -- verify cold-start procedures' };
+  }
+  return null;
+}
+
+function renderDeiceCard(obs) {
+  var s = getDeiceStatus(obs);
+  if (!s) return '';
+  var icons = { critical:'\u26A0', high:'\u2744', medium:'\u2603', low:'\u2745' };
+  return '<div style="background:#f8f9fa;border:1px solid ' + s.color + '44;border-left:4px solid ' + s.color + ';'
+    + 'border-radius:4px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:10px">'
+    + '<span style="font-size:18px">' + (icons[s.level]||'o') + '</span>'
+    + '<div><div style="font-size:10px;font-weight:700;color:' + s.color + ';text-transform:uppercase;letter-spacing:.06em">'
+    + s.label + '</div>'
+    + '<div style="font-size:10px;color:#556070;margin-top:1px">' + s.msg + '</div></div></div>';
 }
 
 // ── GPS User Location ─────────────────────────────────────────────────────────
