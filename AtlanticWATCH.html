@@ -3084,13 +3084,32 @@ function renderOpsGrid() {
     + '<div style="background:#fff;border:1px solid #e8e8e8;border-radius:6px;overflow:hidden">'
     + '<div style="display:grid;grid-template-columns:90px repeat(7,1fr);background:#f8f9fa;border-bottom:1px solid #e8e8e8">'
     + '<div style="padding:6px 8px;font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">Location</div>'
-    + ['Now','Sat','Sun','Mon','Tue','Wed','Thu'].map(function(d) {
-        return '<div style="padding:6px 4px;font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;text-align:center">' + d + '</div>';
-      }).join('')
+    + (function() {
+        var days = ['Now'];
+        var DN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        var d = new Date();
+        for (var i = 1; i < 7; i++) {
+          var nd = new Date(d); nd.setDate(d.getDate() + i);
+          days.push(DN[nd.getDay()]);
+        }
+        return days.map(function(dn) {
+          return '<div style="padding:6px 4px;font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;text-align:center">' + dn + '</div>';
+        }).join('');
+      })()
     + '</div>'
     + rows
     + '</div>'
     + (needsFetch ? '<div id="grid-loading" style="font-size:10px;color:#8a9aaa;margin-top:8px;text-align:center">Loading forecast data...</div>' : '');
+
+  // Ensure obs data is loaded for visible FBOs
+  fbos.forEach(function(f) {
+    if (!obsData[f.code]) {
+      fetchObs(f.code).then(function() {
+        var rowEl = document.getElementById('grid-row-' + f.code);
+        if (rowEl) rowEl.outerHTML = _renderGridRow(f);
+      });
+    }
+  });
 
   // Fetch missing 7-day data with stagger
   if (needsFetch && !gridFetching) {
@@ -3102,7 +3121,8 @@ function renderOpsGrid() {
         fetch7Day(f.code).then(function() {
           // Re-render the single row
           var rowEl = document.getElementById('grid-row-' + f.code);
-          if (rowEl) rowEl.outerHTML = _renderGridRow(f);
+          var fboObj = COVERED.find(function(x){ return x.code === f.code; }) || f;
+          if (rowEl) rowEl.outerHTML = _renderGridRow(fboObj);
           // Remove loading indicator when done
           var remaining = document.querySelectorAll('[id^="grid-row-"]');
           var loading = document.getElementById('grid-loading');
@@ -3168,8 +3188,12 @@ function _renderGridRow(fbo) {
   var dayCells = '';
   var days = [];
   if (periods && periods.length) {
-    for (var i = 0; i < periods.length; i += 2) {
-      if (periods[i] && periods[i].isDaytime !== false) days.push(periods[i]);
+    // Filter to daytime periods only
+    days = periods.filter(function(p) { return p.isDaytime === true; }).slice(0, 7);
+    // Fallback: if no isDaytime flags, just take every other period
+    if (!days.length) {
+      for (var i = 0; i < periods.length; i += 2) days.push(periods[i]);
+      days = days.slice(0, 7);
     }
   }
   var DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
