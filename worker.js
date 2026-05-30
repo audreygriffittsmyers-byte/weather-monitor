@@ -45,7 +45,7 @@ export default {
       const layer = url.searchParams.get('layer') || '2';
       try {
         const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${layer}/query?where=1%3D1&outFields=DN&returnGeometry=true&outSR=4326&f=geojson`,
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } });
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
@@ -55,7 +55,7 @@ export default {
       const LAYER = { '1':1, '2':9, '3':17 };
       try {
         const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${LAYER[day]||1}/query?where=1%3D1&outFields=LABEL,LABEL2,DN&returnGeometry=true&outSR=4326&f=geojson`,
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } });
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
@@ -89,7 +89,7 @@ export default {
       const LAYER = { '1':1, '2':4 };
       try {
         const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/${LAYER[day]||1}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson`,
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } });
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
@@ -97,7 +97,7 @@ export default {
     if (type === 'wpcpoly') {
       try {
         const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_precip_hazards/MapServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } });
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
@@ -105,7 +105,7 @@ export default {
     if (type === 'winterpoly') {
       try {
         const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_precip_hazards/MapServer/1/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } });
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
@@ -170,7 +170,7 @@ export default {
     if (type === 'wildfirepoly') {
       try {
         const res = await fetch('https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query?where=PolygonDateTime+>=+CURRENT_TIMESTAMP+-+7&outFields=attr_IncidentName,attr_GISAcres,attr_FireBehaviorGeneral&returnGeometry=true&outSR=4326&f=geojson&resultRecordCount=500',
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } });
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
