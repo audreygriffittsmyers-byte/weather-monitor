@@ -1156,10 +1156,6 @@ function renderDetail() {
     });
   }
 
-  // Fetch PIREPs on demand
-  if (pirepData[selected] === undefined) {
-    fetchPIREP(selected).then(function() { if (selected === selected) renderDetail(); });
-  }
 }
 
 
