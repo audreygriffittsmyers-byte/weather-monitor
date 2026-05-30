@@ -1652,171 +1652,64 @@ function _generateSummaryInner(content, ts, status) {
 
 
 // ── AI Plain-Language Briefing ────────────────────────────────────────────────
-async // ── Rule-Based Operational Briefing ──────────────────────────────────
-function generateOperationalBriefing() {
-  var now = new Date();
-  var utcStr = now.toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"UTC",hour12:false})+"Z";
-  var allCodes = COVERED.map(function(f){return f.code;});
-  var lifr=[],ifr=[],mvfr=[],vfr=[],alerted=[],hasNAS=[],hasSPC=[],heatItems=[],coldItems=[];
+async function generateAIBriefing() {
+  const btn = document.getElementById('ai-brief-btn');
+  const box = document.getElementById('ai-briefing-box');
+  if (!btn || !box) return;
 
-  allCodes.forEach(function(code) {
-    var obs=obsData[code]; var r=results[code];
-    var spc=spcData&&spcData[1]?spcData[1][code]:null;
-    var nas=getNASForCode(code);
-    if(obs) {
-      if(obs.flightCat==="LIFR") lifr.push(code);
-      else if(obs.flightCat==="IFR")  ifr.push(code);
-      else if(obs.flightCat==="MVFR") mvfr.push(code);
-      else if(obs.flightCat==="VFR")  vfr.push(code);
-      var ss=getRampStressStatus(obs);
-      if(ss&&(ss.level==="critical"||ss.level==="high")) {
-        if(ss.label.indexOf("HEAT")!==-1) heatItems.push({code:code,label:ss.label});
-        if(ss.label.indexOf("COLD")!==-1) coldItems.push({code:code,label:ss.label});
-      }
-    }
-    if(r&&r.alerts) {
-      var active=r.alerts.filter(function(a){return !dismissedAlerts.has(a.id);});
-      if(active.length) alerted.push({code:code,alerts:active});
-    }
-    if(nas&&nas.length) hasNAS.push({code:code,programs:nas});
-    if(spc&&spc.st==="ok"&&spc.label&&spc.label!=="TSTM") {
-      var lvl={MRGL:1,SLGT:2,ENH:3,MDT:4,HIGH:5}[spc.label]||0;
-      if(lvl>=2) hasSPC.push({code:code,label:spc.label,torn:spc.torn,hail:spc.hail,wind:spc.wind});
-    }
-  });
+  const rawText = decodeURIComponent(box.dataset.text || '');
+  const zones   = decodeURIComponent(box.dataset.zones || '');
+  if (!rawText) { box.innerHTML = 'No SPC text available.'; box.style.display = 'block'; return; }
 
-  function descLoc(code) {
-    var obs=obsData[code];
-    var fbo=COVERED.find(function(f){return f.code===code;})||{city:"",state:""};
-    if(!obs) return code+" ("+fbo.city+")";
-    var parts=[]; var fc=obs.flightCat||""; if(fc) parts.push(fc);
-    var sky="";
-    if(obs.clouds&&obs.clouds.length) sky=decodeSkyCondition(obs.clouds);
-    else if(obs.skyCondition) sky=obs.skyCondition;
-    if(sky&&sky!=="Sky clear") parts.push(sky.toLowerCase());
-    if(obs.visib!=null){var v=parseFloat(obs.visib);if(v<10) parts.push(obs.visib+" mile"+(v===1?"":"s")+" visibility");}
-    if(obs.condition) parts.push(obs.condition.toLowerCase());
-    if(obs.windKts!=null){
-      var wstr=windDirLabel(obs.windDir)+" winds at "+obs.windKts+" knots";
-      if(obs.windGustKts) wstr+=", gusting to "+obs.windGustKts;
-      parts.push(wstr);
-    }
-    if(obs.tempF!=null) parts.push(obs.tempF+"°F");
-    return code+" ("+fbo.city+", "+fbo.state+"): "+parts.join(", ");
-  }
+  btn.textContent = '⏳ Generating...';
+  btn.disabled = true;
+  box.style.display = 'block';
+  box.innerHTML = '<span class="spin"></span> Generating plain-language briefing...';
 
-  function descAlert(code,alert) {
-    var fbo=COVERED.find(function(f){return f.code===code;})||{city:"",state:""};
-    var sev={extreme:"Extreme",severe:"Severe",moderate:"Moderate",minor:"Minor"}[alert.bucket]||"";
-    var exp=alert.expires?" — expires "+fmtTime(alert.expires):"";
-    return sev+" — "+alert.event+" at "+code+" ("+fbo.city+")"+exp;
-  }
-
-  function spcPlain(l){return{MRGL:"Marginal",SLGT:"Slight",ENH:"Enhanced",MDT:"Moderate",HIGH:"High"}[l]||l;}
-
-  // P1: conditions overview
-  var p1="";
-  var total=lifr.length+ifr.length+mvfr.length+vfr.length;
-  var degraded=lifr.length+ifr.length+mvfr.length;
-  p1+="As of "+utcStr+", ";
-  if(!total) { p1+="observation data has not yet loaded for this session."; }
-  else if(!degraded) { p1+="all "+total+" reporting locations are operating under VFR conditions with no significant flight restrictions."; }
-  else {
-    var pieces=[];
-    if(lifr.length) pieces.push(lifr.length+" location"+(lifr.length>1?"s":"")+" at LIFR");
-    if(ifr.length)  pieces.push(ifr.length+" at IFR");
-    if(mvfr.length) pieces.push(mvfr.length+" at MVFR");
-    if(vfr.length)  pieces.push(vfr.length+" at VFR");
-    p1+=pieces.join(", ")+" across the Atlantic network. ";
-    var worst=lifr.concat(ifr).slice(0,4);
-    if(worst.length) p1+="Most restricted: "+worst.map(descLoc).join("; ")+".";
-    if(mvfr.length&&mvfr.length<=5) p1+=" MVFR: "+mvfr.map(function(c){var f=COVERED.find(function(x){return x.code===c;})||{city:""};return c+" ("+f.city+")";}).join(", ")+".";
-    else if(mvfr.length>5) p1+=" "+mvfr.length+" additional locations reporting MVFR conditions.";
-  }
-
-  // P2: alerts
-  var p2="";
-  if(!alerted.length) { p2="There are no active NWS watches, warnings, or advisories affecting Atlantic locations at this time."; }
-  else {
-    p2=alerted.length+" location"+(alerted.length>1?"s are":" is")+" under active NWS alerts. ";
-    alerted.forEach(function(item){
-      item.alerts.slice(0,2).forEach(function(a){p2+=descAlert(item.code,a)+". ";});
-    });
-    var wa=alerted[0].alerts[0];
-    if(wa.instruction){var inst=wa.instruction.replace(/\s+/g," ").trim();if(inst.length>20) p2+="NWS instructs: "+inst.substring(0,200)+(inst.length>200?"...":"");}
-  }
-
-  // P3: SPC
-  var p3="";
-  if(!hasSPC.length) { p3="The Storm Prediction Center has not placed any Atlantic locations under an elevated convective risk for Day 1."; }
-  else {
-    var byLabel={};
-    hasSPC.forEach(function(s){if(!byLabel[s.label])byLabel[s.label]=[];byLabel[s.label].push(s);});
-    p3="SPC Day 1 convective outlook: ";
-    ["HIGH","MDT","ENH","SLGT"].forEach(function(lbl){
-      if(!byLabel[lbl]) return;
-      var items=byLabel[lbl];
-      var codes=items.map(function(i){var f=COVERED.find(function(x){return x.code===i.code;})||{city:""};return i.code+" ("+f.city+")";}).join(", ");
-      var mt=0,mh=0,mw=0;
-      items.forEach(function(i){if(i.torn)mt=Math.max(mt,parseInt(i.torn)||0);if(i.hail)mh=Math.max(mh,parseInt(i.hail)||0);if(i.wind)mw=Math.max(mw,parseInt(i.wind)||0);});
-      var hz=[];
-      if(mt>0)hz.push(mt+"% tornado");if(mh>0)hz.push(mh+"% hail");if(mw>0)hz.push(mw+"% damaging wind");
-      p3+=spcPlain(lbl)+" risk — "+codes+(hz.length?" (Day 1: "+hz.join(", ")+")":"")+". ";
-    });
-  }
-
-  // P4: NAS
-  var p4="";
-  if(hasNAS.length){
-    p4="Active FAA traffic management programs: ";
-    hasNAS.forEach(function(item){
-      var f=COVERED.find(function(x){return x.code===item.code;})||{city:""};
-      item.programs.forEach(function(prog){
-        p4+=item.code+" ("+f.city+") — "+prog.type+(prog.reason?", "+prog.reason:"")+(prog.avg?", avg delay "+prog.avg+" min":"")+". ";
-      });
-    });
-  }
-
-  // P5: ramp stress
-  var p5="";
-  var stressAll=heatItems.concat(coldItems);
-  if(stressAll.length){
-    p5="Ramp worker advisory: ";
-    stressAll.forEach(function(s){
-      var f=COVERED.find(function(x){return x.code===s.code;})||{city:""};
-      p5+=s.code+" ("+f.city+") — "+s.label+". ";
-    });
-  }
-
-  // Footer
-  var pf="This briefing is generated automatically from live NWS, SPC, and METAR data. It does not supersede official NWS watches, warnings, or advisories. Local management and supervisors at all impacted locations should monitor weather.gov and their local NWS office for the latest information. All operational safety decisions remain the sole responsibility of local management.";
-
-  var paras=[p1,p2,p3];
-  if(p4) paras.push(p4);
-  if(p5) paras.push(p5);
-  paras.push(pf);
-  return paras;
-}
-
-function generateAIBriefing() {
-  var btn=document.getElementById("ai-brief-btn");
-  var box=document.getElementById("ai-briefing-box");
-  if(!btn||!box) return;
-  btn.textContent="⧗ Generating...";
-  btn.disabled=true;
-  box.style.display="block";
-  box.innerHTML='<span style="color:#8a9aaa">Building briefing from live data...</span>';
   try {
-    var paras=generateOperationalBriefing();
-    box.innerHTML=paras.map(function(p){return '<p style="margin:0 0 10px 0;line-height:1.7">'+p+"</p>";}).join("");
-    btn.textContent="↺ Refresh Briefing";
-    btn.disabled=false;
+    const prompt = `You are an aviation weather operations specialist writing for Atlantic Aviation station managers and ramp supervisors -- non-meteorologists who need to make immediate operational decisions.
+
+Convert the following SPC Day 1 outlook text into a plain-language operational briefing. 
+
+Rules:
+- 3-4 paragraphs, no bullet points
+- No meteorological jargon, no EF ratings, no UTC times, no technical risk terms
+- Convert times to local time references (morning, early afternoon, late afternoon, overnight)
+- Paragraph 1: What is happening and where, in plain terms
+- Paragraph 2: What to expect at each risk level -- define by zone, not by listing location codes
+- Paragraph 3: Timing window and call to action -- complete preparations now, do not wait for a warning
+- Paragraph 4 (verbatim): "This is the only alert that will be issued today. Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates."
+
+Atlantic Aviation impacted zones: ${zones}
+
+SPC Outlook text:
+${rawText}
+
+Write the briefing now. No preamble.`;
+
+    const response = await fetch(`${PROXY}?type=brief`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await response.json();
+    const text = data.content?.find(b => b.type === 'text')?.text || 'No response generated.';
+
+    // Format paragraphs
+    const paras = text.trim().split(/\n\n+/).filter(Boolean);
+    box.innerHTML = paras.map(p => '<p style="margin:0 0 10px 0">' + p.trim() + '</p>').join('');
+    btn.textContent = '↺ Regenerate';
+    btn.disabled = false;
   } catch(e) {
-    box.innerHTML='<span style="color:#c0392b">Error: '+e.message+"</span>";
-    btn.textContent="✨ Generate Briefing";
-    btn.disabled=false;
+    box.innerHTML = '<span style="color:#c0392b">Error generating briefing: ' + e.message + '</span>';
+    btn.textContent = '✨ Generate Plain-Language Briefing';
+    btn.disabled = false;
   }
 }
+
 
 function assignCode(code, zone) {}
 
