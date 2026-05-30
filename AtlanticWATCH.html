@@ -3560,7 +3560,7 @@ function setSatProduct(p) {
 // ── FAA TFR List (direct from FAA) ───────────────────────────────────────────
 async function fetchTFR() {
   try {
-    const r = await fetch('https://tfr.faa.gov/tfr3/export/json');
+    const r = await fetch(PROXY + '?type=tfr');
     if (!r.ok) return;
     const data = await r.json();
     if (Array.isArray(data)) tfrList = data;
