@@ -3092,6 +3092,17 @@ function renderOpsGrid() {
   var needsFetch = fbos.some(function(f) { return !forecastData[f.code] && COORDS[f.code]; });
 
   inner.innerHTML = regionHtml
+    + '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;font-size:9px">'
+    + '<span style="font-weight:700;color:#556070">Legend:</span>'
+    + '<span style="background:#16a34a;color:#fff;padding:1px 6px;border-radius:2px;font-weight:700">VFR</span>'
+    + '<span style="background:#2563eb;color:#fff;padding:1px 6px;border-radius:2px;font-weight:700">MVFR</span>'
+    + '<span style="background:#dc2626;color:#fff;padding:1px 6px;border-radius:2px;font-weight:700">IFR</span>'
+    + '<span style="background:#7c3aed;color:#fff;padding:1px 6px;border-radius:2px;font-weight:700">LIFR</span>'
+    + '<span style="margin-left:6px">⛈ Thunderstorm</span>'
+    + '<span>🌧 Precip</span>'
+    + '<span style="background:#fee2e2;padding:1px 6px;border-radius:2px">Red cell</span>'
+    + '<span style="background:#eff6ff;padding:1px 6px;border-radius:2px">Blue cell</span>'
+    + '</div>'
     + '<div style="background:#fff;border:1px solid #e8e8e8;border-radius:6px;overflow:hidden">'
     + '<div style="display:grid;grid-template-columns:90px repeat(7,1fr);background:#f8f9fa;border-bottom:1px solid #e8e8e8">'
     + '<div style="padding:6px 8px;font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">Location</div>'
@@ -3179,20 +3190,24 @@ function _renderGridRow(fbo) {
   var nasProg = getNASForCode(code);
 
   // Current conditions pill
+  var FC_COL = { VFR:'#16a34a', MVFR:'#2563eb', IFR:'#dc2626', LIFR:'#7c3aed' };
   var nowPill = '';
   if (obs) {
     var fc = obs.flightCat || '';
-    var fcColor = { VFR:'#16a34a', MVFR:'#2563eb', IFR:'#dc2626', LIFR:'#7c3aed' }[fc] || '#8a9aaa';
-    nowPill = '<span style="background:' + fcColor + ';color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px">' + (fc||'--') + '</span>';
+    var fcColor = FC_COL[fc] || '#8a9aaa';
+    nowPill = '<span style="background:' + fcColor + ';color:#fff;font-size:8px;font-weight:700;padding:2px 5px;border-radius:2px">' + (fc||'?') + '</span>';
+    if (obs.tempF != null) nowPill += '<span style="font-size:9px;color:#556070;margin-left:3px">' + obs.tempF + '°</span>';
+  } else {
+    nowPill = '<span style="font-size:9px;color:#c8d0d8">--</span>';
   }
   if (nasProg.length) {
-    nowPill += ' <span style="background:#d97706;color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + nasProg[0].type + '</span>';
+    nowPill += '<br><span style="background:#d97706;color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + nasProg[0].type + '</span>';
   }
   var alertCount = r && r.alerts ? r.alerts.filter(function(a) { return !dismissedAlerts.has(a.id); }).length : 0;
   if (alertCount > 0) {
-    var topBucket = r.alerts[0].bucket;
+    var topBucket = r.alerts.filter(function(a){return !dismissedAlerts.has(a.id);})[0].bucket;
     var alertColor = { extreme:'#7f1d1d', severe:'#991b1b', moderate:'#c2410c', minor:'#ca8a04' }[topBucket] || '#556070';
-    nowPill += ' <span style="background:' + alertColor + ';color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + alertCount + ' alert' + (alertCount>1?'s':'') + '</span>';
+    nowPill += '<br><span style="background:' + alertColor + ';color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">⚠ ' + alertCount + '</span>';
   }
 
   // 7-day cells
@@ -3213,11 +3228,13 @@ function _renderGridRow(fbo) {
     if (!p) { dayCells += '<div style="padding:4px;text-align:center;border-left:1px solid #f0f0f0">--</div>'; continue; }
     var hasHaz = /thunder|severe|tornado/i.test(p.shortForecast || '');
     var hasPrecip = /rain|snow|sleet|shower/i.test(p.shortForecast || '');
+    var hasWind = /windy|breezy|gusty/i.test(p.shortForecast || '');
     var cellBg = hasHaz ? '#fee2e2' : hasPrecip ? '#eff6ff' : '#fff';
-    var icon = hasHaz ? '⛈' : hasPrecip ? '🌧' : '';
+    var icon = hasHaz ? '⛈' : hasPrecip ? '🌧' : hasWind ? '💨' : '';
+    var tempColor = (p.temperature >= 95) ? '#dc2626' : (p.temperature <= 32) ? '#2563eb' : '#1a2a3a';
     dayCells += '<div style="padding:4px 2px;text-align:center;border-left:1px solid #f0f0f0;background:' + cellBg + '">'
-      + '<div style="font-size:11px;font-weight:700;color:#1a2a3a">' + p.temperature + '°</div>'
-      + (icon ? '<div style="font-size:10px">' + icon + '</div>' : '')
+      + '<div style="font-size:11px;font-weight:700;color:' + tempColor + '">' + p.temperature + '°</div>'
+      + (icon ? '<div style="font-size:10px;line-height:1">' + icon + '</div>' : '')
       + '</div>';
   }
 
