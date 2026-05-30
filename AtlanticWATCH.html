@@ -1952,9 +1952,27 @@ function drawRadar() {
       radarFrames = past.slice(-6); // last 6 frames ~30 min
       radarLayerCache = {};
       if (!radarFrames.length) return;
-      radarFrameIdx = radarFrames.length - 1;
-      _showRVFrame(radarFrameIdx, d.host);
-      _startRadarLoop(d.host);
+      var h = d.host || "https://tilecache.rainviewer.com";
+      // Pre-cache all frames silently
+      radarFrames.forEach(function(frame, i) {
+        var url = h + frame.path + "/256/{z}/{x}/{y}/2/1_1.png";
+        radarLayerCache[i] = L.tileLayer(url, { opacity:0, zIndex:10, attribution:'Radar: RainViewer' });
+        radarLayerCache[i].addTo(leafletMap);
+      });
+      // Start on most recent frame after a short delay for tiles to begin loading
+      setTimeout(function() {
+        radarFrameIdx = radarFrames.length - 1;
+        // Remove all pre-cached layers except current
+        radarFrames.forEach(function(_, i) {
+          if (i !== radarFrameIdx && radarLayerCache[i] && leafletMap.hasLayer(radarLayerCache[i])) {
+            leafletMap.removeLayer(radarLayerCache[i]);
+          }
+        });
+        radarLayerCache[radarFrameIdx].setOpacity(0.7);
+        radarLayer = radarLayerCache[radarFrameIdx];
+        _startRadarLoop(h);
+      }, 1500);
+      _rvHost = h;
     })
     .catch(function() {
       // Fallback to Iowa State static layer
@@ -1969,17 +1987,35 @@ function _showRVFrame(idx, host) {
   var frame = radarFrames[idx];
   var tileUrl = (host || "https://tilecache.rainviewer.com") + frame.path + "/256/{z}/{x}/{y}/2/1_1.png";
   var opacity = idx === radarFrames.length - 1 ? 0.7 : 0.5;
+  // Pre-create layer if not cached
   if (!radarLayerCache[idx]) {
     radarLayerCache[idx] = L.tileLayer(tileUrl, {
-      opacity: opacity, zIndex: 10,
+      opacity: 0, zIndex: 10,
       attribution: 'Radar: <a href="https://www.rainviewer.com">RainViewer</a>'
     });
   }
-  if (radarLayer && radarLayer !== radarLayerCache[idx]) {
-    leafletMap.removeLayer(radarLayer);
-  }
-  radarLayer = radarLayerCache[idx];
-  if (!leafletMap.hasLayer(radarLayer)) radarLayer.addTo(leafletMap);
+  var nextLayer = radarLayerCache[idx];
+  var prevLayer = radarLayer;
+  // Add next layer to map while still transparent
+  if (!leafletMap.hasLayer(nextLayer)) nextLayer.addTo(leafletMap);
+  // Wait for tiles to load, then swap
+  nextLayer.once("load", function() {
+    nextLayer.setOpacity(opacity);
+    if (prevLayer && prevLayer !== nextLayer && leafletMap.hasLayer(prevLayer)) {
+      leafletMap.removeLayer(prevLayer);
+    }
+    radarLayer = nextLayer;
+  });
+  // Fallback: swap after 800ms even if tiles didnt fully load
+  setTimeout(function() {
+    if (radarLayer !== nextLayer) {
+      nextLayer.setOpacity(opacity);
+      if (prevLayer && prevLayer !== nextLayer && leafletMap && leafletMap.hasLayer(prevLayer)) {
+        leafletMap.removeLayer(prevLayer);
+      }
+      radarLayer = nextLayer;
+    }
+  }, 800);
 }
 var _rvHost = null;
 function _startRadarLoop(host) {
