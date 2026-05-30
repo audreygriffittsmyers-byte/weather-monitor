@@ -3199,13 +3199,13 @@ function _renderGridRow(fbo) {
     if (obs.tempF != null) nowPill += '<span style="font-size:9px;color:#556070;margin-left:3px">' + obs.tempF + '°</span>';
   }
   if (nasProg.length) {
-    nowPill += '<br><span style="background:#d97706;color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + nasProg[0].type + '</span>';
+    nowPill += ' <span style="background:#d97706;color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + nasProg[0].type + '</span>';
   }
   var alertCount = r && r.alerts ? r.alerts.filter(function(a) { return !dismissedAlerts.has(a.id); }).length : 0;
   if (alertCount > 0) {
     var topBucket = r.alerts.filter(function(a){return !dismissedAlerts.has(a.id);})[0].bucket;
     var alertColor = { extreme:'#7f1d1d', severe:'#991b1b', moderate:'#c2410c', minor:'#ca8a04' }[topBucket] || '#556070';
-    nowPill += '<br><span style="background:' + alertColor + ';color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">⚠ ' + alertCount + '</span>';
+    nowPill += ' <span style="background:' + alertColor + ';color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">⚠ ' + alertCount + '</span>';
   }
 
   // 7-day cells
