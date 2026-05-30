@@ -3438,6 +3438,39 @@ function _doPrint(codes, notes) {
       html+='</div>';
     }
 
+    var spc1=spcData&&spcData[1]?spcData[1][code]:null;
+    if(spc1&&spc1.st==='ok'&&spc1.label){
+      var spcColors={MRGL:'#196B24',SLGT:'#FFC000',ENH:'#E97132',MDT:'#EA3232',HIGH:'#EA3232'};
+      var spcLbls={MRGL:'Marginal',SLGT:'Slight',ENH:'Enhanced',MDT:'Moderate',HIGH:'High'};
+      var sc=spcColors[spc1.label]||'#556070';
+      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">SPC Day 1</span> '
+        +'<span style="background:'+sc+';color:#fff;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700">'+(spcLbls[spc1.label]||spc1.label)+'</span>'
+        +(spc1.torn&&spc1.torn!=='0%'?' <span style="font-size:9px;color:#556070">Torn '+spc1.torn+'</span>':'')
+        +(spc1.hail&&spc1.hail!=='0%'?' <span style="font-size:9px;color:#556070">Hail '+spc1.hail+'</span>':'')
+        +(spc1.wind&&spc1.wind!=='0%'?' <span style="font-size:9px;color:#556070">Wind '+spc1.wind+'</span>':'')
+        +'</div>';
+    }
+    var stressObs=obsData[code];
+    if(stressObs){
+      var ss=getRampStressStatus(stressObs);
+      if(ss){
+        html+='<div style="margin-bottom:6px;padding:4px 8px;border-left:3px solid '+ss.color+';background:#f8f9fa">'
+          +'<span style="font-size:9px;font-weight:700;color:'+ss.color+';text-transform:uppercase">'+ss.label+'</span> '
+          +'<span style="font-size:9px;color:#556070">'+ss.msg+'</span></div>';
+      }
+    }
+    var fcast=forecastData[code];
+    if(fcast&&fcast.length){
+      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">7-Day Forecast</span>'
+        +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">';
+      fcast.slice(0,7).forEach(function(p){
+        html+='<div style="font-size:9px;text-align:center;padding:3px 5px;border:1px solid #e8e8e8;border-radius:3px;min-width:44px">'
+          +'<div style="font-weight:700;color:#0E2841">'+p.name+'</div>'
+          +'<div>'+p.hi+'°/'+p.lo+'°</div>'
+          +'<div style="color:#556070">'+p.short+'</div></div>';
+      });
+      html+='</div></div>';
+    }
     html+='</div>';
   });
 
