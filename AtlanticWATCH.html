@@ -1730,7 +1730,8 @@ let radarLayer      = null;
 let radarSpeed      = 1;
 let radarLoopTimer  = null;
 let radarFrameIdx   = 0;
-const RADAR_FRAME_COUNT = 6;
+let radarFrames     = [];
+let radarLayerCache = {};
 let rangeRingLayers = [];
 let spcPolyLayer    = null;
 let firePolyLayer   = null;
@@ -1939,39 +1940,65 @@ async function drawNWSPolygons() {
 }
 
 // ── Radar ─────────────────────────────────────────────────────────────────────
-function _radarTs() {
-  var now = Math.floor(Date.now()/300000)*300000;
-  var frames = [];
-  for(var i=0;i<RADAR_FRAME_COUNT;i++) frames.push(now-(RADAR_FRAME_COUNT-1-i)*300000);
-  return frames;
-}
-function _showRadarFrame(idx) {
+// ── RainViewer animated radar ────────────────────────────────────────────
+function drawRadar() {
   if (!leafletMap) return;
-  if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
-  var t = _radarTs()[idx];
-  radarLayer = L.tileLayer(
-    'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?t='+t,
-    { opacity: idx===RADAR_FRAME_COUNT-1 ? 0.65 : 0.45, zIndex:10, attribution:'Radar: Iowa Mesonet' }
-  ).addTo(leafletMap);
+  _stopRadarLoop();
+  // Fetch RainViewer API for real historical frames
+  fetch("https://api.rainviewer.com/public/weather-maps.json")
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      var past = (d.radar && d.radar.past) ? d.radar.past : [];
+      radarFrames = past.slice(-6); // last 6 frames ~30 min
+      radarLayerCache = {};
+      if (!radarFrames.length) return;
+      radarFrameIdx = radarFrames.length - 1;
+      _showRVFrame(radarFrameIdx, d.host);
+      _startRadarLoop(d.host);
+    })
+    .catch(function() {
+      // Fallback to Iowa State static layer
+      radarLayer = L.tileLayer(
+        'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?t='+Date.now(),
+        { opacity:0.65, zIndex:10, attribution:'Radar: Iowa Mesonet' }
+      ).addTo(leafletMap);
+    });
 }
-function _startRadarLoop() {
+function _showRVFrame(idx, host) {
+  if (!leafletMap || !radarFrames[idx]) return;
+  var frame = radarFrames[idx];
+  var tileUrl = (host || "https://tilecache.rainviewer.com") + frame.path + "/256/{z}/{x}/{y}/2/1_1.png";
+  var opacity = idx === radarFrames.length - 1 ? 0.7 : 0.5;
+  if (!radarLayerCache[idx]) {
+    radarLayerCache[idx] = L.tileLayer(tileUrl, {
+      opacity: opacity, zIndex: 10,
+      attribution: 'Radar: <a href="https://www.rainviewer.com">RainViewer</a>'
+    });
+  }
+  if (radarLayer && radarLayer !== radarLayerCache[idx]) {
+    leafletMap.removeLayer(radarLayer);
+  }
+  radarLayer = radarLayerCache[idx];
+  if (!leafletMap.hasLayer(radarLayer)) radarLayer.addTo(leafletMap);
+}
+var _rvHost = null;
+function _startRadarLoop(host) {
+  if (host) _rvHost = host;
   if (radarLoopTimer) return;
-  var ms = {0.5:1000,1:500,2:250}[radarSpeed] || 500;
+  var ms = {0.5:1000, 1:500, 2:250}[radarSpeed] || 500;
   radarLoopTimer = setInterval(function() {
-    if (!showRadar || !leafletMap) return;
-    radarFrameIdx = (radarFrameIdx+1) % RADAR_FRAME_COUNT;
-    _showRadarFrame(radarFrameIdx);
+    if (!showRadar || !leafletMap || !radarFrames.length) return;
+    radarFrameIdx = (radarFrameIdx + 1) % radarFrames.length;
+    _showRVFrame(radarFrameIdx, _rvHost);
   }, ms);
 }
 function _stopRadarLoop() {
   if (radarLoopTimer) { clearInterval(radarLoopTimer); radarLoopTimer = null; }
-  if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
-}
-function drawRadar() {
-  _stopRadarLoop();
-  radarFrameIdx = RADAR_FRAME_COUNT-1;
-  _showRadarFrame(radarFrameIdx);
-  _startRadarLoop();
+  if (radarLayer && leafletMap && leafletMap.hasLayer(radarLayer)) {
+    leafletMap.removeLayer(radarLayer);
+  }
+  radarLayer = null;
+  radarLayerCache = {};
 }
 function setRadarSpeed(s) {
   radarSpeed = s;
@@ -1980,7 +2007,7 @@ function setRadarSpeed(s) {
     b.style.background = active ? '#0E2841' : 'transparent';
     b.style.color = active ? '#fff' : '#556070';
   });
-  if (showRadar) { _stopRadarLoop(); _startRadarLoop(); }
+  if (showRadar && radarFrames.length) { _stopRadarLoop(); drawRadar(); }
 }
 function clearRangeRings() {
   rangeRingLayers.forEach(function(l) { if (leafletMap) leafletMap.removeLayer(l); });
@@ -2372,11 +2399,8 @@ function startRadarRefresh() {
   if (radarRefreshInterval) return;
   radarRefreshInterval = setInterval(function() {
     if (!showRadar || !leafletMap) return;
-    _stopRadarLoop();
-    radarFrameIdx = RADAR_FRAME_COUNT-1;
-    _showRadarFrame(radarFrameIdx);
-    _startRadarLoop();
-  }, 2*60*1000);
+    drawRadar(); // re-fetches RainViewer API for fresh frames
+  }, 5 * 60 * 1000); // refresh every 5 min
 }
 
 // ── Smart map mode detection ──────────────────────────────────────────────────
