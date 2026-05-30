@@ -483,6 +483,7 @@ let showAcknowledged = false;
 let activeTab  = 'map';
 let searchVal  = '';
 let onlyActive = false;
+let spcFilter  = null;
 let scanning   = false;
 let stopScan   = false;
 let myLocations  = new Set(); // empty = show all
@@ -761,11 +762,23 @@ function updateHeader() {
   const badges = document.getElementById('status-badges');
   badges.innerHTML = '';
 
-  const mk = (n, label, bg, color, border) => {
+  const mk = (n, label, bg, color, border, spcLabel) => {
     if (!n) return;
     const s = document.createElement('span');
-    s.style.cssText = 'background:'+bg+';color:'+color+';font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px'+(border ? ';border:1px solid '+border : '');
+    const isActive = spcLabel && spcFilter === spcLabel;
+    s.style.cssText = 'background:'+bg+';color:'+color+';font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px'
+      +(border?';border:1px solid '+border:'')
+      +(spcLabel?';cursor:pointer':'')
+      +(isActive?';outline:2px solid #fff;outline-offset:1px':'');
     s.textContent = `${n} ${label}`;
+    if (spcLabel) {
+      s.title = isActive ? 'Click to clear filter' : 'Click to filter sidebar';
+      s.onclick = function() {
+        spcFilter = (spcFilter === spcLabel) ? null : spcLabel;
+        renderSidebar(); updateHeader();
+        if (spcFilter) switchTab('monitor');
+      };
+    }
     badges.appendChild(s);
   };
 
@@ -784,11 +797,11 @@ function updateHeader() {
   }
 
   // SPC Day 1 badges
-  mk(spcHigh, 'SPC HIGH', '#EC30F0', '#fff');
-  mk(spcMdt,  'SPC MDT',  '#EA3232', '#fff');
-  mk(spcEnh,  'SPC ENH',  '#E97132', '#000');
-  mk(spcSlgt, 'SPC SLGT', '#FFC000', '#000');
-  mk(spcMrgl, 'SPC MRGL', '#196B24', '#fff');
+  mk(spcHigh,'SPC HIGH','#EC30F0','#fff',null,'HIGH');
+  mk(spcMdt, 'SPC MDT', '#EA3232','#fff',null,'MDT');
+  mk(spcEnh, 'SPC ENH', '#E97132','#000',null,'ENH');
+  mk(spcSlgt,'SPC SLGT','#FFC000','#000',null,'SLGT');
+  mk(spcMrgl,'SPC MRGL','#196B24','#fff',null,'MRGL');
 }
 
 function updateScanBtn() {
@@ -821,6 +834,7 @@ function renderSidebar() {
   const list = COVERED.filter(f => {
     if (q && !f.code.toLowerCase().includes(q) && !f.city.toLowerCase().includes(q) && !f.state.toLowerCase().includes(q)) return false;
     if (onlyActive && !(results[f.code]?.alerts?.length > 0)) return false;
+    if (spcFilter && spcData[1][f.code]?.label !== spcFilter) return false;
     return true;
   }).sort((a, b) => {
     const sa = results[a.code] ? ORD[topBucket(results[a.code].alerts)] : 5;
