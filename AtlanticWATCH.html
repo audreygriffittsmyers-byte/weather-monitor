@@ -966,6 +966,10 @@ function renderDetail() {
     content += `<div style="display:flex;align-items:center;gap:8px;color:#556070;font-size:12px"><span class="spin"></span> Querying NWS...</div>`;
   } else if (r.st === 'error') {
     content += `<div style="background:#fff0f0;border:1px solid #e0a0a0;border-radius:4px;padding:12px;color:#8b2020;font-size:12px">${r.error}<div style="font-size:10px;color:#a05050;margin-top:4px">NWS API may be briefly unavailable. Try refreshing.</div></div>`;
+  // NAS status card
+  var nasCard = renderNASCard(selected);
+  if (nasCard) content += nasCard;
+
   } else if (r.alerts.length === 0) {
     content += `<div class="clear-box"><div style="font-size:28px;margin-bottom:6px">✓</div><div style="color:#1a6b30;font-weight:700;font-size:13px">No Active NWS Alerts</div><div style="color:#556070;font-size:11px;margin-top:3px">No watches, warnings, or advisories in effect</div></div>`;
   } else {
@@ -2330,6 +2334,8 @@ function startAutoRefresh() {
 
   // Observations: every 10 minutes
   setInterval(() => scanAllObs(), 10 * 60 * 1000);
+  // NAS status: every 5 minutes
+  setInterval(() => fetchNAS(), 5 * 60 * 1000);
 
   // SPC polygon cache: clear every 30 minutes
   setInterval(() => {
@@ -2485,6 +2491,7 @@ function renderTAFStrip(code) {
 
 // ── 7-Day Forecast ────────────────────────────────────────────────────────────
 const forecastData  = {}; // code -> 7-day periods array
+let   nasPrograms   = []; // [{type,arpt,reason,avg,max,end}]
 const hourlyData    = {}; // code -> hourly periods array
 let   hourlyWindow  = 12; // hours to show: 4/8/12/24/48
 
@@ -2972,6 +2979,49 @@ async function _fetchMyLocForecast(lat, lon) {
   }
 }
 
+// ── FAA NAS Status ───────────────────────────────────────────────────────────
+async function fetchNAS() {
+  try {
+    const r = await fetch(PROXY + "?type=nas");
+    if (!r.ok) return;
+    nasPrograms = await r.json();
+    // Refresh sidebar badges and detail panel if open
+    renderSidebar();
+    if (selected) renderDetail();
+  } catch(e) {}
+}
+
+function getNASForCode(code) {
+  // Match by ICAO or 3-letter code
+  var icao = toICAO(code) || "";
+  var icao3 = icao.replace(/^K/,""); // strip K prefix for FAA
+  return nasPrograms.filter(function(p) {
+    return p.arpt === icao || p.arpt === icao3 || p.arpt === code;
+  });
+}
+
+function renderNASCard(code) {
+  var progs = getNASForCode(code);
+  if (!progs.length) return "";
+  var TYPE_COLOR = { GDP:"#d97706", GS:"#dc2626", AFP:"#7c3aed" };
+  var TYPE_LABEL = { GDP:"Ground Delay Program", GS:"Ground Stop", AFP:"Airspace Flow Program" };
+  var html = '<div style="margin-bottom:12px">';
+  progs.forEach(function(p) {
+    var color = TYPE_COLOR[p.type] || "#556070";
+    var label = TYPE_LABEL[p.type] || p.type;
+    html += '<div style="background:#fffbeb;border:1px solid ' + color + '66;border-left:3px solid ' + color + ';border-radius:4px;padding:8px 12px;margin-bottom:6px">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+    html += '<span style="background:' + color + ';color:#fff;font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px">' + p.type + '</span>';
+    html += '<span style="font-size:11px;font-weight:700;color:#1a2a3a">' + label + '</span></div>';
+    if (p.reason) html += '<div style="font-size:10px;color:#556070;margin-bottom:2px">Reason: ' + p.reason + '</div>';
+    if (p.avg)    html += '<div style="font-size:10px;color:#556070">Avg delay: <b>' + p.avg + ' min</b>' + (p.max ? ' &nbsp; Max: <b>' + p.max + ' min</b>' : "") + '</div>';
+    if (p.end)    html += '<div style="font-size:10px;color:#556070">Until: <b>' + p.end + '</b></div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
 // ── GPS User Location ─────────────────────────────────────────────────────────
 let userLat       = null;
 let userLon       = null;
@@ -3397,6 +3447,7 @@ function decodeTAFFull(code) {
 loadMyLocations();
 loadDismissed();
 updateLocFilterBtn();
+fetchNAS();
 renderSidebar();
 updateHeader();
 updateActiveCount();
