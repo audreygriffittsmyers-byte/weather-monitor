@@ -268,6 +268,28 @@ export default {
       return new Response(JSON.stringify({ ok: true }), { headers: GEOJSON });
     }
 
+    if (type === 'tfr') {
+      try {
+        const res = await fetch('https://tfr.faa.gov/tfr2/list.html',
+          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
+        const html = await res.text();
+        const tfrs = [];
+        const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+        for (const row of rows) {
+          const cells = [];
+          const cr = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+          let m;
+          while ((m = cr.exec(row)) !== null) {
+            cells.push(m[1].replace(/<[^>]+>/g,'').trim());
+          }
+          if (cells.length >= 5 && cells[1] && cells[1].includes('/')) {
+            tfrs.push({ notam_id:cells[1], facility:cells[2], state:cells[3], type:cells[4], description:(cells[5]||'').substring(0,200) });
+          }
+        }
+        return new Response(JSON.stringify(tfrs), { headers: GEOJSON });
+      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+    }
+
     return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), { status: 400, headers: GEOJSON });
   }
 };
