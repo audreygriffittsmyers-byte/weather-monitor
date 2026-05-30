@@ -891,6 +891,10 @@ function selectFBO(code) {
   if (notamData[code] === undefined) {
     fetchNOTAM(code).then(function() { if (selected === code) renderDetail(); });
   }
+  // Fetch PIREPs on demand
+  if (pirepData[code] === undefined) {
+    fetchPIREP(code).then(function() { if (selected === code) renderDetail(); });
+  }
 }
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
@@ -994,6 +998,10 @@ function renderDetail() {
   // NAS status card
   var nasCard = renderNASCard(selected);
   if (nasCard) content += nasCard;
+  // PIREPs
+  var pirepCard = renderPIREPCard(selected);
+  if (pirepCard) content += pirepCard;
+  else if (pirepData[selected] === undefined) content += '<div style="font-size:10px;color:#8a9aaa;padding:2px 0">Loading PIREPs...</div>';
   var notamCard = renderNOTAMCard(selected);
   if (notamCard) content += notamCard;
   else if (notamData[selected] === undefined) {
@@ -2530,6 +2538,7 @@ function calcWindChill(tempF, windMph) {
 // ── TAF Forecast ─────────────────────────────────────────────────────────────
 const tafData   = {};
 const notamData  = {};
+const pirepData   = {}; // code -> [{raw, turbulence, icing, altitude, type, time}]
 
 async function fetchTAF(code) {
   const icao = toICAO(code);
@@ -3731,6 +3740,60 @@ function renderGSPCard(code) {
     + '<span style="font-size:9px;color:#8a9aaa;margin-left:auto">Score: ' + risk.score + '</span></div>'
     + '<div style="font-size:10px;color:#556070">' + risk.factors.join(' &middot; ') + '</div>'
     + '</div>';
+  return html;
+}
+
+// ── PIREPs ──────────────────────────────────────────────────────
+async function fetchPIREP(code) {
+  if (pirepData[code] !== undefined) return;
+  var c = COORDS[code];
+  if (!c) { pirepData[code] = []; return; }
+  try {
+    var bbox = (c[0]-1.5).toFixed(2) + ',' + (c[1]-1.5).toFixed(2) + ',' + (c[0]+1.5).toFixed(2) + ',' + (c[1]+1.5).toFixed(2);
+    var r = await fetch(PROXY + '?type=pirep&bbox=' + encodeURIComponent(bbox));
+    if (!r.ok) { pirepData[code] = []; return; }
+    var raw = await r.json();
+    if (!Array.isArray(raw)) { pirepData[code] = []; return; }
+    pirepData[code] = raw.slice(0, 8).map(function(p) {
+      return {
+        raw:    p.rawOb    || p.raw || '',
+        type:   p.pirepType || 'PIREP',
+        alt:    p.altitude  || p.flightLevel || null,
+        turb:   p.turbulenceIntensity || (p.turbulence && p.turbulence[0] && p.turbulence[0].intensity) || null,
+        ice:    p.icingIntensity     || (p.icing     && p.icing[0]     && p.icing[0].intensity)     || null,
+        time:   p.obsTime || p.receiptTime || '',
+        acType: p.acType  || '',
+      };
+    });
+  } catch(e) { pirepData[code] = []; }
+}
+
+function renderPIREPCard(code) {
+  var pireps = pirepData[code];
+  if (!pireps || !pireps.length) return '';
+  var TURB_COLOR = { NEG:'#16a34a', SMTH:'#16a34a', LGT:'#ca8a04', 'LGT-MOD':'#d97706', MOD:'#d97706', 'MOD-SEV':'#dc2626', SEV:'#dc2626', EXTM:'#7c3aed' };
+  var ICE_COLOR  = { NEG:'#16a34a', TRC:'#ca8a04', LGT:'#d97706', MOD:'#dc2626', SEV:'#7c3aed' };
+  var html = '<div style="margin-bottom:12px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">PIREPs Nearby (' + pireps.length + ')</div>';
+  pireps.forEach(function(p) {
+    var turbColor = TURB_COLOR[p.turb] || '#556070';
+    var iceColor  = ICE_COLOR[p.ice]   || '#556070';
+    var timeStr = '';
+    if (p.time) { try { timeStr = new Date(p.time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'}); } catch(e){} }
+    html += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-radius:4px;padding:6px 10px;margin-bottom:5px">';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">';
+    html += '<span style="font-size:8px;font-weight:700;background:#0E2841;color:#fff;padding:1px 6px;border-radius:3px">' + p.type + '</span>';
+    if (p.alt) html += '<span style="font-size:9px;color:#556070">FL' + p.alt + '</span>';
+    if (p.acType) html += '<span style="font-size:9px;color:#8a9aaa">' + p.acType + '</span>';
+    if (timeStr) html += '<span style="font-size:9px;color:#8a9aaa;margin-left:auto">' + timeStr + '</span>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:12px;flex-wrap:wrap">';
+    if (p.turb) html += '<span style="font-size:10px"><b style="color:' + turbColor + '">' + p.turb + '</b> <span style="color:#8a9aaa">turb</span></span>';
+    if (p.ice)  html += '<span style="font-size:10px"><b style="color:' + iceColor  + '">' + p.ice  + '</b> <span style="color:#8a9aaa">ice</span></span>';
+    if (!p.turb && !p.ice && p.raw) html += '<span style="font-size:9px;color:#556070;font-family:monospace">' + p.raw.substring(0,80) + '</span>';
+    html += '</div></div>';
+  });
+  html += '</div>';
   return html;
 }
 
