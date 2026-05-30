@@ -178,6 +178,7 @@
     <button class="tab active" data-tab="map" style="background:transparent;border:none;border-bottom:2px solid #ffffff;color:#ffffff;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Map</button>
     <button class="tab" data-tab="build" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Alert Summary</button>
     <button class="tab" data-tab="myloc" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">📍 My Location</button>
+    <button class="tab" data-tab="grid" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Ops Grid</button>
   </div>
 
   <!-- BODY -->
@@ -319,6 +320,11 @@
             <div style="font-size:13px;color:#556070;margin-top:8px">Open this tab to load weather for your current location</div>
           </div>
         </div>
+      </div>
+
+      <!-- Ops Grid panel -->
+      <div id="panel-grid" style="display:none;height:100%;overflow-y:auto;background:#E8E8E8">
+        <div id="grid-inner" style="padding:16px"></div>
       </div>
 
     </div><!-- /main -->
@@ -1069,7 +1075,9 @@ function switchTab(tab) {
   document.getElementById('panel-map').style.display     = tab === 'map'     ? 'flex' : 'none';
   document.getElementById('panel-build').style.display   = tab === 'build'   ? '' : 'none';
   document.getElementById('panel-myloc').style.display   = tab === 'myloc'   ? '' : 'none';
+  document.getElementById('panel-grid').style.display    = tab === 'grid'    ? '' : 'none';
   if (tab === 'build') generateSummary();
+  if (tab === 'grid')  renderOpsGrid();
   if (tab === 'myloc') renderMyLocTab();
   if (tab === 'spc') renderSPCTable();
   if (tab === 'map') {
@@ -3020,6 +3028,175 @@ function renderNASCard(code) {
   });
   html += '</div>';
   return html;
+}
+
+
+// ── Ops Grid ──────────────────────────────────────────────────────────────────
+var GRID_REGIONS = {
+  'All':         null,
+  'East Coast':  ['AGC','BAF','BCT','BDL','BDR','BED','CLE','ELM','FRG','HPN','HYA','IAD','ILG','JZI','MMU','ORH','OXC','PBI','PHF','PHL','PIT','PNE','PVD','SBN','SDF','SGJ','SRQ','SUA','SWF','TEB'],
+  'Southeast':   ['BHM','BNA','CHS','DTS','FXE','HOU','HYA','IAH','JAN','MCO','MSY','OPF','ORL','PDK','SDF','SKF'],
+  'Central':     ['ADS','DAL','DTS','EAS(Corp)','FMN','HOU','IAH','LIT','MKC','OKC','OMA','PWA','RIL','SAF','SCK','SKF','TUL'],
+  'West Coast':  ['APC','ASE','BFL','BFI-MX','BUR','CRQ','EUG','EUG - MX','FAT','GPI','GPI-MX','HDN','LAX','LGB','MTJ','ORL','PDX','PDX-MX','RNO','SBA','SJC','SLC','SMO','UAO'],
+  'Alaska':      ['ANC','FAI','JNU','KTN','SIT'],
+  'Hawaii':      ['HNL','ITO','KOA','LIH','LNY','OGG'],
+  'International': ['BDA','GCM','SXM'],
+};
+
+var gridRegion   = 'All';
+var gridFetching = false;
+
+function renderOpsGrid() {
+  var inner = document.getElementById('grid-inner');
+  if (!inner) return;
+
+  // Region selector
+  var regionHtml = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">';
+  Object.keys(GRID_REGIONS).forEach(function(r) {
+    var active = gridRegion === r;
+    regionHtml += '<button onclick="gridRegion=\'' + r + '\';renderOpsGrid()" '
+      + 'style="background:' + (active?'#0E2841':'#fff') + ';color:' + (active?'#fff':'#556070') + ';'
+      + 'border:1px solid ' + (active?'#0E2841':'#c8d0d8') + ';border-radius:4px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer">'
+      + r + '</button>';
+  });
+  regionHtml += '</div>';
+
+  // Get locations for region
+  var codes = GRID_REGIONS[gridRegion];
+  var fbos = COVERED.filter(function(f) {
+    if (codes) return codes.indexOf(f.code) !== -1;
+    return true;
+  });
+
+  // Sort by severity: locations with active alerts first, then GDP, then SPC risk
+  fbos = fbos.slice().sort(function(a, b) {
+    var aScore = _gridScore(a.code);
+    var bScore = _gridScore(b.code);
+    return bScore - aScore;
+  });
+
+  // Build grid rows
+  var rows = fbos.map(function(fbo) { return _renderGridRow(fbo); }).join('');
+
+  var needsFetch = fbos.some(function(f) { return !forecastData[f.code] && COORDS[f.code]; });
+
+  inner.innerHTML = regionHtml
+    + '<div style="background:#fff;border:1px solid #e8e8e8;border-radius:6px;overflow:hidden">'
+    + '<div style="display:grid;grid-template-columns:90px repeat(7,1fr);background:#f8f9fa;border-bottom:1px solid #e8e8e8">'
+    + '<div style="padding:6px 8px;font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">Location</div>'
+    + ['Now','Sat','Sun','Mon','Tue','Wed','Thu'].map(function(d) {
+        return '<div style="padding:6px 4px;font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;text-align:center">' + d + '</div>';
+      }).join('')
+    + '</div>'
+    + rows
+    + '</div>'
+    + (needsFetch ? '<div id="grid-loading" style="font-size:10px;color:#8a9aaa;margin-top:8px;text-align:center">Loading forecast data...</div>' : '');
+
+  // Fetch missing 7-day data with stagger
+  if (needsFetch && !gridFetching) {
+    gridFetching = true;
+    var toFetch = fbos.filter(function(f) { return !forecastData[f.code] && COORDS[f.code]; });
+    var delay = 0;
+    toFetch.forEach(function(f) {
+      setTimeout(function() {
+        fetch7Day(f.code).then(function() {
+          // Re-render the single row
+          var rowEl = document.getElementById('grid-row-' + f.code);
+          if (rowEl) rowEl.outerHTML = _renderGridRow(f);
+          // Remove loading indicator when done
+          var remaining = document.querySelectorAll('[id^="grid-row-"]');
+          var loading = document.getElementById('grid-loading');
+          if (loading && !fbos.some(function(x) { return !forecastData[x.code] && COORDS[x.code]; })) {
+            loading.remove();
+            gridFetching = false;
+          }
+        });
+      }, delay);
+      delay += 250;
+    });
+  }
+}
+
+function _gridScore(code) {
+  var r = results[code];
+  var score = 0;
+  if (r && r.alerts) {
+    var newAlerts = r.alerts.filter(function(a) { return !dismissedAlerts.has(a.id); });
+    score += newAlerts.length * 100;
+    newAlerts.forEach(function(a) {
+      if (a.bucket === 'extreme')  score += 400;
+      if (a.bucket === 'severe')   score += 300;
+      if (a.bucket === 'moderate') score += 200;
+      if (a.bucket === 'minor')    score += 100;
+    });
+  }
+  var nasProg = getNASForCode(code);
+  if (nasProg.length) score += 50;
+  var spc = spcData[1][code];
+  if (spc) {
+    var SPCscore = { ENH:40, MDT:50, HIGH:60, SLGT:20, MRGL:10 };
+    score += SPCscore[spc.cat] || 0;
+  }
+  return score;
+}
+
+function _renderGridRow(fbo) {
+  var code = fbo.code;
+  var r = results[code];
+  var obs = obsData[code];
+  var periods = forecastData[code];
+  var nasProg = getNASForCode(code);
+
+  // Current conditions pill
+  var nowPill = '';
+  if (obs) {
+    var fc = obs.flightCat || '';
+    var fcColor = { VFR:'#16a34a', MVFR:'#2563eb', IFR:'#dc2626', LIFR:'#7c3aed' }[fc] || '#8a9aaa';
+    nowPill = '<span style="background:' + fcColor + ';color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px">' + (fc||'--') + '</span>';
+  }
+  if (nasProg.length) {
+    nowPill += ' <span style="background:#d97706;color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + nasProg[0].type + '</span>';
+  }
+  var alertCount = r && r.alerts ? r.alerts.filter(function(a) { return !dismissedAlerts.has(a.id); }).length : 0;
+  if (alertCount > 0) {
+    var topBucket = r.alerts[0].bucket;
+    var alertColor = { extreme:'#7f1d1d', severe:'#991b1b', moderate:'#c2410c', minor:'#ca8a04' }[topBucket] || '#556070';
+    nowPill += ' <span style="background:' + alertColor + ';color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + alertCount + ' alert' + (alertCount>1?'s':'') + '</span>';
+  }
+
+  // 7-day cells
+  var dayCells = '';
+  var days = [];
+  if (periods && periods.length) {
+    for (var i = 0; i < periods.length; i += 2) {
+      if (periods[i] && periods[i].isDaytime !== false) days.push(periods[i]);
+    }
+  }
+  var DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  for (var di = 0; di < 7; di++) {
+    var p = days[di];
+    if (!p) { dayCells += '<div style="padding:4px;text-align:center;border-left:1px solid #f0f0f0">--</div>'; continue; }
+    var hasHaz = /thunder|severe|tornado/i.test(p.shortForecast || '');
+    var hasPrecip = /rain|snow|sleet|shower/i.test(p.shortForecast || '');
+    var cellBg = hasHaz ? '#fee2e2' : hasPrecip ? '#eff6ff' : '#fff';
+    var icon = hasHaz ? '⛈' : hasPrecip ? '🌧' : '';
+    dayCells += '<div style="padding:4px 2px;text-align:center;border-left:1px solid #f0f0f0;background:' + cellBg + '">'
+      + '<div style="font-size:11px;font-weight:700;color:#1a2a3a">' + p.temperature + '°</div>'
+      + (icon ? '<div style="font-size:10px">' + icon + '</div>' : '')
+      + '</div>';
+  }
+
+  var rowBg = alertCount > 0 ? '#fff8f8' : '#fff';
+
+  return '<div id="grid-row-' + code + '" style="display:grid;grid-template-columns:90px repeat(7,1fr);border-bottom:1px solid #f0f0f0;background:' + rowBg + ';cursor:pointer" '
+    + 'onclick="switchTab(\'monitor\');selectFBO(\'' + code + '\')">'
+    + '<div style="padding:6px 8px;border-right:1px solid #e8e8e8">'
+    + '<div style="font-family:monospace;font-size:11px;font-weight:700;color:#0E2841">' + code + '</div>'
+    + '<div style="font-size:9px;color:#8a9aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px">' + fbo.city + '</div>'
+    + '<div style="margin-top:2px">' + nowPill + '</div>'
+    + '</div>'
+    + dayCells
+    + '</div>';
 }
 
 // ── GPS User Location ─────────────────────────────────────────────────────────
