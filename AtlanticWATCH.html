@@ -148,6 +148,30 @@
     .fbo-code { width: 60px; }
     #spc-table-wrap { max-height: 35vh; }
   }
+  /* ── Mobile navigation ── */
+  @media (max-width: 600px) {
+    #body { position: relative; overflow: hidden; }
+    #sidebar { width: 100% !important; }
+    #main { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100% !important; overflow-y: auto; }
+    #main.mobile-hidden { display: none !important; }
+    #sidebar.mobile-hidden { display: none !important; }
+    #mobile-back-btn { display: flex !important; }
+  }
+  #mobile-back-btn {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    background: #0E2841;
+    color: #fff;
+    border: none;
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    flex-shrink: 0;
+    border-bottom: 1px solid #1a3a5c;
+  }
 
 
   /* Clear / no-alerts */
@@ -901,7 +925,7 @@ function renderSidebarItem(code) {
 // ── Mobile navigation ────────────────────────────────────────────────
 function isMobile() { return window.innerWidth <= 600; }
 function mobileShowDetail() {
-  if (!isMobile()) return;
+  if (!isMobile() || activeTab !== "monitor") return;
   var s = document.getElementById("sidebar");
   var m = document.getElementById("main");
   if (s) s.classList.add("mobile-hidden");
@@ -910,9 +934,10 @@ function mobileShowDetail() {
 function mobileBack() {
   var s = document.getElementById("sidebar");
   var m = document.getElementById("main");
-  if (s) s.classList.remove("mobile-hidden");
+  if (s) { s.classList.remove("mobile-hidden"); s.style.display = "flex"; }
   if (m) m.classList.add("mobile-hidden");
   selected = null;
+  renderSidebar();
 }
 
 function selectFBO(code) {
@@ -1270,6 +1295,13 @@ function renderMyLocDetail() {
 
 function switchTab(tab) {
   activeTab = tab;
+  if (typeof isMobile === "function" && isMobile()) {
+    var s2 = document.getElementById("sidebar");
+    var m2 = document.getElementById("main");
+    if (s2) s2.classList.remove("mobile-hidden");
+    if (m2) m2.classList.add("mobile-hidden");
+    selected = null;
+  }
   document.querySelectorAll('.tab').forEach(b => {
     const active = b.dataset.tab === tab;
     b.style.borderBottomColor = active ? '#ffffff' : 'transparent';
