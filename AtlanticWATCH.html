@@ -1298,9 +1298,16 @@ function switchTab(tab) {
   if (typeof isMobile === "function" && isMobile()) {
     var s2 = document.getElementById("sidebar");
     var m2 = document.getElementById("main");
-    if (s2) s2.classList.remove("mobile-hidden");
-    if (m2) m2.classList.add("mobile-hidden");
-    selected = null;
+    if (tab === "monitor") {
+      // Monitor: show sidebar, hide detail panel until location selected
+      if (s2) { s2.classList.remove("mobile-hidden"); s2.style.display = "flex"; }
+      if (m2) m2.classList.add("mobile-hidden");
+      selected = null;
+    } else {
+      // All other tabs render inside #main -- make sure it's visible
+      if (s2) s2.classList.add("mobile-hidden");
+      if (m2) m2.classList.remove("mobile-hidden");
+    }
   }
   document.querySelectorAll('.tab').forEach(b => {
     const active = b.dataset.tab === tab;
