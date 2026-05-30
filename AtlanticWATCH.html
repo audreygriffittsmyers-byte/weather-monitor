@@ -152,6 +152,7 @@
 
   /* Clear / no-alerts */
   .clear-box { background: #ffffff; border: 1px solid #c8d0d8; border-radius: 6px; padding: 24px 20px; text-align: center; }
+  .sat-tile-img { mix-blend-mode: screen !important; }
 </style>
 </head>
 <body>
@@ -1775,7 +1776,7 @@ let showFirePolys   = true;
 let showWPCPolys    = true;
 let showNWSPolys    = true;
 let showRadar       = true;
-let showSatellite   = false;
+let showSatellite   = false; // off by default -- user enables
 let satLayer        = null;
 let satProduct      = "global_longwave_imagery_mosaic"; // global layer names from nowCOAST WMS
 
@@ -3462,7 +3463,8 @@ function drawSatellite() {
       var tile = document.createElement('img');
       tile.className = 'sat-tile-img';
       tile.style.width = tile.style.height = this.getTileSize().x + 'px';
-      tile.style.opacity = '0.5';
+      tile.style.opacity = '0.85';
+      tile.style.mixBlendMode = 'screen';
       var url = PROXY + '?type=satellite&layer=' + satProduct
         + '&z=' + coords.z + '&x=' + coords.x + '&y=' + coords.y;
       tile.crossOrigin = 'anonymous';
@@ -3473,7 +3475,8 @@ function drawSatellite() {
       return tile;
     }
   });
-  satLayer = new SatLayer({ zIndex: 5, attribution: 'Satellite: NOAA GOES / nowCOAST' }).addTo(leafletMap);
+  satLayer = new SatLayer({ zIndex: 5, attribution: 'Satellite: NOAA GOES / nowCOAST',
+    className: 'sat-grid-layer' }).addTo(leafletMap);
 }
 function removeSatellite() {
   if (satLayer && leafletMap) { leafletMap.removeLayer(satLayer); satLayer = null; }
