@@ -3533,6 +3533,11 @@ function _renderGridRow(fbo) {
     var fcColor = { VFR:'#16a34a', MVFR:'#2563eb', IFR:'#dc2626', LIFR:'#7c3aed' }[fc] || '#8a9aaa';
     if (fc) nowPill += '<span style="background:' + fcColor + ';color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px">' + fc + '</span>';
     if (obs.tempF != null) nowPill += (nowPill?' ':'') + '<span style="font-size:9px;font-weight:600;color:#1a2a3a">' + obs.tempF + '°</span>';
+    if (obs.windKts != null) {
+      var wDir = windDirLabel(obs.windDir);
+      var wSpd = obs.windKts + (obs.windGustKts ? 'G' + obs.windGustKts : '') + 'kt';
+      nowPill += '<br><span style="font-size:8px;color:#556070">' + wDir + ' ' + wSpd + '</span>';
+    }
   }
   if (nasProg.length) {
     nowPill += ' <span style="background:#d97706;color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + nasProg[0].type + '</span>';
