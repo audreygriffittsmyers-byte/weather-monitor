@@ -858,10 +858,18 @@ function makeSidebarItem(fbo) {
   else if (n > 0) badgeHTML = `<span class="fbo-count" style="background:${badge}">${n}</span>`;
   else if (r) badgeHTML = `<span style="font-size:9px;color:#0f1e2e">✓</span>`;
 
+  // SPC risk dot -- only show when no NWS alert (alert badge already communicates severity)
+  const spc1 = spcData[1][fbo.code];
+  const SPC_DOT = { MRGL:'#196B24', SLGT:'#FFC000', ENH:'#E97132', MDT:'#EA3232', HIGH:'#EC30F0', TSTM:'#00b4b4' };
+  const spcDotColor = (n === 0 && spc1?.st === 'ok' && spc1?.label) ? SPC_DOT[spc1.label] : null;
+  const spcDot = spcDotColor
+    ? `<span title="SPC Day 1: ${SPC_LABEL_MAP[spc1.label]?.label || spc1.label}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${spcDotColor};margin-left:4px;flex-shrink:0"></span>`
+    : '';
+
   div.innerHTML = `
     <span class="fbo-code" style="color:${textColor}">${fbo.code}</span>
     <span class="fbo-loc">${fbo.city}, ${fbo.state}</span>
-    <div class="fbo-badge-wrap">${badgeHTML}</div>
+    <div class="fbo-badge-wrap" style="display:flex;align-items:center">${badgeHTML}${spcDot}</div>
   `;
   div.addEventListener('click', () => selectFBO(fbo.code));
   return div;
