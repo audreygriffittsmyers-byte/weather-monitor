@@ -1124,10 +1124,7 @@ function renderDetail() {
   }
 
   // ── 7. PIREPs ─────────────────────────────────────────────────────────────
-  var pirepCard = renderPIREPCard(selected);
-  if (pirepCard) content += pirepCard;
-
-  // ── 8. Hourly conditions ──────────────────────────────────────────────────
+    // ── 8. Hourly conditions ──────────────────────────────────────────────────
   var hourlySlot = 'hourly-' + selected;
   if (hourlyData[selected]) {
     content += '<div id="' + hourlySlot + '">' + renderHourly(selected) + '</div>';
