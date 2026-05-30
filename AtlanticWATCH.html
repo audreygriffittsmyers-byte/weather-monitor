@@ -904,10 +904,11 @@ function renderDetail() {
     panel.innerHTML = `<div class="empty-state"><div style="font-size:36px">🌩</div><div style="font-size:13px;color:#556070">Select a location or click Scan All</div><div id="covered-count" style="font-size:11px;color:#8a9aaa">Live NWS alerts for ${COVERED.length} US FBO locations</div></div>`;
     return;
   }
-  const fbo = COVERED.find(f => f.code === selected);
-  const r   = results[selected];
+  const fbo    = COVERED.find(f => f.code === selected);
+  const r      = results[selected];
   const coords = COORDS[selected];
   const forecastLink = coords ? `https://forecast.weather.gov/MapClick.php?textField1=${coords[0]}&textField2=${coords[1]}` : '#';
+  const obs    = obsData[selected];
 
   let content = `
     <div style="padding:18px">
@@ -920,11 +921,12 @@ function renderDetail() {
         <button onclick="loadFBO('${selected.replace(/'/g,"\\'")}'); renderDetail();" style="background:#E8E8E8;border:1px solid #c8d0d8;color:#0E2841;border-radius:4px;padding:4px 12px;font-size:10px;font-weight:700">Refresh</button>
       </div>`;
 
-  // METAR conditions block
-  const obs = obsData[selected];
+  // ── 1. Advisory cards (only show when triggered) ──────────────────────────
+  content += renderGSPCard(selected);
   if (obs) content += renderDeiceCard(obs);
   if (obs) content += renderStressCard(obs);
-  content += renderGSPCard(selected);
+
+  // ── 2. Current conditions summary + decoded METAR ─────────────────────────
   if (obs) {
     const fcBg = flightCatColor(obs.flightCat);
     content += `<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">
@@ -941,7 +943,6 @@ function renderDetail() {
       </div>
     </div>`;
     content += decodeMetarFull(obs);
-    content += renderCrosswindCalc(obs);
 
     // Heat index / wind chill / humidity
     const rh = calcRelativeHumidity(obs.tempF, obs.dewpointF);
@@ -955,31 +956,10 @@ function renderDetail() {
       content += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:8px 14px;margin-bottom:14px;font-size:11px;color:#556070">'
         + feels.join(' &nbsp;·&nbsp; ') + '</div>';
     }
+  }
 
-    // AQI -- fetch on demand if not cached
-    if (aqiData[selected] === undefined) {
-      content += '<div id="aqi-strip-' + selected + '"></div>';
-      fetchAQI(selected).then(() => {
-        const el = document.getElementById('aqi-strip-' + selected);
-        if (el && aqiData[selected]) {
-          const lvl = aqiData[selected].level;
-          el.innerHTML = '<div style="display:inline-flex;align-items:center;gap:8px;background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:6px 12px;margin-bottom:14px">'
-            + '<span style="background:' + lvl.color + ';color:' + lvl.text + ';font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">AQI ' + aqiData[selected].aqi + '</span>'
-            + '<span style="font-size:11px;color:#556070">' + aqiData[selected].category
-            + (aqiData[selected].pollutant ? ' · ' + aqiData[selected].pollutant : '') + '</span>'
-            + '</div>';
-        }
-      });
-    } else if (aqiData[selected]) {
-      const lvl = aqiData[selected].level;
-      content += '<div style="display:inline-flex;align-items:center;gap:8px;background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:6px 12px;margin-bottom:14px">'
-        + '<span style="background:' + lvl.color + ';color:' + lvl.text + ';font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">AQI ' + aqiData[selected].aqi + '</span>'
-        + '<span style="font-size:11px;color:#556070">' + aqiData[selected].category
-        + (aqiData[selected].pollutant ? ' · ' + aqiData[selected].pollutant : '') + '</span>'
-        + '</div>';
-    }
-
-    // TAF strip -- fetch async if not yet tried (undefined = not fetched, null = no TAF)
+  // ── 3. Decoded TAF ────────────────────────────────────────────────────────
+  if (obs) {
     if (tafData[selected] === undefined) {
       content += '<div id="taf-strip-' + selected + '"><div style="font-size:10px;color:#8a9aaa;padding:8px 0">Loading TAF...</div></div>';
       fetchTAF(selected).then(() => {
@@ -989,26 +969,13 @@ function renderDetail() {
     } else if (tafData[selected]) {
       content += '<div id="taf-strip-' + selected + '">' + decodeTAFFull(selected) + '</div>';
     }
-    // null = no TAF available -- show nothing
   }
 
+  // ── 4. NWS Alerts ─────────────────────────────────────────────────────────
   if (!r || r.st === 'loading') {
     content += `<div style="display:flex;align-items:center;gap:8px;color:#556070;font-size:12px"><span class="spin"></span> Querying NWS...</div>`;
   } else if (r.st === 'error') {
     content += `<div style="background:#fff0f0;border:1px solid #e0a0a0;border-radius:4px;padding:12px;color:#8b2020;font-size:12px">${r.error}<div style="font-size:10px;color:#a05050;margin-top:4px">NWS API may be briefly unavailable. Try refreshing.</div></div>`;
-  // NAS status card
-  var nasCard = renderNASCard(selected);
-  if (nasCard) content += nasCard;
-  // PIREPs
-  var pirepCard = renderPIREPCard(selected);
-  if (pirepCard) content += pirepCard;
-  else if (pirepData[selected] === undefined) content += '<div style="font-size:10px;color:#8a9aaa;padding:2px 0">Loading PIREPs...</div>';
-  var notamCard = renderNOTAMCard(selected);
-  if (notamCard) content += notamCard;
-  else if (notamData[selected] === undefined) {
-    content += '<div style="font-size:10px;color:#8a9aaa;padding:4px 0">Loading NOTAMs...</div>';
-  }
-
   } else if (r.alerts.length === 0) {
     content += `<div class="clear-box"><div style="font-size:28px;margin-bottom:6px">✓</div><div style="color:#1a6b30;font-weight:700;font-size:13px">No Active NWS Alerts</div><div style="color:#556070;font-size:11px;margin-top:3px">No watches, warnings, or advisories in effect</div></div>`;
   } else {
@@ -1051,43 +1018,75 @@ function renderDetail() {
       });
     }
   }
-  content += '</div>';
 
-  // 7-day forecast -- fetch async if not cached
-  const forecastSlot = 'forecast-7day-' + selected;
-  if (!forecastData[selected]) {
-    content += '<div id="' + forecastSlot + '"><div style="font-size:10px;color:#8a9aaa;padding:8px 0">Loading 7-day forecast...</div></div>';
-    fetch7Day(selected).then(() => {
-      const el = document.getElementById(forecastSlot);
-      if (el && selected === el.closest('[id]')?.id?.replace('forecast-7day-','')) {
-        el.innerHTML = render7Day(selected);
-      } else {
-        // Re-render if element not found via closest
-        const slot = document.getElementById(forecastSlot);
-        if (slot) slot.innerHTML = render7Day(selected);
-      }
-    });
-  } else {
-    content += '<div id="' + forecastSlot + '">' + render7Day(selected) + '</div>';
+  // ── 5. NAS / FAA flow programs ────────────────────────────────────────────
+  var nasCard = renderNASCard(selected);
+  if (nasCard) content += nasCard;
+
+  // ── 6. AQI ────────────────────────────────────────────────────────────────
+  if (obs) {
+    if (aqiData[selected] === undefined) {
+      content += '<div id="aqi-strip-' + selected + '"></div>';
+      fetchAQI(selected).then(() => {
+        const el = document.getElementById('aqi-strip-' + selected);
+        if (el && aqiData[selected]) {
+          const lvl = aqiData[selected].level;
+          el.innerHTML = '<div style="display:inline-flex;align-items:center;gap:8px;background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:6px 12px;margin-bottom:14px">'
+            + '<span style="background:' + lvl.color + ';color:' + lvl.text + ';font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">AQI ' + aqiData[selected].aqi + '</span>'
+            + '<span style="font-size:11px;color:#556070">' + aqiData[selected].category
+            + (aqiData[selected].pollutant ? ' · ' + aqiData[selected].pollutant : '') + '</span>'
+            + '</div>';
+        }
+      });
+    } else if (aqiData[selected]) {
+      const lvl = aqiData[selected].level;
+      content += '<div style="display:inline-flex;align-items:center;gap:8px;background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:6px 12px;margin-bottom:14px">'
+        + '<span style="background:' + lvl.color + ';color:' + lvl.text + ';font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">AQI ' + aqiData[selected].aqi + '</span>'
+        + '<span style="font-size:11px;color:#556070">' + aqiData[selected].category
+        + (aqiData[selected].pollutant ? ' · ' + aqiData[selected].pollutant : '') + '</span>'
+        + '</div>';
+    }
   }
-  // Hourly conditions slot
+
+  // ── 7. PIREPs ─────────────────────────────────────────────────────────────
+  var pirepCard = renderPIREPCard(selected);
+  if (pirepCard) content += pirepCard;
+
+  // ── 8. Hourly conditions ──────────────────────────────────────────────────
   var hourlySlot = 'hourly-' + selected;
   if (hourlyData[selected]) {
     content += '<div id="' + hourlySlot + '">' + renderHourly(selected) + '</div>';
   } else {
     content += '<div id="' + hourlySlot + '"><div style="font-size:10px;color:#8a9aaa;padding:4px 0">Loading hourly conditions...</div></div>';
   }
+
+  // ── 9. 7-day forecast ─────────────────────────────────────────────────────
+  const forecastSlot = 'forecast-7day-' + selected;
+  if (!forecastData[selected]) {
+    content += '<div id="' + forecastSlot + '"><div style="font-size:10px;color:#8a9aaa;padding:8px 0">Loading 7-day forecast...</div></div>';
+  } else {
+    content += '<div id="' + forecastSlot + '">' + render7Day(selected) + '</div>';
+  }
+
+  content += '</div>';
   panel.innerHTML = content;
-  // Update hourly slot when data arrives
-  if (!hourlyData[selected]) {
+
+  // Fetch missing data and update slots async
+  if (!hourlyData[selected] || !forecastData[selected]) {
     fetch7Day(selected).then(() => {
-      var el = document.getElementById(hourlySlot);
-      if (el) el.innerHTML = renderHourly(selected);
-      var el7 = document.getElementById(forecastSlot);
-      if (el7) el7.innerHTML = render7Day(selected);
+      var elH = document.getElementById(hourlySlot);
+      if (elH) elH.innerHTML = renderHourly(selected);
+      var elF = document.getElementById(forecastSlot);
+      if (elF) elF.innerHTML = render7Day(selected);
     });
   }
+
+  // Fetch PIREPs on demand
+  if (pirepData[selected] === undefined) {
+    fetchPIREP(selected).then(function() { if (selected === selected) renderDetail(); });
+  }
 }
+
 
 function toggleAlert(id) {
   openAlert = openAlert === id ? null : id;
