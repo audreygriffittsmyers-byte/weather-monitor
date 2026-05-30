@@ -277,11 +277,16 @@
           <!-- Layer toggles -->
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="radar-toggle" onchange="toggleRadar(this.checked)" checked style="cursor:pointer"/> Radar</label>
+            <div style="display:flex;gap:1px;background:#E8E8E8;border-radius:3px;padding:2px">
+              <button class="radar-speed-btn" data-speed="0.5" onclick="setRadarSpeed(0.5)" style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">0.5x</button>
+              <button class="radar-speed-btn" data-speed="1"   onclick="setRadarSpeed(1)"   style="background:#0E2841;color:#fff;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">1x</button>
+              <button class="radar-speed-btn" data-speed="2"   onclick="setRadarSpeed(2)"   style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">2x</button>
+            </div>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="sat-toggle" onchange="toggleSatellite(this.checked)" style="cursor:pointer"/> Satellite</label>
             <div id="sat-product-btns" style="display:none;gap:1px;background:#E8E8E8;border-radius:3px;padding:2px">
-              <button class="sat-product-btn" data-product="global_visible_imagery_mosaic"    onclick="setSatProduct('global_visible_imagery_mosaic')"            style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">VIS</button>
-              <button class="sat-product-btn" data-product="global_longwave_imagery_mosaic"   onclick="setSatProduct('global_longwave_imagery_mosaic')"    style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">IR</button>
-              <button class="sat-product-btn" data-product="global_water_vapor_imagery_mosaic" onclick="setSatProduct('global_water_vapor_imagery_mosaic')"    style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">WV</button>
+              <button class="sat-product-btn" data-product="global_visible_imagery_mosaic"    onclick="setSatProduct('global_visible_imagery_mosaic')"    style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">VIS</button>
+              <button class="sat-product-btn" data-product="global_longwave_imagery_mosaic"   onclick="setSatProduct('global_longwave_imagery_mosaic')"   style="background:#0E2841;color:#fff;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">IR</button>
+              <button class="sat-product-btn" data-product="global_water_vapor_imagery_mosaic" onclick="setSatProduct('global_water_vapor_imagery_mosaic')" style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">WV</button>
             </div>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="spc-poly-toggle" onchange="toggleSPCPolygons(this.checked)" checked style="cursor:pointer"/> SPC Conv</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="fire-poly-toggle" onchange="toggleFirePolygons(this.checked)" checked style="cursor:pointer"/> Fire Wx</label>
@@ -1765,6 +1770,9 @@ let mapMarkers      = [];
 let mapLayer        = 'both';
 let mapInitialized  = false;
 let radarLayer      = null;
+let showSatellite   = false;
+let satLayer        = null;
+let satProduct      = "global_longwave_imagery_mosaic";
 let rangeRingLayers = [];
 let spcPolyLayer    = null;
 let firePolyLayer   = null;
@@ -1775,9 +1783,6 @@ let showFirePolys   = true;
 let showWPCPolys    = true;
 let showNWSPolys    = true;
 let showRadar       = true;
-let showSatellite   = false; // off by default -- user enables
-let satLayer        = null;
-let satProduct      = "global_longwave_imagery_mosaic"; // global layer names from nowCOAST WMS
 
 // Cached polygon data
 let spcPolygons  = null;
@@ -1976,13 +1981,69 @@ async function drawNWSPolygons() {
 }
 
 // ── Radar ─────────────────────────────────────────────────────────────────────
+// ── IEM animated radar ───────────────────────────────────────────────────────
+var IEM_TS = [
+  "900913-m50m","900913-m45m","900913-m40m","900913-m35m",
+  "900913-m30m","900913-m25m","900913-m20m","900913-m15m",
+  "900913-m10m","900913-m05m","900913"
+];
+var radarLayers    = [];
+var radarFrameIdx  = 0;
+var radarLoopTimer = null;
+var radarSpeed     = 1;
+
 function drawRadar() {
-  if (radarLayer) return;
-  radarLayer = L.tileLayer(
-    `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?t=${Date.now()}`,
-    { opacity:0.65, zIndex:10, attribution:'Radar: Iowa Mesonet' }
-  ).addTo(leafletMap);
+  if (!leafletMap) return;
+  _stopRadarLoop();
+  radarLayers = IEM_TS.map(function(ts) {
+    var l = L.tileLayer(
+      "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-" + ts + "/{z}/{x}/{y}.png",
+      { opacity: 0, zIndex: 10, attribution: "Radar: Iowa State IEM" }
+    );
+    l.addTo(leafletMap);
+    return l;
+  });
+  setTimeout(function() {
+    if (!showRadar || !leafletMap) return;
+    radarFrameIdx = radarLayers.length - 1;
+    radarLayers[radarFrameIdx].setOpacity(0.65);
+    radarLayer = radarLayers[radarFrameIdx];
+    _startRadarLoop();
+  }, 1500);
 }
+
+function _startRadarLoop() {
+  if (radarLoopTimer) return;
+  var ms = {0.5:800, 1:400, 2:200}[radarSpeed] || 400;
+  radarLoopTimer = setInterval(function() {
+    if (!showRadar || !leafletMap || !radarLayers.length) return;
+    var prev = radarFrameIdx;
+    radarFrameIdx = (radarFrameIdx + 1) % radarLayers.length;
+    radarLayers[radarFrameIdx].setOpacity(radarFrameIdx === radarLayers.length-1 ? 0.65 : 0.5);
+    radarLayers[prev].setOpacity(0);
+    radarLayer = radarLayers[radarFrameIdx];
+  }, ms);
+}
+
+function _stopRadarLoop() {
+  if (radarLoopTimer) { clearInterval(radarLoopTimer); radarLoopTimer = null; }
+  radarLayers.forEach(function(l) {
+    if (leafletMap && leafletMap.hasLayer(l)) leafletMap.removeLayer(l);
+  });
+  radarLayers = [];
+  radarLayer  = null;
+}
+
+function setRadarSpeed(s) {
+  radarSpeed = s;
+  document.querySelectorAll('.radar-speed-btn').forEach(function(b) {
+    var active = parseFloat(b.dataset.speed) === s;
+    b.style.background = active ? '#0E2841' : 'transparent';
+    b.style.color = active ? '#fff' : '#556070';
+  });
+  if (showRadar) { _stopRadarLoop(); drawRadar(); }
+}
+
 function clearRangeRings() {
   rangeRingLayers.forEach(function(l) { if (leafletMap) leafletMap.removeLayer(l); });
   rangeRingLayers = [];
@@ -2029,12 +2090,10 @@ function _drawRingShapes(lat, lon) {
   });
 }
 
-function removeRadar() {
-  if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
-}
+function removeRadar() { _stopRadarLoop(); }
 function toggleRadar(on) {
   showRadar = on;
-  on ? (drawRadar(), startRadarRefresh()) : removeRadar();
+  on ? drawRadar() : removeRadar();
 }
 function toggleSPCPolygons(on)  { showSPCPolys  = on; drawSPCPolygons(); }
 function toggleFirePolygons(on) { showFirePolys = on; drawFirePolygons(); }
@@ -2375,11 +2434,10 @@ function startAutoRefresh() {
 
 function startRadarRefresh() {
   if (radarRefreshInterval) return;
-  radarRefreshInterval = setInterval(() => {
+  radarRefreshInterval = setInterval(function() {
     if (!showRadar || !leafletMap) return;
-    if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
     drawRadar();
-  }, 2 * 60 * 1000);
+  }, 5 * 60 * 1000);
 }
 
 // ── Smart map mode detection ──────────────────────────────────────────────────
@@ -3456,7 +3514,6 @@ function renderNOTAMCard(code) {
 function drawSatellite() {
   if (!leafletMap) return;
   removeSatellite();
-  // Use GridLayer with custom getTileUrl to avoid Leaflet URL template issues with query strings
   var SatLayer = L.GridLayer.extend({
     createTile: function(coords, done) {
       var tile = document.createElement('img');
@@ -3467,9 +3524,8 @@ function drawSatellite() {
         + '&z=' + coords.z + '&x=' + coords.x + '&y=' + coords.y;
       tile.crossOrigin = 'anonymous';
       tile.onload = function() { done(null, tile); };
-      tile.onerror = function(e) { console.warn('Sat tile error:', url, e); done(e, tile); };
+      tile.onerror = function(e) { done(e, tile); };
       tile.src = url;
-      console.log('Sat tile requested:', url);
       return tile;
     }
   });
@@ -3481,8 +3537,8 @@ function removeSatellite() {
 }
 function toggleSatellite(on) {
   showSatellite = on;
-  var btns = document.getElementById("sat-product-btns");
-  if (btns) btns.style.display = on ? "flex" : "none";
+  var btns = document.getElementById('sat-product-btns');
+  if (btns) btns.style.display = on ? 'flex' : 'none';
   on ? drawSatellite() : removeSatellite();
 }
 function setSatProduct(p) {
