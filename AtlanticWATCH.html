@@ -3456,10 +3456,21 @@ function renderNOTAMCard(code) {
 function drawSatellite() {
   if (!leafletMap) return;
   removeSatellite();
-  satLayer = L.tileLayer(
-    PROXY + '?type=satellite&layer=' + satProduct + '&z={z}&x={x}&y={y}',
-    { opacity: 0.75, zIndex: 9, attribution: 'Satellite: NOAA GOES / nowCOAST' }
-  ).addTo(leafletMap);
+  // Use GridLayer with custom getTileUrl to avoid Leaflet URL template issues with query strings
+  var SatLayer = L.GridLayer.extend({
+    createTile: function(coords, done) {
+      var tile = document.createElement('img');
+      tile.style.width = tile.style.height = this.getTileSize().x + 'px';
+      tile.style.opacity = '0.75';
+      var url = PROXY + '?type=satellite&layer=' + satProduct
+        + '&z=' + coords.z + '&x=' + coords.x + '&y=' + coords.y;
+      tile.onload = function() { done(null, tile); };
+      tile.onerror = function(e) { done(e, tile); };
+      tile.src = url;
+      return tile;
+    }
+  });
+  satLayer = new SatLayer({ zIndex: 9, attribution: 'Satellite: NOAA GOES / nowCOAST' }).addTo(leafletMap);
 }
 function removeSatellite() {
   if (satLayer && leafletMap) { leafletMap.removeLayer(satLayer); satLayer = null; }
