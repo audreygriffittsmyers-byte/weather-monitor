@@ -3104,7 +3104,7 @@ function renderOpsGrid() {
     + '<span style="background:#eff6ff;padding:1px 6px;border-radius:2px">Blue cell</span>'
     + '</div>'
     + '<div style="background:#fff;border:1px solid #e8e8e8;border-radius:6px;overflow:hidden">'
-    + '<div style="display:grid;grid-template-columns:90px repeat(7,1fr);background:#f8f9fa;border-bottom:1px solid #e8e8e8">'
+    + '<div style="display:grid;grid-template-columns:90px 60px repeat(6,1fr);background:#f8f9fa;border-bottom:1px solid #e8e8e8">'
     + '<div style="padding:6px 8px;font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">Location</div>'
     + (function() {
         var days = ['Now'];
@@ -3196,7 +3196,7 @@ function _renderGridRow(fbo) {
     var fc = obs.flightCat || '';
     var fcColor = FC_COL[fc] || '#8a9aaa';
     nowPill = fc ? '<span style="background:' + fcColor + ';color:#fff;font-size:8px;font-weight:700;padding:2px 5px;border-radius:2px">' + fc + '</span>' : '';
-    if (obs.tempF != null) nowPill += '<span style="font-size:9px;color:#556070;margin-left:3px">' + obs.tempF + '°</span>';
+
   }
   if (nasProg.length) {
     nowPill += ' <span style="background:#d97706;color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + nasProg[0].type + '</span>';
@@ -3238,13 +3238,27 @@ function _renderGridRow(fbo) {
 
   var rowBg = alertCount > 0 ? '#fff8f8' : '#fff';
 
-  return '<div id="grid-row-' + code + '" style="display:grid;grid-template-columns:90px repeat(7,1fr);border-bottom:1px solid #f0f0f0;background:' + rowBg + ';cursor:pointer" '
+  // Build NOW cell with obs data
+  var nowCell = '<div style="padding:4px 2px;text-align:center;border-left:1px solid #f0f0f0">';
+  if (obs) {
+    var fc2 = obs.flightCat || '';
+    var fcColor2 = FC_COL[fc2] || '#8a9aaa';
+    if (fc2) nowCell += '<div style="margin-bottom:2px"><span style="background:' + fcColor2 + ';color:#fff;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px">' + fc2 + '</span></div>';
+    if (obs.tempF != null) nowCell += '<div style="font-size:11px;font-weight:700;color:#1a2a3a">' + obs.tempF + '°</div>';
+    if (alertCount > 0) nowCell += '<div style="font-size:8px;color:#dc2626;font-weight:700">⚠' + alertCount + '</div>';
+  } else {
+    nowCell += '<div style="font-size:10px;color:#e8e8e8">--</div>';
+  }
+  nowCell += '</div>';
+
+  return '<div id="grid-row-' + code + '" style="display:grid;grid-template-columns:90px 60px repeat(6,1fr);border-bottom:1px solid #f0f0f0;background:' + rowBg + ';cursor:pointer" '
     + 'onclick="switchTab(\'monitor\');selectFBO(\'' + code + '\')">'
     + '<div style="padding:6px 8px;border-right:1px solid #e8e8e8">'
     + '<div style="font-family:monospace;font-size:11px;font-weight:700;color:#0E2841">' + code + '</div>'
     + '<div style="font-size:9px;color:#8a9aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px">' + fbo.city + '</div>'
-    + '<div style="margin-top:2px">' + nowPill + '</div>'
+    + (nasProg.length ? '<div><span style="background:#d97706;color:#fff;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">' + nasProg[0].type + '</span></div>' : '')
     + '</div>'
+    + nowCell
     + dayCells
     + '</div>';
 }
