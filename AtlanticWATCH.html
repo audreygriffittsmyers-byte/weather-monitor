@@ -3529,10 +3529,14 @@ function _doPrint(codes, notes) {
       html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">7-Day Forecast</span>'
         +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">';
       fcast.slice(0,7).forEach(function(p){
+        if(!p) return;
+        var pname=(p.name||'').substring(0,3);
+        var ptemp=p.temperature!=null?p.temperature+'°':'--';
+        var pshort=(p.shortForecast||'').substring(0,12);
         html+='<div style="font-size:9px;text-align:center;padding:3px 5px;border:1px solid #e8e8e8;border-radius:3px;min-width:44px">'
-          +'<div style="font-weight:700;color:#0E2841">'+p.name+'</div>'
-          +'<div>'+p.hi+'°/'+p.lo+'°</div>'
-          +'<div style="color:#556070">'+p.short+'</div></div>';
+          +'<div style="font-weight:700;color:#0E2841">'+pname+'</div>'
+          +'<div>'+ptemp+'</div>'
+          +'<div style="color:#556070">'+pshort+'</div></div>';
       });
       html+='</div></div>';
     }
