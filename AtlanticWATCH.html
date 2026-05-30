@@ -1014,7 +1014,6 @@ function renderDetail() {
   const forecastSlot = 'forecast-7day-' + selected;
   if (!forecastData[selected]) {
     content += '<div id="' + forecastSlot + '"><div style="font-size:10px;color:#8a9aaa;padding:8px 0">Loading 7-day forecast...</div></div>';
-    panel.innerHTML = content;
     fetch7Day(selected).then(() => {
       const el = document.getElementById(forecastSlot);
       if (el && selected === el.closest('[id]')?.id?.replace('forecast-7day-','')) {
@@ -1027,7 +1026,23 @@ function renderDetail() {
     });
   } else {
     content += '<div id="' + forecastSlot + '">' + render7Day(selected) + '</div>';
-    panel.innerHTML = content;
+  }
+  // Hourly conditions slot
+  var hourlySlot = 'hourly-' + selected;
+  if (hourlyData[selected]) {
+    content += '<div id="' + hourlySlot + '">' + renderHourly(selected) + '</div>';
+  } else {
+    content += '<div id="' + hourlySlot + '"><div style="font-size:10px;color:#8a9aaa;padding:4px 0">Loading hourly conditions...</div></div>';
+  }
+  panel.innerHTML = content;
+  // Update hourly slot when data arrives
+  if (!hourlyData[selected]) {
+    fetch7Day(selected).then(() => {
+      var el = document.getElementById(hourlySlot);
+      if (el) el.innerHTML = renderHourly(selected);
+      var el7 = document.getElementById(forecastSlot);
+      if (el7) el7.innerHTML = render7Day(selected);
+    });
   }
 }
 
@@ -2469,7 +2484,9 @@ function renderTAFStrip(code) {
 
 
 // ── 7-Day Forecast ────────────────────────────────────────────────────────────
-const forecastData = {}; // code -> periods array
+const forecastData  = {}; // code -> 7-day periods array
+const hourlyData    = {}; // code -> hourly periods array
+let   hourlyWindow  = 12; // hours to show: 4/8/12/24/48
 
 async function fetch7Day(code) {
   const c = COORDS[code];
@@ -2481,12 +2498,15 @@ async function fetch7Day(code) {
     );
     if (!ptRes.ok) return;
     const pt = await ptRes.json();
-    const fUrl = pt.properties?.forecast;
+    const fUrl  = pt.properties?.forecast;
+    const fhUrl = pt.properties?.forecastHourly;
     if (!fUrl) return;
-    const fRes = await fetch(fUrl, { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } });
-    if (!fRes.ok) return;
-    const fd = await fRes.json();
-    forecastData[code] = (fd.properties?.periods || []).slice(0, 14);
+    const [fRes, fhRes] = await Promise.all([
+      fetch(fUrl,  { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } }),
+      fhUrl ? fetch(fhUrl, { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } }) : Promise.resolve(null)
+    ]);
+    if (fRes.ok) { const fd = await fRes.json(); forecastData[code] = (fd.properties?.periods || []).slice(0, 14); }
+    if (fhRes && fhRes.ok) { const fh = await fhRes.json(); hourlyData[code] = (fh.properties?.periods || []).slice(0, 48); }
   } catch(e) {}
 }
 
@@ -2521,6 +2541,67 @@ function render7Day(code) {
   return html;
 }
 
+
+// ── Hourly Conditions Table ───────────────────────────────────────────────────
+function renderHourly(code) {
+  var periods = hourlyData[code];
+  if (!periods || !periods.length) return "";
+  var sliced = periods.slice(0, hourlyWindow);
+  var FC = { VFR:"#16a34a", MVFR:"#2563eb", IFR:"#dc2626", LIFR:"#7c3aed" };
+  // Window buttons
+  var html = '<div style="margin-top:12px;border-top:1px solid #e8e8e8;padding-top:10px">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em">Hourly Conditions</div>'
+    + '<div style="display:flex;gap:2px">';
+  [4,8,12,24,48].forEach(function(h) {
+    var active = hourlyWindow === h;
+    html += '<button onclick="hourlyWindow=' + h + ';var e=document.getElementById(\'hourly-' + code + '\');if(e)e.innerHTML=renderHourly(\''  + code + '\');" '
+      + 'style="background:' + (active?"#0E2841":"#f0f4f7") + ';color:' + (active?"#fff":"#556070") + ';border:1px solid #c8d0d8;border-radius:3px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">' + h + 'h</button>';
+  });
+  html += '</div></div>';
+  // Scrollable table
+  html += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="border-collapse:collapse;font-size:10px;white-space:nowrap;min-width:100%"><thead><tr>'
+    + '<th style="padding:3px 6px;text-align:left;color:#556070;font-size:9px;font-weight:700;background:#f8f9fa;position:sticky;left:0;min-width:72px;border-right:1px solid #e8e8e8">Param</th>';
+  sliced.forEach(function(p) {
+    var d = new Date(p.startTime);
+    var hr = d.toLocaleTimeString("en-US",{hour:"numeric",hour12:true}).replace(":00","");
+    html += '<th style="padding:3px 8px;text-align:center;color:#556070;font-size:9px;background:#f8f9fa;min-width:48px">' + hr + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+  // Rows
+  var rowDefs = [
+    { label:"Flight Rule", fn: function(p) {
+        var fc = /IFR|freezing fog|dense fog/i.test(p.shortForecast||"") ? "IFR"
+          : /MVFR|mist|fog|low vis/i.test(p.shortForecast||"") ? "MVFR" : "VFR";
+        return '<span style="background:' + (FC[fc]||"#8a9aaa") + ';color:#fff;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px">' + fc + '</span>';
+    }},
+    { label:"Temp °F", fn: function(p) {
+        var t = p.temperature;
+        var hl = t >= 95 ? "background:#fee2e2;color:#dc2626;font-weight:700" : t <= 32 ? "background:#e0f2fe;color:#0369a1;font-weight:700" : "";
+        return {val: (t!=null?t+"°":"--"), hl:hl};
+    }},
+    { label:"Wind", fn: function(p) { return (p.windDirection||"") + " " + (p.windSpeed||"--"); }},
+    { label:"Precip %", fn: function(p) {
+        var v = p.probabilityOfPrecipitation && p.probabilityOfPrecipitation.value;
+        var hl = v >= 80 ? "background:#fee2e2;color:#dc2626;font-weight:700" : v >= 50 ? "background:#fef3c7;color:#d97706;font-weight:700" : "";
+        return {val: v!=null ? v+"%" : "--", hl:hl};
+    }},
+    { label:"Conditions", fn: function(p) { return (p.shortForecast||"").substring(0,14); }},
+  ];
+  rowDefs.forEach(function(row, ri) {
+    var bg = ri%2===0?"#fff":"#f8f9fa";
+    html += '<tr><td style="padding:4px 6px;font-weight:700;color:#0E2841;font-size:9px;background:' + bg + ';position:sticky;left:0;border-right:1px solid #e8e8e8">' + row.label + '</td>';
+    sliced.forEach(function(p) {
+      var result = row.fn(p);
+      var val = typeof result === "object" ? result.val : result;
+      var hl  = typeof result === "object" ? (result.hl||"") : "";
+      html += '<td style="padding:4px 8px;text-align:center;background:' + bg + ';' + hl + '">' + val + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+  return html;
+}
 
 // ── WPC Winter Weather polygons ───────────────────────────────────────────────
 let winterPolyLayer = null;
