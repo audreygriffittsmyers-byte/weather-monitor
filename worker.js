@@ -1,11 +1,9 @@
-// Atlantic Aviation WATCH — Cloudflare Worker v2
-// Deploy at: https://lucky-flower-26db.audreygriffitts-myers.workers.dev
+// Atlantic Aviation WATCH — Cloudflare Worker
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Cache-Control': 'no-store, no-cache',
 };
 const GEOJSON = { ...CORS, 'Content-Type': 'application/json' };
 const TEXT    = { ...CORS, 'Content-Type': 'text/plain' };
@@ -18,7 +16,6 @@ export default {
     const url  = new URL(request.url);
     const type = url.searchParams.get('type');
 
-    // ── SPC per-point lookup ──────────────────────────────────────────────────
     if (type === 'spc') {
       const lat = parseFloat(url.searchParams.get('lat'));
       const lon = parseFloat(url.searchParams.get('lon'));
@@ -44,7 +41,6 @@ export default {
       }
     }
 
-    // ── SPC probability polygons ──────────────────────────────────────────────
     if (type === 'spcprobpoly') {
       const layer = url.searchParams.get('layer') || '2';
       try {
@@ -54,7 +50,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    // ── SPC categorical polygons ──────────────────────────────────────────────
     if (type === 'spcpoly') {
       const day = url.searchParams.get('day') || '1';
       const LAYER = { '1':1, '2':9, '3':17 };
@@ -65,7 +60,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    // ── SPC outlook text — returns JSON {productText: "..."} ──────────────────
     if (type === 'text') {
       const product = url.searchParams.get('product') || 'PTSDY1';
       const URLS = {
@@ -80,7 +74,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({ productText: '' }), { headers: GEOJSON }); }
     }
 
-    // ── NWS alerts by state ───────────────────────────────────────────────────
     if (type === 'nwspoly') {
       const area = url.searchParams.get('area');
       if (!area) return new Response('Missing area', { status: 400, headers: CORS });
@@ -91,7 +84,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    // ── SPC Fire Weather polygons ─────────────────────────────────────────────
     if (type === 'firepoly') {
       const day = url.searchParams.get('day') || '1';
       const LAYER = { '1':1, '2':4 };
@@ -102,7 +94,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    // ── WPC Excessive Rainfall polygons ──────────────────────────────────────
     if (type === 'wpcpoly') {
       try {
         const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_precip_hazards/MapServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
@@ -111,7 +102,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    // ── WPC Winter Weather polygons ───────────────────────────────────────────
     if (type === 'winterpoly') {
       try {
         const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_precip_hazards/MapServer/1/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
@@ -120,40 +110,26 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    // ── METAR aviation weather ────────────────────────────────────────────────
     if (type === 'metar') {
       const icao = url.searchParams.get('icao');
       if (!icao) return new Response('Missing icao', { status: 400, headers: CORS });
       try {
         const res = await fetch(`https://aviationweather.gov/api/data/metar?ids=${icao}&format=json&taf=false`,
-          { headers: { 'User-Agent': UA } });
+          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
-    // ── TAF aviation forecast ─────────────────────────────────────────────────
     if (type === 'taf') {
       const icao = url.searchParams.get('icao');
       if (!icao) return new Response('Missing icao', { status: 400, headers: CORS });
       try {
         const res = await fetch(`https://aviationweather.gov/api/data/taf?ids=${icao}&format=json&metar=false`,
-          { headers: { 'User-Agent': UA } });
+          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
-    // ── NOTAMs ────────────────────────────────────────────────────────────────
-    if (type === 'notam') {
-      const icao = url.searchParams.get('icao');
-      if (!icao) return new Response(JSON.stringify([]), { headers: GEOJSON });
-      try {
-        const res = await fetch(`https://aviationweather.gov/api/data/notam?ids=${icao}&format=json`,
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
-    }
-
-    // ── Air Quality Index (AirNow) ────────────────────────────────────────────
     if (type === 'aqi') {
       const lat = url.searchParams.get('lat');
       const lon = url.searchParams.get('lon');
@@ -166,7 +142,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
-    // ── Earthquake (USGS) ─────────────────────────────────────────────────────
     if (type === 'earthquake') {
       const start = new Date(Date.now() - 24*60*60*1000).toISOString();
       try {
@@ -176,7 +151,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    // ── Volcano (USGS VHP) ────────────────────────────────────────────────────
     if (type === 'volcano') {
       try {
         const res = await fetch('https://volcanoes.usgs.gov/vhp/api/alert?format=json',
@@ -185,7 +159,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
-    // ── Space Weather (NOAA SWPC) ─────────────────────────────────────────────
     if (type === 'spaceweather') {
       try {
         const res = await fetch('https://services.swpc.noaa.gov/products/alerts.json',
@@ -194,7 +167,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
-    // ── Wildfire Perimeters (NIFC) ────────────────────────────────────────────
     if (type === 'wildfirepoly') {
       try {
         const res = await fetch('https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query?where=PolygonDateTime+>=+CURRENT_TIMESTAMP+-+7&outFields=attr_IncidentName,attr_GISAcres,attr_FireBehaviorGeneral&returnGeometry=true&outSR=4326&f=geojson&resultRecordCount=500',
@@ -203,7 +175,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    // ── NHC Active Storms ─────────────────────────────────────────────────────
     if (type === 'nhc') {
       try {
         const res = await fetch('https://www.nhc.noaa.gov/CurrentStorms.json',
@@ -212,7 +183,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({activeStorms:[]}), { headers: CORS }); }
     }
 
-    // ── NHC Forecast Cone ─────────────────────────────────────────────────────
     if (type === 'nhccone') {
       const stormId = url.searchParams.get('id');
       if (!stormId) return new Response('Missing id', { status: 400, headers: CORS });
@@ -223,7 +193,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    // ── Tropical Outlook Text (NHC) ───────────────────────────────────────────
     if (type === 'tropicaloutlook') {
       try {
         const res = await fetch('https://www.nhc.noaa.gov/text/MIATWOAT.shtml',
@@ -234,7 +203,6 @@ export default {
       } catch(e) { return new Response('', { headers: TEXT }); }
     }
 
-    // ── FAA NAS Status (GDP/GS/AFP) ───────────────────────────────────────────
     if (type === 'nas') {
       try {
         const res = await fetch('https://nasstatus.faa.gov/api/airport-status-information',
@@ -258,7 +226,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
-    // ── Satellite tile proxy (GOES via nowCOAST WMS) ──────────────────────────
     if (type === 'satellite') {
       const z = url.searchParams.get('z');
       const x = url.searchParams.get('x');
@@ -283,7 +250,6 @@ export default {
       }
     }
 
-    // ── AI Plain-Language Briefing ────────────────────────────────────────────
     if (type === 'brief') {
       const body = await request.json().catch(() => ({}));
       const apiKey = env.ANTHROPIC_API_KEY;
@@ -298,34 +264,8 @@ export default {
       } catch(e) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: GEOJSON }); }
     }
 
-    // ── Push notification relay ───────────────────────────────────────────────
     if (type === 'notify') {
       return new Response(JSON.stringify({ ok: true }), { headers: GEOJSON });
-    }
-
-    if (type === 'tfr') {
-      try {
-        const res = await fetch('https://tfr.faa.gov/tfr2/list.html',
-          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
-        const html = await res.text();
-        const tfrs = [];
-        // Parse HTML table rows
-        const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-        const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-        let row;
-        while ((row = rowRe.exec(html)) !== null) {
-          const cells = [];
-          let cell;
-          const cr = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-          while ((cell = cr.exec(row[1])) !== null) {
-            cells.push(cell[1].replace(/<[^>]+>/g,'').trim());
-          }
-          if (cells.length >= 5 && cells[1] && cells[1].includes('/')) {
-            tfrs.push({ notam_id:cells[1], facility:cells[2], state:cells[3], type:cells[4], description:(cells[5]||'').substring(0,200) });
-          }
-        }
-        return new Response(JSON.stringify(tfrs), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
     return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), { status: 400, headers: GEOJSON });
