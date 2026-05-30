@@ -68,18 +68,6 @@
   .ring-label { background: transparent !important; border: none !important; box-shadow: none !important; font-size: 9px !important; font-weight: 700; color: #556070; padding: 0 !important; }
   .ring-label::before { display: none !important; }
 
-  /* Print briefing */
-  @media print {
-    body > *:not(#print-briefing) { display: none !important; }
-    #print-briefing { display: block !important; }
-    #print-briefing { font-family: Arial, sans-serif; font-size: 11px; color: #000; padding: 20px; }
-    .pb-header { border-bottom: 2px solid #0E2841; padding-bottom: 8px; margin-bottom: 16px; }
-    .pb-loc { page-break-inside: avoid; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 4px; padding: 10px; }
-    .pb-badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-weight: 700; font-size: 10px; color: #fff; }
-    a { color: #000; text-decoration: none; }
-  }
-  #print-briefing { display: none; }
-
   /* Suggestion tray */
   #suggest-tray { background: #f2f5f8; border: 1px solid #c8d0d8; border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; display: none; }
   .sug-chip { display: inline-flex; align-items: center; gap: 5px; background: #ffffff; border: 1px solid #c8d0d8; border-radius: 4px; padding: 3px 8px; margin: 2px; }
@@ -180,7 +168,7 @@
     <span id="scan-prog" style="font-size:9px;color:#c8d0d8;display:none;animation:pulse 1s infinite"></span>
     <button id="gps-btn" onclick="startGPSWatch()" title="Show my location" style="background:transparent;border:1px solid #ffffff88;color:#ffffff;border-radius:4px;padding:5px 10px;font-size:13px;cursor:pointer;line-height:1">🎯</button>
     <button id="loc-filter-btn" onclick="openLocationPicker()" title="Filter locations" style="background:transparent;border:1px solid #ffffff88;color:#ffffff;border-radius:4px;padding:5px 10px;font-size:13px;cursor:pointer;line-height:1">📍</button>
-    <button onclick="openPrintBriefing()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer" title="Print weather briefing">🖨 Brief</button>
+    <button onclick="openPrintBriefing()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer" title="Print briefing">🖨 Brief</button>
     <button id="scan-btn" style="background:#ffffff;border:1px solid #ffffff;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:.04em">▶ Scan All</button>
   </div>
 
@@ -342,8 +330,6 @@
 
     </div><!-- /main -->
   </div><!-- /body -->
-
-  <div id="print-briefing"></div>
 </div><!-- /app -->
 
 <script>
@@ -3241,147 +3227,123 @@ function _renderGridRow(fbo) {
 
 // ── Print Briefing ────────────────────────────────────────────────────────────
 function openPrintBriefing() {
-  // Determine which locations to include
   var codes;
   if (activeTab === 'grid') {
-    // Use the current grid region
-    var region = typeof gridRegion !== 'undefined' ? gridRegion : 'All';
-    var regionCodes = GRID_REGIONS[region];
-    codes = COVERED
-      .filter(function(f) { return regionCodes ? regionCodes.indexOf(f.code) !== -1 : true; })
-      .map(function(f) { return f.code; });
+    var rCodes = GRID_REGIONS[gridRegion];
+    codes = COVERED.filter(function(f){ return rCodes ? rCodes.indexOf(f.code)!==-1 : true; }).map(function(f){return f.code;});
   } else if (selected) {
     codes = [selected];
   } else {
-    // Use location filter
-    codes = COVERED.map(function(f) { return f.code; });
+    codes = COVERED.map(function(f){return f.code;});
   }
-
-  // Notes field -- prompt user
-  var notes = window.prompt('Optional briefing notes (leave blank to skip):', '');
-
-  _buildAndPrintBriefing(codes, notes || '');
+  var notes = window.prompt('Optional notes for this briefing:','') || '';
+  _doPrint(codes, notes);
 }
 
-function _buildAndPrintBriefing(codes, notes) {
+function _doPrint(codes, notes) {
   var now = new Date();
-  var utcStr = now.toISOString().replace('T', ' ').substring(0, 16) + 'Z';
-  var label = codes.length === 1
-    ? (codes[0] + ' -- ' + (COVERED.find(function(f){return f.code===codes[0];})||{city:''}).city)
-    : (codes.length + ' locations');
+  var utc = now.toISOString().replace('T',' ').substring(0,16)+'Z';
+  var label = codes.length===1 ? codes[0]+' -- '+(COVERED.find(function(f){return f.code===codes[0];})||{city:''}).city : codes.length+' locations';
+  var FC_COLOR = {VFR:'#16a34a',MVFR:'#2563eb',IFR:'#dc2626',LIFR:'#7c3aed'};
 
-  var FC_COLOR = { VFR:'#16a34a', MVFR:'#2563eb', IFR:'#dc2626', LIFR:'#7c3aed' };
+  var html = '<div style="border-bottom:2px solid #0E2841;padding-bottom:8px;margin-bottom:16px">'
+    +'<div style="font-size:18px;font-weight:700;color:#0E2841">ATLANTIC AVIATION -- WATCH</div>'
+    +'<div style="font-size:12px;color:#556070">Weather Briefing -- '+label+'</div>'
+    +'<div style="font-size:10px;color:#8a9aaa">Generated '+utc+' UTC | Internal use only | Does not supersede official NWS products</div>'
+    +(notes?'<div style="margin-top:8px;padding:8px;background:#f8f9fa;border-left:3px solid #0E2841;font-size:11px">'+notes+'</div>':'')
+    +'</div>';
 
-  var html = '<div class="pb-header">'
-    + '<div style="font-size:18px;font-weight:700;color:#0E2841">ATLANTIC AVIATION -- WATCH</div>'
-    + '<div style="font-size:12px;color:#556070">Weather Briefing -- ' + label + '</div>'
-    + '<div style="font-size:11px;color:#8a9aaa">Generated ' + utcStr + ' UTC &nbsp;|&nbsp; Internal use only &nbsp;|&nbsp; Does not supersede official NWS products</div>'
-    + (notes ? '<div style="margin-top:8px;padding:8px;background:#f8f9fa;border-left:3px solid #0E2841;font-size:11px">' + notes + '</div>' : '')
-    + '</div>';
-
-  // Flight category summary table
-  var withObs = codes.filter(function(c) { return obsData[c]; });
+  // Summary table
+  var withObs = codes.filter(function(c){return obsData[c];});
   if (withObs.length) {
-    html += '<div style="margin-bottom:20px">'
-      + '<div style="font-size:10px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Flight Category Summary</div>'
-      + '<table style="width:100%;border-collapse:collapse;font-size:10px">'
-      + '<tr style="background:#f8f9fa"><th style="text-align:left;padding:4px 6px;border:1px solid #e8e8e8">ICAO</th>'
-      + '<th style="text-align:left;padding:4px 6px;border:1px solid #e8e8e8">Location</th>'
-      + '<th style="text-align:center;padding:4px 6px;border:1px solid #e8e8e8">Category</th>'
-      + '<th style="text-align:left;padding:4px 6px;border:1px solid #e8e8e8">Current Conditions</th>'
-      + '<th style="text-align:center;padding:4px 6px;border:1px solid #e8e8e8">Observed</th></tr>';
-    withObs.forEach(function(code) {
-      var obs = obsData[code];
-      var fbo = COVERED.find(function(f){return f.code===code;}) || {city:'',state:''};
-      var fc = obs.flightCat || '--';
-      var fcColor = FC_COLOR[fc] || '#8a9aaa';
-      var condParts = [];
-      if (obs.windKts != null) condParts.push(windDirLabel(obs.windDir) + ' ' + obs.windKts + 'kt' + (obs.windGustKts?' G'+obs.windGustKts:''));
-      if (obs.visib != null) condParts.push(obs.visib + 'SM');
-      if (obs.condition) condParts.push(obs.condition);
-      var obsTimeStr = obs.obsTime ? new Date(obs.obsTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'}) : '';
-      html += '<tr><td style="padding:4px 6px;border:1px solid #e8e8e8;font-family:monospace;font-weight:700">' + (toICAO(code)||code) + '</td>'
-        + '<td style="padding:4px 6px;border:1px solid #e8e8e8">' + fbo.city + ', ' + fbo.state + '</td>'
-        + '<td style="padding:4px 6px;border:1px solid #e8e8e8;text-align:center"><span class="pb-badge" style="background:' + fcColor + '">' + fc + '</span></td>'
-        + '<td style="padding:4px 6px;border:1px solid #e8e8e8">' + condParts.join(' &middot; ') + '</td>'
-        + '<td style="padding:4px 6px;border:1px solid #e8e8e8;text-align:center;color:#8a9aaa">' + obsTimeStr + '</td></tr>';
+    html += '<div style="margin-bottom:20px"><div style="font-size:10px;font-weight:700;color:#556070;text-transform:uppercase;margin-bottom:6px">Flight Category Summary</div>'
+      +'<table style="width:100%;border-collapse:collapse;font-size:10px"><tr style="background:#f0f4f7">'
+      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">ICAO</th>'
+      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Location</th>'
+      +'<th style="text-align:center;padding:4px 6px;border:1px solid #ddd">Cat</th>'
+      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Conditions</th></tr>';
+    withObs.forEach(function(code){
+      var obs=obsData[code]; var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
+      var fc=obs.flightCat||'--'; var fcColor=FC_COLOR[fc]||'#8a9aaa';
+      var cond=[];
+      if(obs.windKts!=null) cond.push(windDirLabel(obs.windDir)+' '+obs.windKts+'kt'+(obs.windGustKts?' G'+obs.windGustKts:''));
+      if(obs.visib!=null) cond.push(obs.visib+'SM');
+      if(obs.condition) cond.push(obs.condition);
+      html+='<tr><td style="padding:4px 6px;border:1px solid #ddd;font-family:monospace;font-weight:700">'+(toICAO(code)||code)+'</td>'
+        +'<td style="padding:4px 6px;border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'
+        +'<td style="padding:4px 6px;border:1px solid #ddd;text-align:center"><span style="background:'+fcColor+';color:#fff;padding:2px 6px;border-radius:3px;font-weight:700;font-size:9px">'+fc+'</span></td>'
+        +'<td style="padding:4px 6px;border:1px solid #ddd">'+cond.join(' &middot; ')+'</td></tr>';
     });
-    html += '</table></div>';
+    html+='</table></div>';
   }
 
-  // Per-location detail blocks
-  codes.forEach(function(code) {
-    var obs = obsData[code];
-    var taf = tafData[code];
-    var r   = results[code];
-    var fbo = COVERED.find(function(f){return f.code===code;}) || {city:'',state:''};
-    var icao = toICAO(code) || code;
-    var fc = obs ? (obs.flightCat || '--') : '--';
-    var fcColor = FC_COLOR[fc] || '#8a9aaa';
+  // Per-location blocks
+  codes.forEach(function(code){
+    var obs=obsData[code]; var taf=tafData[code]; var r=results[code];
+    var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
+    var icao=toICAO(code)||code;
+    var fc=obs?(obs.flightCat||'--'):'--';
+    var fcColor=FC_COLOR[fc]||'#8a9aaa';
 
-    html += '<div class="pb-loc">'
-      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-      + '<span style="font-size:15px;font-weight:700;color:#0E2841;font-family:monospace">' + code + '</span>'
-      + '<span style="font-size:12px;color:#556070">' + fbo.city + ', ' + fbo.state + ' &nbsp;&middot;&nbsp; ' + icao + '</span>'
-      + '<span class="pb-badge" style="background:' + fcColor + ';margin-left:auto">' + fc + '</span>'
-      + '</div>';
+    html+='<div style="page-break-inside:avoid;margin-bottom:14px;border:1px solid #ccc;border-radius:4px;padding:10px">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'
+      +'<span style="font-size:15px;font-weight:700;color:#0E2841;font-family:monospace">'+code+'</span>'
+      +'<span style="font-size:12px;color:#556070">'+fbo.city+', '+fbo.state+' &middot; '+icao+'</span>'
+      +'<span style="background:'+fcColor+';color:#fff;padding:2px 6px;border-radius:3px;font-weight:700;font-size:9px;margin-left:auto">'+fc+'</span>'
+      +'</div>';
 
-    // METAR
-    if (obs && obs.rawOb) {
-      html += '<div style="margin-bottom:8px">'
-        + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;margin-bottom:3px">METAR</div>'
-        + '<table style="font-size:10px;width:100%;border-collapse:collapse">';
-      if (obs.tempF != null) html += '<tr><td style="padding:2px 6px;color:#556070;width:100px">Temperature</td><td style="padding:2px 6px">' + obs.tempF + '°F (' + obs.tempC + '°C)</td></tr>';
-      if (obs.windKts != null) html += '<tr><td style="padding:2px 6px;color:#556070">Wind</td><td style="padding:2px 6px">' + (obs.windDir != null ? obs.windDir + '° at ' : 'Variable at ') + obs.windKts + ' kts' + (obs.windGustKts?' gusting '+obs.windGustKts+' kts':'') + '</td></tr>';
-      if (obs.visib != null) html += '<tr><td style="padding:2px 6px;color:#556070">Visibility</td><td style="padding:2px 6px">' + obs.visib + ' SM</td></tr>';
-      if (obs.condition) html += '<tr><td style="padding:2px 6px;color:#556070">Weather</td><td style="padding:2px 6px">' + obs.condition + '</td></tr>';
-      html += '</table>'
-        + '<div style="font-size:9px;color:#8a9aaa;font-family:monospace;margin-top:4px">' + obs.rawOb + '</div>'
-        + '</div>';
+    if(obs&&obs.rawOb){
+      var conds=[];
+      if(obs.tempF!=null) conds.push('Temp: '+obs.tempF+'°F');
+      if(obs.windKts!=null) conds.push('Wind: '+(obs.windDir!=null?obs.windDir+'° at ':'')+obs.windKts+'kt'+(obs.windGustKts?' G'+obs.windGustKts:''));
+      if(obs.visib!=null) conds.push('Vis: '+obs.visib+'SM');
+      if(obs.condition) conds.push(obs.condition);
+      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">METAR</span> '
+        +'<span style="font-size:10px;color:#1a2a3a">'+conds.join(' | ')+'</span><br>'
+        +'<span style="font-size:9px;color:#8a9aaa;font-family:monospace">'+obs.rawOb+'</span></div>';
     }
 
-    // TAF (raw)
-    if (taf && taf.rawTAF) {
-      html += '<div style="margin-bottom:8px">'
-        + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;margin-bottom:3px">TAF</div>'
-        + '<div style="font-size:9px;color:#8a9aaa;font-family:monospace;word-break:break-all">' + taf.rawTAF + '</div>'
-        + '</div>';
+    if(taf&&taf.rawTAF){
+      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">TAF</span><br>'
+        +'<span style="font-size:9px;color:#8a9aaa;font-family:monospace;word-break:break-all">'+taf.rawTAF+'</span></div>';
     }
 
-    // Active NWS alerts
-    if (r && r.alerts && r.alerts.length) {
-      html += '<div style="margin-bottom:8px">'
-        + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;margin-bottom:3px">Active NWS Alerts (' + r.alerts.length + ')</div>';
-      r.alerts.forEach(function(a) {
-        html += '<div style="padding:4px 6px;background:#fff0f0;border-left:3px solid #dc2626;margin-bottom:3px;font-size:10px">'
-          + '<b>' + a.event + '</b>'
-          + (a.expires ? ' -- Expires ' + fmtTime(a.expires) : '')
-          + '</div>';
+    if(r&&r.alerts&&r.alerts.length){
+      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#dc2626;text-transform:uppercase">'+r.alerts.length+' Active Alert'+(r.alerts.length>1?'s':'')+'</span>';
+      r.alerts.forEach(function(a){
+        html+='<div style="padding:3px 6px;background:#fff0f0;border-left:3px solid #dc2626;margin-top:3px;font-size:10px"><b>'+a.event+'</b>'+(a.expires?' -- Expires '+fmtTime(a.expires):'')+'</div>';
       });
-      html += '</div>';
+      html+='</div>';
     }
 
-    // NAS programs
-    var nas = getNASForCode(code);
-    if (nas.length) {
-      html += '<div style="margin-bottom:8px">'
-        + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;margin-bottom:3px">FAA Delays</div>';
-      nas.forEach(function(p) {
-        html += '<div style="padding:4px 6px;background:#fffbeb;border-left:3px solid #d97706;font-size:10px;margin-bottom:3px">'
-          + '<b>' + p.type + '</b> -- ' + p.reason + (p.avg ? ' (avg ' + p.avg + ' min)' : '') + '</div>';
+    var nas=getNASForCode(code);
+    if(nas.length){
+      html+='<div><span style="font-size:9px;font-weight:700;color:#d97706;text-transform:uppercase">FAA Delay</span>';
+      nas.forEach(function(p){
+        html+='<div style="padding:3px 6px;background:#fffbeb;border-left:3px solid #d97706;margin-top:3px;font-size:10px"><b>'+p.type+'</b> -- '+p.reason+(p.avg?' (avg '+p.avg+' min)':'')+'</div>';
       });
-      html += '</div>';
+      html+='</div>';
     }
 
-    html += '</div>'; // .pb-loc
+    html+='</div>';
   });
 
-  html += '<div style="margin-top:20px;padding-top:10px;border-top:1px solid #e8e8e8;font-size:9px;color:#8a9aaa;text-align:center">'
-    + 'Atlantic Aviation WATCH -- Internal Use Only -- Does not supersede official NWS products or preflight weather briefings'
-    + '</div>';
+  html+='<div style="margin-top:16px;padding-top:8px;border-top:1px solid #e8e8e8;font-size:9px;color:#8a9aaa;text-align:center">'
+    +'Atlantic Aviation WATCH | Internal Use Only | Does not supersede official NWS products</div>';
 
-  document.getElementById('print-briefing').innerHTML = html;
-  window.print();
+  var win=window.open('','_blank','width=900,height=700');
+  if(!win){alert('Please allow popups for this site to generate briefings.');return;}
+  win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
+    +'<meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>WATCH Briefing -- '+label+'</title>'
+    +'<style>body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:20px;max-width:900px;margin:0 auto}'
+    +'table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:4px 6px}'
+    +'@media print{.noprint{display:none!important}}</style></head><body>'
+    +'<div class="noprint" style="background:#0E2841;color:#fff;padding:8px 16px;margin:-20px -20px 16px;display:flex;justify-content:space-between;align-items:center">'
+    +'<span style="font-size:12px;font-weight:700">WATCH Briefing</span>'
+    +'<button onclick="window.print()" style="background:#fff;color:#0E2841;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">Print / Save PDF</button>'
+    +'</div>'+html+'</body></html>');
+  win.document.close();
 }
 
 // ── GPS User Location ─────────────────────────────────────────────────────────
