@@ -290,6 +290,31 @@ export default {
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
+    if (type === 'notam') {
+      const icao = url.searchParams.get('icao');
+      if (!icao) return new Response(JSON.stringify([]), { headers: GEOJSON });
+      try {
+        const res = await fetch(`https://aviationweather.gov/api/data/notam?ids=${icao}&format=json`,
+          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
+        if (!res.ok) return new Response(JSON.stringify([]), { headers: GEOJSON });
+        const raw = await res.json();
+        if (!Array.isArray(raw)) return new Response(JSON.stringify([]), { headers: GEOJSON });
+        const SKIP = /ODP|PART 77|SURVEY|CHECKLIST/i;
+        const mapped = raw
+          .filter(n => { const t = n.icaoMessage || n.traditionalMessage || n.text || ''; return t && !SKIP.test(t); })
+          .slice(0, 10)
+          .map(n => ({
+            id:      n.notamID    || n.id      || '',
+            type:    n.classification || n.type || '',
+            keyword: n.keyword    || '',
+            text:    (n.icaoMessage || n.traditionalMessage || n.text || '').trim(),
+            start:   n.effectiveStart || n.startTime || '',
+            end:     n.effectiveEnd   || n.endTime   || '',
+          }));
+        return new Response(JSON.stringify(mapped), { headers: GEOJSON });
+      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+    }
+
     return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), { status: 400, headers: GEOJSON });
   }
 };
