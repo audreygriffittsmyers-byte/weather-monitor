@@ -305,18 +305,26 @@ export default {
 
     if (type === 'tfr') {
       try {
-        const res = await fetch('https://tfr.faa.gov/tfr3/export/json',
-          { headers: { 'User-Agent': UA, 'Accept': 'application/json' }, cf: { cacheEverything: false } });
-        const text = await res.text();
-        // Try parsing as JSON -- FAA may return HTML for some requests
-        try {
-          const data = JSON.parse(text);
-          return new Response(JSON.stringify(data), { headers: GEOJSON });
-        } catch(e) {
-          // Extract JSON array from HTML if needed
-          const match = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
-          return new Response(match ? match[0] : '[]', { headers: GEOJSON });
+        const res = await fetch('https://tfr.faa.gov/tfr2/list.html',
+          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
+        const html = await res.text();
+        const tfrs = [];
+        // Parse HTML table rows
+        const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+        const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+        let row;
+        while ((row = rowRe.exec(html)) !== null) {
+          const cells = [];
+          let cell;
+          const cr = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+          while ((cell = cr.exec(row[1])) !== null) {
+            cells.push(cell[1].replace(/<[^>]+>/g,'').trim());
+          }
+          if (cells.length >= 5 && cells[1] && cells[1].includes('/')) {
+            tfrs.push({ notam_id:cells[1], facility:cells[2], state:cells[3], type:cells[4], description:(cells[5]||'').substring(0,200) });
+          }
         }
+        return new Response(JSON.stringify(tfrs), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
