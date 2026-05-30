@@ -935,6 +935,7 @@ function renderDetail() {
       </div>
     </div>`;
     content += decodeMetarFull(obs);
+    content += renderCrosswindCalc(obs);
 
     // Heat index / wind chill / humidity
     const rh = calcRelativeHumidity(obs.tempF, obs.dewpointF);
@@ -3593,6 +3594,67 @@ function renderDeiceCard(obs) {
     + '<div><div style="font-size:10px;font-weight:700;color:' + s.color + ';text-transform:uppercase;letter-spacing:.06em">'
     + s.label + '</div>'
     + '<div style="font-size:10px;color:#556070;margin-top:1px">' + s.msg + '</div></div></div>';
+}
+
+// ── Crosswind Calculator ─────────────────────────────────────────────
+function renderCrosswindCalc(obs) {
+  if (!obs || obs.windKts === null || obs.windKts === undefined) return '';
+  var isVRB = (obs.windDir === null || obs.windDir === undefined);
+  var spd   = obs.windKts || 0;
+  var gust  = obs.windGustKts || spd;
+
+  var html = '<div style="margin-bottom:12px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Crosswind Calculator</div>'
+    + '<div style="background:#fff;border:1px solid #e8e8e8;border-radius:6px;padding:10px 12px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'
+    + '<label style="font-size:10px;color:#556070;font-weight:600">Runway Heading:</label>'
+    + '<input type="number" id="rwy-hdg" min="1" max="36" placeholder="e.g. 28" '
+    + 'oninput="updateXwind(\'' + obs.windDir + '\',' + spd + ',' + gust + ')" '
+    + 'style="width:70px;padding:4px 6px;border:1px solid #c8d0d8;border-radius:3px;font-size:11px;font-weight:700" />'
+    + '<span style="font-size:9px;color:#8a9aaa">(runway number, e.g. 28 for 280°)</span>'
+    + '</div>'
+    + '<div id="xwind-result" style="font-size:10px;color:#8a9aaa">Enter runway heading to calculate components.</div>'
+    + '</div></div>';
+  return html;
+}
+
+function updateXwind(windDir, spd, gust) {
+  var el = document.getElementById('xwind-result');
+  if (!el) return;
+  var rwyNum = parseInt(document.getElementById('rwy-hdg').value);
+  if (isNaN(rwyNum) || rwyNum < 1 || rwyNum > 36) {
+    el.innerHTML = '<span style="color:#8a9aaa">Enter runway heading to calculate components.</span>';
+    return;
+  }
+  var rwyHdg = rwyNum * 10;
+  if (windDir === null || windDir === undefined || windDir === 'null') {
+    el.innerHTML = '<span style="color:#8a9aaa">Wind is variable -- crosswind calculation not available.</span>';
+    return;
+  }
+  var wDir = parseInt(windDir);
+  var angle = Math.abs(rwyHdg - wDir);
+  if (angle > 180) angle = 360 - angle;
+  var rad = angle * Math.PI / 180;
+  var hw  = Math.round(spd  * Math.cos(rad));
+  var xw  = Math.round(spd  * Math.sin(rad));
+  var hwG = Math.round(gust * Math.cos(rad));
+  var xwG = Math.round(gust * Math.sin(rad));
+  var hwLabel = hw >= 0 ? 'Headwind' : 'Tailwind';
+  var hwAbs = Math.abs(hw);
+  var hwGAbs = Math.abs(hwG);
+  var xwColor = xw >= 15 ? '#dc2626' : xw >= 10 ? '#d97706' : '#16a34a';
+  var hwColor = hw < 0 ? '#d97706' : '#556070';
+  var gustLine = (gust > spd)
+    ? '<span style="color:#8a9aaa"> &nbsp;(gusts: ' + hwGAbs + ' kt ' + hwLabel.toLowerCase() + ' / ' + xwG + ' kt crosswind)</span>'
+    : '';
+  el.innerHTML =
+    '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">'
+    + '<div><span style="font-size:9px;color:#556070;text-transform:uppercase;font-weight:700">' + hwLabel + '</span>'
+    + '<div style="font-size:18px;font-weight:700;color:' + hwColor + '">' + hwAbs + ' <span style="font-size:11px">kts</span></div></div>'
+    + '<div><span style="font-size:9px;color:#556070;text-transform:uppercase;font-weight:700">Crosswind</span>'
+    + '<div style="font-size:18px;font-weight:700;color:' + xwColor + '">' + xw + ' <span style="font-size:11px">kts</span></div></div>'
+    + '<div style="font-size:10px;color:#556070">Angle: ' + Math.round(angle) + '°' + gustLine + '</div>'
+    + '</div>';
 }
 
 // ── GPS User Location ─────────────────────────────────────────────────────────
