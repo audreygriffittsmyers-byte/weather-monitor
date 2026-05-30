@@ -290,6 +290,19 @@ export default {
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
+    if (type === 'pirep') {
+      const bbox = url.searchParams.get('bbox');
+      if (!bbox) return new Response(JSON.stringify([]), { headers: GEOJSON });
+      try {
+        const res = await fetch(
+          `https://aviationweather.gov/api/data/pirep?bbox=${encodeURIComponent(bbox)}&format=json&age=3`,
+          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } }
+        );
+        if (!res.ok) return new Response(JSON.stringify([]), { headers: GEOJSON });
+        return new Response(await res.text(), { headers: GEOJSON });
+      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+    }
+
     return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), { status: 400, headers: GEOJSON });
   }
 };
