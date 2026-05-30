@@ -919,6 +919,7 @@ function renderDetail() {
   // METAR conditions block
   const obs = obsData[selected];
   if (obs) content += renderDeiceCard(obs);
+  content += renderGSPCard(selected);
   if (obs) {
     const fcBg = flightCatColor(obs.flightCat);
     content += `<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">
@@ -3655,6 +3656,82 @@ function updateXwind(windDir, spd, gust) {
     + '<div style="font-size:18px;font-weight:700;color:' + xwColor + '">' + xw + ' <span style="font-size:11px">kts</span></div></div>'
     + '<div style="font-size:10px;color:#556070">Angle: ' + Math.round(angle) + '°' + gustLine + '</div>'
     + '</div>';
+}
+
+// ── Ground Stop Probability ──────────────────────────────────────────
+function calcGroundStopRisk(code) {
+  var score = 0;
+  var factors = [];
+  var obs = obsData[code];
+  var r   = results[code];
+  var spc = spcData && spcData[1] ? spcData[1][code] : null;
+  var nas = getNASForCode(code);
+  var hourly = hourlyData[code] || [];
+
+  // Flight category
+  var fc = obs ? obs.flightCat : null;
+  if (fc === 'LIFR') { score += 40; factors.push('LIFR conditions'); }
+  else if (fc === 'IFR')  { score += 25; factors.push('IFR conditions'); }
+  else if (fc === 'MVFR') { score += 10; factors.push('MVFR conditions'); }
+
+  // Deteriorating trend -- compare current temp to next 3 hours of hourly
+  if (obs && hourly.length >= 3) {
+    var ifrCount = 0;
+    for (var i = 0; i < 3; i++) {
+      var sf = (hourly[i].shortForecast || '').toLowerCase();
+      if (/fog|mist|low vis|thunderstorm|heavy rain|snow/.test(sf)) ifrCount++;
+    }
+    if (ifrCount >= 2) { score += 15; factors.push('Deteriorating next 3hrs'); }
+  }
+
+  // Active NWS alerts
+  if (r && r.alerts) {
+    var active = r.alerts.filter(function(a){ return !dismissedAlerts.has(a.id); });
+    if (active.length > 0) {
+      var worst = active[0].bucket;
+      if (worst === 'extreme' || worst === 'severe') { score += 30; factors.push('Severe weather alert'); }
+      else if (worst === 'moderate') { score += 15; factors.push('Moderate weather alert'); }
+      else { score += 5; factors.push('Active NWS alert'); }
+    }
+  }
+
+  // NAS programs
+  if (nas.length) {
+    var types = nas.map(function(p){return p.type;});
+    if (types.indexOf('GS') !== -1)  { score += 50; factors.push('Ground Stop active'); }
+    else if (types.indexOf('GDP') !== -1) { score += 20; factors.push('GDP avg ' + (nas[0].avg||'?') + ' min'); }
+    else { score += 10; factors.push('AFP active'); }
+  }
+
+  // SPC convective risk
+  if (spc && spc.cat) {
+    var spcScore = {MRGL:5, SLGT:10, ENH:20, MDT:30, HIGH:40}[spc.cat] || 0;
+    if (spcScore) { score += spcScore; factors.push('SPC ' + spc.cat + ' risk'); }
+  }
+
+  // Determine level
+  var level, label, color;
+  if (score >= 60)      { level='critical'; label='HIGH RISK';    color='#dc2626'; }
+  else if (score >= 35) { level='high';     label='ELEVATED';     color='#d97706'; }
+  else if (score >= 15) { level='medium';   label='MODERATE';     color='#ca8a04'; }
+  else if (score >= 5)  { level='low';      label='LOW';          color='#2563eb'; }
+  else                  { return null; }
+
+  return { score:score, level:level, label:label, color:color, factors:factors };
+}
+
+function renderGSPCard(code) {
+  var risk = calcGroundStopRisk(code);
+  if (!risk) return '';
+  var html = '<div style="background:#f8f9fa;border:1px solid ' + risk.color + '44;border-left:4px solid ' + risk.color + ';'
+    + 'border-radius:4px;padding:8px 12px;margin-bottom:10px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+    + '<span style="background:' + risk.color + ';color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">GROUND OPS RISK</span>'
+    + '<span style="font-size:13px;font-weight:700;color:' + risk.color + '">' + risk.label + '</span>'
+    + '<span style="font-size:9px;color:#8a9aaa;margin-left:auto">Score: ' + risk.score + '</span></div>'
+    + '<div style="font-size:10px;color:#556070">' + risk.factors.join(' &middot; ') + '</div>'
+    + '</div>';
+  return html;
 }
 
 // ── GPS User Location ─────────────────────────────────────────────────────────
