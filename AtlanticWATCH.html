@@ -275,11 +275,6 @@
           <!-- Layer toggles -->
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="radar-toggle" onchange="toggleRadar(this.checked)" checked style="cursor:pointer"/> Radar</label>
-            <div style="display:flex;gap:1px;background:#E8E8E8;border-radius:3px;padding:2px" title="Loop speed">
-              <button class="radar-speed-btn" data-speed="0.5" onclick="setRadarSpeed(0.5)" style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">0.5x</button>
-              <button class="radar-speed-btn" data-speed="1"   onclick="setRadarSpeed(1)"   style="background:#0E2841;color:#fff;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">1x</button>
-              <button class="radar-speed-btn" data-speed="2"   onclick="setRadarSpeed(2)"   style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">2x</button>
-            </div>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="spc-poly-toggle" onchange="toggleSPCPolygons(this.checked)" checked style="cursor:pointer"/> SPC Conv</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="fire-poly-toggle" onchange="toggleFirePolygons(this.checked)" checked style="cursor:pointer"/> Fire Wx</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="wpc-poly-toggle" onchange="toggleWPCPolygons(this.checked)" checked style="cursor:pointer"/> WPC Rain</label>
@@ -1727,11 +1722,6 @@ let mapMarkers      = [];
 let mapLayer        = 'both';
 let mapInitialized  = false;
 let radarLayer      = null;
-let radarSpeed      = 1;
-let radarLoopTimer  = null;
-let radarFrameIdx   = 0;
-let radarFrames     = [];
-let radarLayerCache = {};
 let rangeRingLayers = [];
 let spcPolyLayer    = null;
 let firePolyLayer   = null;
@@ -1940,110 +1930,12 @@ async function drawNWSPolygons() {
 }
 
 // ── Radar ─────────────────────────────────────────────────────────────────────
-// ── RainViewer animated radar ────────────────────────────────────────────
 function drawRadar() {
-  if (!leafletMap) return;
-  _stopRadarLoop();
-  // Fetch RainViewer API for real historical frames
-  fetch("https://api.rainviewer.com/public/weather-maps.json")
-    .then(function(r){ return r.json(); })
-    .then(function(d) {
-      var past = (d.radar && d.radar.past) ? d.radar.past : [];
-      radarFrames = past.slice(-6); // last 6 frames ~30 min
-      radarLayerCache = {};
-      if (!radarFrames.length) return;
-      var h = d.host || "https://tilecache.rainviewer.com";
-      // Pre-cache all frames silently
-      radarFrames.forEach(function(frame, i) {
-        var url = h + frame.path + "/256/{z}/{x}/{y}/2/1_1.png";
-        radarLayerCache[i] = L.tileLayer(url, { opacity:0, zIndex:10, attribution:'Radar: RainViewer' });
-        radarLayerCache[i].addTo(leafletMap);
-      });
-      // Start on most recent frame after a short delay for tiles to begin loading
-      setTimeout(function() {
-        radarFrameIdx = radarFrames.length - 1;
-        // Remove all pre-cached layers except current
-        radarFrames.forEach(function(_, i) {
-          if (i !== radarFrameIdx && radarLayerCache[i] && leafletMap.hasLayer(radarLayerCache[i])) {
-            leafletMap.removeLayer(radarLayerCache[i]);
-          }
-        });
-        radarLayerCache[radarFrameIdx].setOpacity(0.7);
-        radarLayer = radarLayerCache[radarFrameIdx];
-        _startRadarLoop(h);
-      }, 1500);
-      _rvHost = h;
-    })
-    .catch(function() {
-      // Fallback to Iowa State static layer
-      radarLayer = L.tileLayer(
-        'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?t='+Date.now(),
-        { opacity:0.65, zIndex:10, attribution:'Radar: Iowa Mesonet' }
-      ).addTo(leafletMap);
-    });
-}
-function _showRVFrame(idx, host) {
-  if (!leafletMap || !radarFrames[idx]) return;
-  var frame = radarFrames[idx];
-  var tileUrl = (host || "https://tilecache.rainviewer.com") + frame.path + "/256/{z}/{x}/{y}/2/1_1.png";
-  var opacity = idx === radarFrames.length - 1 ? 0.7 : 0.5;
-  // Pre-create layer if not cached
-  if (!radarLayerCache[idx]) {
-    radarLayerCache[idx] = L.tileLayer(tileUrl, {
-      opacity: 0, zIndex: 10,
-      attribution: 'Radar: <a href="https://www.rainviewer.com">RainViewer</a>'
-    });
-  }
-  var nextLayer = radarLayerCache[idx];
-  var prevLayer = radarLayer;
-  // Add next layer to map while still transparent
-  if (!leafletMap.hasLayer(nextLayer)) nextLayer.addTo(leafletMap);
-  // Wait for tiles to load, then swap
-  nextLayer.once("load", function() {
-    nextLayer.setOpacity(opacity);
-    if (prevLayer && prevLayer !== nextLayer && leafletMap.hasLayer(prevLayer)) {
-      leafletMap.removeLayer(prevLayer);
-    }
-    radarLayer = nextLayer;
-  });
-  // Fallback: swap after 800ms even if tiles didnt fully load
-  setTimeout(function() {
-    if (radarLayer !== nextLayer) {
-      nextLayer.setOpacity(opacity);
-      if (prevLayer && prevLayer !== nextLayer && leafletMap && leafletMap.hasLayer(prevLayer)) {
-        leafletMap.removeLayer(prevLayer);
-      }
-      radarLayer = nextLayer;
-    }
-  }, 800);
-}
-var _rvHost = null;
-function _startRadarLoop(host) {
-  if (host) _rvHost = host;
-  if (radarLoopTimer) return;
-  var ms = {0.5:1000, 1:500, 2:250}[radarSpeed] || 500;
-  radarLoopTimer = setInterval(function() {
-    if (!showRadar || !leafletMap || !radarFrames.length) return;
-    radarFrameIdx = (radarFrameIdx + 1) % radarFrames.length;
-    _showRVFrame(radarFrameIdx, _rvHost);
-  }, ms);
-}
-function _stopRadarLoop() {
-  if (radarLoopTimer) { clearInterval(radarLoopTimer); radarLoopTimer = null; }
-  if (radarLayer && leafletMap && leafletMap.hasLayer(radarLayer)) {
-    leafletMap.removeLayer(radarLayer);
-  }
-  radarLayer = null;
-  radarLayerCache = {};
-}
-function setRadarSpeed(s) {
-  radarSpeed = s;
-  document.querySelectorAll('.radar-speed-btn').forEach(function(b) {
-    var active = parseFloat(b.dataset.speed) === s;
-    b.style.background = active ? '#0E2841' : 'transparent';
-    b.style.color = active ? '#fff' : '#556070';
-  });
-  if (showRadar && radarFrames.length) { _stopRadarLoop(); drawRadar(); }
+  if (radarLayer) return;
+  radarLayer = L.tileLayer(
+    `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?t=${Date.now()}`,
+    { opacity:0.65, zIndex:10, attribution:'Radar: Iowa Mesonet' }
+  ).addTo(leafletMap);
 }
 function clearRangeRings() {
   rangeRingLayers.forEach(function(l) { if (leafletMap) leafletMap.removeLayer(l); });
@@ -2091,10 +1983,12 @@ function _drawRingShapes(lat, lon) {
   });
 }
 
-function removeRadar() { _stopRadarLoop(); }
+function removeRadar() {
+  if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
+}
 function toggleRadar(on) {
   showRadar = on;
-  on ? drawRadar() : removeRadar();
+  on ? (drawRadar(), startRadarRefresh()) : removeRadar();
 }
 function toggleSPCPolygons(on)  { showSPCPolys  = on; drawSPCPolygons(); }
 function toggleFirePolygons(on) { showFirePolys = on; drawFirePolygons(); }
@@ -2433,10 +2327,11 @@ function startAutoRefresh() {
 
 function startRadarRefresh() {
   if (radarRefreshInterval) return;
-  radarRefreshInterval = setInterval(function() {
+  radarRefreshInterval = setInterval(() => {
     if (!showRadar || !leafletMap) return;
-    drawRadar(); // re-fetches RainViewer API for fresh frames
-  }, 5 * 60 * 1000); // refresh every 5 min
+    if (radarLayer) { leafletMap.removeLayer(radarLayer); radarLayer = null; }
+    drawRadar();
+  }, 2 * 60 * 1000);
 }
 
 // ── Smart map mode detection ──────────────────────────────────────────────────
