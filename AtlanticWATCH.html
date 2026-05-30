@@ -3460,8 +3460,9 @@ function drawSatellite() {
   var SatLayer = L.GridLayer.extend({
     createTile: function(coords, done) {
       var tile = document.createElement('img');
+      tile.className = 'sat-tile-img';
       tile.style.width = tile.style.height = this.getTileSize().x + 'px';
-      tile.style.opacity = '0.75';
+      tile.style.opacity = '0.5';
       var url = PROXY + '?type=satellite&layer=' + satProduct
         + '&z=' + coords.z + '&x=' + coords.x + '&y=' + coords.y;
       tile.crossOrigin = 'anonymous';
@@ -3472,7 +3473,7 @@ function drawSatellite() {
       return tile;
     }
   });
-  satLayer = new SatLayer({ zIndex: 9, attribution: 'Satellite: NOAA GOES / nowCOAST' }).addTo(leafletMap);
+  satLayer = new SatLayer({ zIndex: 5, attribution: 'Satellite: NOAA GOES / nowCOAST' }).addTo(leafletMap);
 }
 function removeSatellite() {
   if (satLayer && leafletMap) { leafletMap.removeLayer(satLayer); satLayer = null; }
