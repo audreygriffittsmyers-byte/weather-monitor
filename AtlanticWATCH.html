@@ -1950,16 +1950,17 @@ function _radarFrameTimes() {
 }
 
 function _makeWmsLayer(epochMs) {
-  return L.tileLayer.wms(NOAA_WMS, {
-    layers: "0",
-    format: "image/png",
-    transparent: true,
-    version: "1.3.0",
-    time: new Date(epochMs).toISOString(),
-    opacity: 0,
-    zIndex: 10,
-    attribution: 'Radar: NOAA/NWS MRMS'
-  });
+  // Route through Worker to avoid NOAA CORS restrictions
+  var timeStr = new Date(epochMs).toISOString();
+  return L.tileLayer(
+    PROXY + "?type=radartile&z={z}&x={x}&y={y}&time=" + encodeURIComponent(timeStr),
+    {
+      opacity: 0,
+      zIndex: 10,
+      maxZoom: 18,
+      attribution: 'Radar: NOAA/NWS MRMS'
+    }
+  );
 }
 
 function drawRadar() {
