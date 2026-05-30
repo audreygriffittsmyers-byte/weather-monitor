@@ -3410,6 +3410,119 @@ function openPrintBriefing() {
   _doPrint(codes, notes);
 }
 
+
+// ── 12-Hour Forward Look ───────────────────────────────────────────────
+function buildForwardLook(code) {
+  var periods = hourlyData[code];
+  if (!periods || periods.length < 2) return '';
+  var next12 = periods.slice(0, 12);
+  var obs = obsData[code];
+  var currentFC = obs ? obs.flightCat : null;
+  var flags = [];
+
+  function fcFromPeriod(p) {
+    var sf = (p.shortForecast || '').toLowerCase();
+    if (/lifr|freezing fog|dense fog/.test(sf)) return 'LIFR';
+    if (/\bifr\b|low visibility/.test(sf)) return 'IFR';
+    if (/mvfr|mist|\bfog\b|patchy fog/.test(sf)) return 'MVFR';
+    return 'VFR';
+  }
+
+  function fmtHour(iso) {
+    var d = new Date(iso);
+    return d.toLocaleTimeString('en-US', {hour:'numeric', hour12:true}).replace(':00','');
+  }
+
+  // 1. Flight category changes
+  var fcOrder = {VFR:0, MVFR:1, IFR:2, LIFR:3};
+  var lastFC = currentFC || fcFromPeriod(next12[0]);
+  next12.forEach(function(p) {
+    var fc = fcFromPeriod(p);
+    if (fc !== lastFC) {
+      var worse = (fcOrder[fc]||0) > (fcOrder[lastFC]||0);
+      flags.push({
+        type: worse ? 'warn' : 'good',
+        icon: worse ? '⚠' : '✓',
+        text: (worse ? 'Deteriorating' : 'Improving') + ' to ' + fc + ' at ' + fmtHour(p.startTime)
+      });
+      lastFC = fc;
+    }
+  });
+
+  // 2. Thunderstorm onset
+  var tsActive = false;
+  next12.forEach(function(p) {
+    var sf = (p.shortForecast || '').toLowerCase();
+    var hasTS = /thunder|tstm/.test(sf);
+    if (hasTS && !tsActive) {
+      flags.push({ type:'warn', icon:'⚡', text: 'Thunderstorms possible from ' + fmtHour(p.startTime) });
+      tsActive = true;
+    } else if (!hasTS) { tsActive = false; }
+  });
+
+  // 3. Precipitation onset/cessation >= 50%
+  var precipActive = false;
+  next12.forEach(function(p) {
+    var v = p.probabilityOfPrecipitation ? p.probabilityOfPrecipitation.value : null;
+    if (v == null) return;
+    if (v >= 50 && !precipActive) {
+      flags.push({ type:'warn', icon:'☔', text: 'Precipitation likely (' + v + '%) from ' + fmtHour(p.startTime) });
+      precipActive = true;
+    } else if (v < 30 && precipActive) {
+      flags.push({ type:'good', icon:'☀', text: 'Precipitation clears around ' + fmtHour(p.startTime) });
+      precipActive = false;
+    }
+  });
+
+  // 4. Temperature extremes
+  var temps = next12.map(function(p){return p.temperature;}).filter(function(t){return t!=null;});
+  if (temps.length) {
+    var maxTemp = Math.max.apply(null, temps);
+    var minTemp = Math.min.apply(null, temps);
+    var maxIdx = temps.indexOf(maxTemp);
+    var minIdx = temps.indexOf(minTemp);
+    if (maxTemp >= 95) {
+      flags.push({ type:'warn', icon:'☀', text: 'Heat index risk: peak ' + maxTemp + '°F at ' + fmtHour(next12[maxIdx].startTime) + ' — mandatory rest breaks apply' });
+    } else if (maxTemp >= 85) {
+      flags.push({ type:'caution', icon:'☀', text: 'Warm: peak ' + maxTemp + '°F at ' + fmtHour(next12[maxIdx].startTime) + ' — stay hydrated' });
+    }
+    if (minTemp <= 20) {
+      flags.push({ type:'warn', icon:'❄', text: 'Extreme cold: low ' + minTemp + '°F at ' + fmtHour(next12[minIdx].startTime) + ' — frostbite risk, require insulated PPE' });
+    } else if (minTemp <= 32) {
+      flags.push({ type:'caution', icon:'❄', text: 'Freezing temps: low ' + minTemp + '°F at ' + fmtHour(next12[minIdx].startTime) + ' — de-ice risk, cold-start advisory' });
+    }
+  }
+
+  // 5. High wind onset >= 29 mph (~25 kt)
+  var windActive = false;
+  next12.forEach(function(p) {
+    var mph = parseInt(p.windSpeed || '');
+    if (!isNaN(mph) && mph >= 29 && !windActive) {
+      flags.push({ type:'warn', icon:'➤', text: 'High winds: ' + (p.windSpeed||'') + ' from ' + (p.windDirection||'') + ' at ' + fmtHour(p.startTime) });
+      windActive = true;
+    } else if (!isNaN(mph) && mph < 20) { windActive = false; }
+  });
+
+  var colorMap = { warn:'#dc2626', caution:'#d97706', good:'#16a34a' };
+  var bgMap    = { warn:'#fff0f0', caution:'#fffbeb', good:'#f0fdf4' };
+
+  if (!flags.length) {
+    return '<div style="margin-bottom:10px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">Next 12 Hours</span>'
+      + '<div style="margin-top:4px;padding:4px 8px;background:#f0fdf4;border-left:3px solid #16a34a;font-size:10px;color:#16a34a">✓ No significant changes forecast. Conditions expected to remain stable.</div></div>';
+  }
+
+  var html = '<div style="margin-bottom:10px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">Next 12 Hours</span>'
+    + '<div style="margin-top:4px;display:flex;flex-direction:column;gap:3px">';
+  flags.forEach(function(f) {
+    var col = colorMap[f.type] || '#556070';
+    var bg  = bgMap[f.type]   || '#f8f9fa';
+    html += '<div style="background:' + bg + ';border-left:3px solid ' + col + ';padding:4px 8px;font-size:10px;color:' + col + ';font-weight:600">'
+      + f.icon + ' ' + f.text + '</div>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
 function _doPrint(codes, notes) {
   var now = new Date();
   var utc = now.toISOString().replace('T',' ').substring(0,16)+'Z';
@@ -3533,6 +3646,9 @@ function _doPrint(codes, notes) {
           +'<div style="color:#556070">'+pshort+'</div></div>';
       });
       html+='</div></div>';
+    }
+    if (hourlyData[code] && hourlyData[code].length) {
+      html += buildForwardLook(code);
     }
     html+='</div>';
   });
