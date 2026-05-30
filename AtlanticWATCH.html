@@ -876,6 +876,10 @@ function selectFBO(code) {
   }
   // Fetch AQI on demand
   if (aqiData[code] === undefined) fetchAQI(code);
+  // Fetch NOTAMs on demand
+  if (notamData[code] === undefined) {
+    fetchNOTAM(code).then(function() { if (selected === code) renderDetail(); });
+  }
 }
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
@@ -976,6 +980,11 @@ function renderDetail() {
   // NAS status card
   var nasCard = renderNASCard(selected);
   if (nasCard) content += nasCard;
+  var notamCard = renderNOTAMCard(selected);
+  if (notamCard) content += notamCard;
+  else if (notamData[selected] === undefined) {
+    content += '<div style="font-size:10px;color:#8a9aaa;padding:4px 0">Loading NOTAMs...</div>';
+  }
 
   } else if (r.alerts.length === 0) {
     content += `<div class="clear-box"><div style="font-size:28px;margin-bottom:6px">✓</div><div style="color:#1a6b30;font-weight:700;font-size:13px">No Active NWS Alerts</div><div style="color:#556070;font-size:11px;margin-top:3px">No watches, warnings, or advisories in effect</div></div>`;
@@ -2448,7 +2457,8 @@ function calcWindChill(tempF, windMph) {
 
 
 // ── TAF Forecast ─────────────────────────────────────────────────────────────
-const tafData = {};
+const tafData   = {};
+const notamData  = {};
 
 async function fetchTAF(code) {
   const icao = toICAO(code);
@@ -3316,6 +3326,14 @@ function _doPrint(codes, notes) {
       html+='</div>';
     }
 
+    var pNotams=notamData[code]||[];
+    if(pNotams.length){
+      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">NOTAMs ('+pNotams.length+')</span>';
+      pNotams.slice(0,5).forEach(function(n){
+        html+='<div style="padding:3px 6px;background:#f8f9fa;border-left:3px solid #556070;margin-top:3px;font-size:9px;font-family:monospace;word-break:break-word">'+(n.id?'<b>'+n.id+'</b> ':'')+n.text.substring(0,200)+(n.text.length>200?'...':'')+'</div>';
+      });
+      html+='</div>';
+    }
     var nas=getNASForCode(code);
     if(nas.length){
       html+='<div><span style="font-size:9px;font-weight:700;color:#d97706;text-transform:uppercase">FAA Delay</span>';
@@ -3344,6 +3362,70 @@ function _doPrint(codes, notes) {
     +'<button onclick="window.print()" style="background:#fff;color:#0E2841;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">Print / Save PDF</button>'
     +'</div>'+html+'</body></html>');
   win.document.close();
+}
+
+
+// ── NOTAMs ────────────────────────────────────────────────────────────────────
+async function fetchNOTAM(code) {
+  if (notamData[code] !== undefined) return;
+  const icao = toICAO(code);
+  if (!icao) { notamData[code] = []; return; }
+  try {
+    const r = await fetch(PROXY + '?type=notam&icao=' + icao);
+    if (!r.ok) { notamData[code] = []; return; }
+    const raw = await r.json();
+    if (!Array.isArray(raw)) { notamData[code] = []; return; }
+    const SKIP = /ODP|PART 77|SURVEY|CHECKLIST/i;
+    notamData[code] = raw
+      .filter(function(n) {
+        var txt = n.icaoMessage || n.traditionalMessage || n.text || '';
+        return txt && !SKIP.test(txt);
+      })
+      .slice(0, 10)
+      .map(function(n) {
+        return {
+          id:      n.notamID || n.id || '',
+          type:    n.classification || n.type || 'N',
+          text:    (n.icaoMessage || n.traditionalMessage || n.text || '').trim(),
+          start:   n.effectiveStart || n.startTime || '',
+          end:     n.effectiveEnd   || n.endTime   || '',
+          keyword: n.keyword || '',
+        };
+      });
+  } catch(e) { notamData[code] = []; }
+}
+
+function renderNOTAMCard(code) {
+  var notams = notamData[code];
+  if (!notams || !notams.length) return '';
+  var KW_COLOR = {
+    RWY:'#dc2626', TWY:'#d97706', AD:'#d97706',
+    NAV:'#7c3aed', COM:'#7c3aed', SVC:'#2563eb',
+    TFR:'#dc2626', AIRSPACE:'#0891b2'
+  };
+  var html = '<div style="margin-bottom:12px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">NOTAMs (' + notams.length + ')</div>';
+  notams.forEach(function(n) {
+    var kw    = (n.keyword || '').toUpperCase().trim();
+    var color = KW_COLOR[kw] || '#556070';
+    var endStr = '';
+    if (n.end) {
+      try { endStr = ' -- ' + new Date(n.end).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}); } catch(e) {}
+    }
+    html += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-left:3px solid ' + color + ';border-radius:4px;padding:6px 10px;margin-bottom:5px">';
+    if (n.id || kw) {
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">';
+      if (kw) html += '<span style="background:' + color + ';color:#fff;font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px">' + kw + '</span>';
+      if (n.id) html += '<span style="font-size:9px;font-weight:700;color:#0E2841">' + n.id + '</span>';
+      if (endStr) html += '<span style="font-size:9px;color:#8a9aaa;margin-left:auto">' + endStr + '</span>';
+      html += '</div>';
+    }
+    html += '<div style="font-size:10px;color:#1a2a3a;font-family:monospace;line-height:1.4;word-break:break-word">'
+      + n.text.substring(0, 300) + (n.text.length > 300 ? '...' : '')
+      + '</div></div>';
+  });
+  html += '</div>';
+  return html;
 }
 
 // ── GPS User Location ─────────────────────────────────────────────────────────
