@@ -197,6 +197,7 @@
 
     <!-- MAIN PANEL -->
     <div id="main">
+      <button id="mobile-back-btn" onclick="mobileBack()">&#8592; Back to locations</button>
 
       <!-- Monitor panel -->
       <div id="panel-monitor" style="display:none">
@@ -897,9 +898,27 @@ function renderSidebarItem(code) {
   if (existing) existing.replaceWith(newEl);
 }
 
+// ── Mobile navigation ────────────────────────────────────────────────
+function isMobile() { return window.innerWidth <= 600; }
+function mobileShowDetail() {
+  if (!isMobile()) return;
+  var s = document.getElementById("sidebar");
+  var m = document.getElementById("main");
+  if (s) s.classList.add("mobile-hidden");
+  if (m) m.classList.remove("mobile-hidden");
+}
+function mobileBack() {
+  var s = document.getElementById("sidebar");
+  var m = document.getElementById("main");
+  if (s) s.classList.remove("mobile-hidden");
+  if (m) m.classList.add("mobile-hidden");
+  selected = null;
+}
+
 function selectFBO(code) {
   selected = code;
   openAlert = null;
+  mobileShowDetail();
   document.querySelectorAll('.fbo-item').forEach(el => el.classList.toggle('selected', el.dataset.code === code));
   var _rc = COORDS[code];
   if (_rc && leafletMap && mapInitialized) { drawRangeRings(_rc[0], _rc[1]); }
@@ -1150,6 +1169,7 @@ function getMyLocSidebarItem() {
 function selectMyLoc() {
   myLocSelected = true;
   selected = null;
+  mobileShowDetail();
   document.querySelectorAll(".sidebar-item").forEach(function(el){ el.classList.remove("active"); });
   var el = document.getElementById("sidebar-myloc");
   if (el) el.style.background = "#1a3a5c";
