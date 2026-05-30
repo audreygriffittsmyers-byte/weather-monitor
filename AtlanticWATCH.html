@@ -176,7 +176,7 @@
   <div id="tabs">
     <button class="tab" data-tab="monitor" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Live Monitor</button>
     <button class="tab active" data-tab="map" style="background:transparent;border:none;border-bottom:2px solid #ffffff;color:#ffffff;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Map</button>
-    <button class="tab" data-tab="build" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Alert Summary</button>
+    <button class="tab" data-tab="build" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Briefing</button>
     <button class="tab" data-tab="grid" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Ops Grid</button>
   </div>
 
@@ -240,7 +240,7 @@
         </div>
       </div>
 
-      <!-- Alert Summary panel -->
+      <!-- Briefing panel -->
       <div id="panel-build" style="display:none;height:100%;overflow-y:auto;background:#E8E8E8">
         <!-- Summary header bar -->
         <div style="background:#0E2841;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:10">
@@ -1572,7 +1572,7 @@ function hazardTile(icon, label, prob) {
 function updateSPCBuilder() {}
 
 
-// ── Alert Summary ─────────────────────────────────────────────────────────────
+// ── Briefing ─────────────────────────────────────────────────────────────
 const ZONE_ORDER = ['Moderate','Enhanced','Slight','Marginal'];
 const ZONE_ACTIONS = { Moderate:'Prepare Now', Enhanced:'Prepare Now', Slight:'Be Ready', Marginal:'Monitor' };
 const ZONE_COLORS  = { Moderate:'#EA3232', Enhanced:'#E97132', Slight:'#FFC000', Marginal:'#196B24' };
