@@ -5,6 +5,7 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'Cache-Control': 'no-store, no-cache',
 };
 const GEOJSON = { ...CORS, 'Content-Type': 'application/json' };
 const TEXT    = { ...CORS, 'Content-Type': 'text/plain' };
@@ -300,6 +301,23 @@ export default {
     // ── Push notification relay ───────────────────────────────────────────────
     if (type === 'notify') {
       return new Response(JSON.stringify({ ok: true }), { headers: GEOJSON });
+    }
+
+    if (type === 'tfr') {
+      try {
+        const res = await fetch('https://tfr.faa.gov/tfr3/export/json',
+          { headers: { 'User-Agent': UA, 'Accept': 'application/json' }, cf: { cacheEverything: false } });
+        const text = await res.text();
+        // Try parsing as JSON -- FAA may return HTML for some requests
+        try {
+          const data = JSON.parse(text);
+          return new Response(JSON.stringify(data), { headers: GEOJSON });
+        } catch(e) {
+          // Extract JSON array from HTML if needed
+          const match = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
+          return new Response(match ? match[0] : '[]', { headers: GEOJSON });
+        }
+      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
     return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), { status: 400, headers: GEOJSON });
