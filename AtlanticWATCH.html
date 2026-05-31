@@ -2142,7 +2142,6 @@ async function refreshMapLayers() {
     drawNHCLayer();
     renderMapMarkers();
     if (gpsActive) drawUserMarker();
-    drawStormMotionArrows();
     if (showRadar) drawRadar();
     autoDetectMapMode();
   } finally {
@@ -2380,52 +2379,6 @@ function makeMarkerIcon(code, hasAlert) {
   return L.divIcon({html:svg, className:'', iconSize:[36,44], iconAnchor:[18,44], popupAnchor:[0,-44]});
 }
 
-let stormMotionLayer = null;
-function drawStormMotionArrows() {
-  if (stormMotionLayer) { leafletMap.removeLayer(stormMotionLayer); stormMotionLayer=null; }
-  const arrows = [];
-  COVERED.forEach(fbo => {
-    const c = COORDS[fbo.code];
-    if (!c) return;
-    (results[fbo.code]?.alerts||[]).forEach(a => {
-      // NWS format: "2026-05-19T15:32:00-00:00...storm...225DEG...23KT...32.21,-100.54"
-      // Also try description for older format
-      const motionStr = a.motion || a.description || '';
-      // Match DEG...KT pattern (dots are literal periods in NWS format)
-      const m = motionStr.match(/(\d{3})DEG[.\s]+(\d+)KT/i);
-      if (!m) return;
-      const bearing = parseInt(m[1]);
-      const speedKt = parseInt(m[2]);
-      if (speedKt < 1) return;
-      // Try to get storm origin lat/lon from motion string
-      const latLonMatch = motionStr.match(/(\d{2,3}\.\d+)[,\s]+(-?\d{2,3}\.\d+)/);
-      let originLat = c[0], originLon = c[1];
-      if (latLonMatch) {
-        originLat = parseFloat(latLonMatch[1]);
-        originLon = parseFloat(latLonMatch[2]);
-      }
-      const dist = Math.min(0.7, 0.2 + speedKt * 0.009);
-      const bearingRad = bearing * Math.PI / 180;
-      // Geographic bearing: 0=N, 90=E, 180=S, 270=W
-      // deltaLat = dist * cos(bearing), deltaLon = dist * sin(bearing) / cos(lat)
-      const latRad = originLat * Math.PI / 180;
-      const endLat = originLat + dist * Math.cos(bearingRad);
-      const endLon = originLon + dist * Math.sin(bearingRad) / Math.cos(latRad);
-      const color = a.bucket==='EXTREME' ? '#dc2626' : a.bucket==='SEVERE' ? '#ea580c' : '#ca8a04';
-      // Main arrow line
-      arrows.push(L.polyline([[originLat,originLon],[endLat,endLon]], {color,weight:3,opacity:0.9})
-        .bindTooltip(a.event+' · '+bearing+'° at '+speedKt+'kts',{sticky:true}));
-      // Arrowhead
-      const hd = dist * 0.2;
-      const latRad2 = endLat * Math.PI / 180;
-      const cosLat2 = Math.cos(latRad2);
-      const l = (bearing+150)*Math.PI/180, r2 = (bearing-150)*Math.PI/180;
-      arrows.push(L.polyline([[endLat,endLon],[endLat+hd*Math.cos(l),endLon+hd*Math.sin(l)/cosLat2]],{color,weight:3,opacity:0.9}));
-      arrows.push(L.polyline([[endLat,endLon],[endLat+hd*Math.cos(r2),endLon+hd*Math.sin(r2)/cosLat2]],{color,weight:3,opacity:0.9}));
-    });
-  });
-  if (arrows.length) stormMotionLayer = L.layerGroup(arrows).addTo(leafletMap);
-}
 
 function renderMapMarkers() {
   if (!leafletMap) return;
