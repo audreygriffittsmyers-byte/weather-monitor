@@ -208,6 +208,7 @@
         <div style="display:flex;gap:4px">
           <button id="btn-all" class="filter-btn active" style="flex:1;background:#0E2841;border:1px solid #0E2841;color:#ffffff;border-radius:3px;padding:3px 0;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.07em">All</button>
           <button id="btn-active" class="filter-btn" style="flex:1;background:transparent;border:1px solid #c8d0d8;color:#556070;border-radius:3px;padding:3px 0;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.07em">Active (0)</button>
+          <button id="btn-mine" class="filter-btn" style="flex:1;background:transparent;border:1px solid #c8d0d8;color:#556070;border-radius:3px;padding:3px 0;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.07em">My Stations</button>
         </div>
       </div>
       <div id="sidebar-list"></div>
@@ -503,6 +504,7 @@ let activeTab  = 'map';
 let searchVal  = '';
 let onlyActive = false;
 let spcFilter  = null;
+let stationFilter = 'all';
 let scanning   = false;
 let stopScan   = false;
 let myLocations  = new Set(); // empty = show all
@@ -848,12 +850,31 @@ function updateActiveCount() {
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
+function setFilter(mode) {
+  stationFilter = mode;
+  onlyActive = (mode === "active");
+  spcFilter = null;
+  var ON  = {bg:"#0E2841", bc:"#0E2841", tc:"#ffffff"};
+  var OFF = {bg:"transparent", bc:"#c8d0d8", tc:"#556070"};
+  ["all","active","mine"].forEach(function(m) {
+    var el = document.getElementById("btn-" + m);
+    if (!el) return;
+    var s = (m === mode) ? ON : OFF;
+    el.style.background = s.bg;
+    el.style.borderColor = s.bc;
+    el.style.color = s.tc;
+  });
+  renderSidebar();
+  updateHeader();
+}
+
 function renderSidebar() {
   const q = searchVal.toLowerCase();
   const list = COVERED.filter(f => {
     if (q && !f.code.toLowerCase().includes(q) && !f.city.toLowerCase().includes(q) && !f.state.toLowerCase().includes(q)) return false;
     if (onlyActive && !(results[f.code]?.alerts?.length > 0)) return false;
     if (spcFilter && spcData[1][f.code]?.label !== spcFilter) return false;
+    if (stationFilter === "mine" && myLocations.size > 0 && !myLocations.has(f.code)) return false;
     return true;
   }).sort((a, b) => {
     const sa = results[a.code] ? ORD[topBucket(results[a.code].alerts)] : 5;
@@ -905,6 +926,24 @@ function makeSidebarItem(fbo) {
   `;
   div.addEventListener('click', () => selectFBO(fbo.code));
   return div;
+}
+
+function setFilter(mode) {
+  stationFilter = mode;
+  onlyActive = (mode === "active");
+  spcFilter = null;
+  var ON  = {bg:"#0E2841", bc:"#0E2841", tc:"#ffffff"};
+  var OFF = {bg:"transparent", bc:"#c8d0d8", tc:"#556070"};
+  ["all","active","mine"].forEach(function(m) {
+    var el = document.getElementById("btn-" + m);
+    if (!el) return;
+    var s = (m === mode) ? ON : OFF;
+    el.style.background = s.bg;
+    el.style.borderColor = s.bc;
+    el.style.color = s.tc;
+  });
+  renderSidebar();
+  updateHeader();
 }
 
 function renderSidebarItem(code) {
@@ -1905,27 +1944,10 @@ document.getElementById('search').addEventListener('input', e => {
   renderSidebar();
 });
 
-document.getElementById('btn-all').addEventListener('click', () => {
-  onlyActive = false;
-  document.getElementById('btn-all').style.background = '#0E2841';
-  document.getElementById('btn-all').style.borderColor = '#0E2841';
-  document.getElementById('btn-all').style.color = '#ffffff';
-  document.getElementById('btn-active').style.background = 'transparent';
-  document.getElementById('btn-active').style.borderColor = '#c8d0d8';
-  document.getElementById('btn-active').style.color = '#556070';
-  renderSidebar();
-});
+document.getElementById('btn-mine').addEventListener('click', () => setFilter('mine'));
+  document.getElementById('btn-all').addEventListener('click', () => setFilter('all'));
 
-document.getElementById('btn-active').addEventListener('click', () => {
-  onlyActive = true;
-  document.getElementById('btn-active').style.background = '#0E2841';
-  document.getElementById('btn-active').style.borderColor = '#0E2841';
-  document.getElementById('btn-active').style.color = '#ffffff';
-  document.getElementById('btn-all').style.background = 'transparent';
-  document.getElementById('btn-all').style.borderColor = '#c8d0d8';
-  document.getElementById('btn-all').style.color = '#556070';
-  renderSidebar();
-});
+document.getElementById('btn-active').addEventListener('click', () => setFilter('active'));
 
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
