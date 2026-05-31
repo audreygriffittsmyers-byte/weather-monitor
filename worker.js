@@ -111,15 +111,28 @@ export default {
     }
 
     if (type === 'nearbymetar') {
-      const lat  = url.searchParams.get('lat');
-      const lon  = url.searchParams.get('lon');
-      const dist = parseFloat(url.searchParams.get('dist') || '1.0');
+      const lat = url.searchParams.get('lat');
+      const lon = url.searchParams.get('lon');
       if (!lat || !lon) return new Response('Missing lat/lon', { status: 400, headers: CORS });
       try {
-        const bbox = `${parseFloat(lon)-dist},${parseFloat(lat)-dist},${parseFloat(lon)+dist},${parseFloat(lat)+dist}`;
-        const res = await fetch(`https://aviationweather.gov/api/data/metar?bbox=${bbox}&format=json&taf=false&hours=2`,
+        // Step 1: get nearest obs stations via NWS points API
+        const ptRes = await fetch(`https://api.weather.gov/points/${parseFloat(lat).toFixed(4)},${parseFloat(lon).toFixed(4)}`,
+          { headers: { 'User-Agent': UA, 'Accept': 'application/json' } });
+        if (!ptRes.ok) return new Response('[]', { headers: CORS });
+        const pt = await ptRes.json();
+        const obsUrl = pt.properties?.observationStations;
+        if (!obsUrl) return new Response('[]', { headers: CORS });
+        // Step 2: get ordered list of nearest stations
+        const stRes = await fetch(obsUrl, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } });
+        if (!stRes.ok) return new Response('[]', { headers: CORS });
+        const stData = await stRes.json();
+        const icaos = (stData.features || []).slice(0, 5).map(f => f.properties.stationIdentifier).filter(Boolean);
+        if (!icaos.length) return new Response('[]', { headers: CORS });
+        // Step 3: fetch METARs for those stations
+        const metarRes = await fetch(`https://aviationweather.gov/api/data/metar?ids=${icaos.join(',')}&format=json&taf=false`,
           { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
-        return new Response(await res.text(), { headers: CORS });
+        if (!metarRes.ok) return new Response('[]', { headers: CORS });
+        return new Response(await metarRes.text(), { headers: CORS });
       } catch(e) { return new Response('[]', { headers: CORS }); }
     }
 
