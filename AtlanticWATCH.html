@@ -182,7 +182,7 @@
       <div style="font-size:9px;color:#c8d4de;letter-spacing:.14em;text-transform:uppercase">Weather Awareness Tactical Command Hub</div>
     </div>
     <div style="flex:1"></div>
-    <div id="zulu-clock" style="font-size:10px;font-weight:700;color:#4fc3f7;letter-spacing:.06em;font-family:monospace;margin-right:4px;flex-shrink:0;display:none" class="zulu-display">0000Z</div>
+    <div id="zulu-clock" style="font-size:10px;font-weight:700;color:#4fc3f7;letter-spacing:.06em;font-family:monospace;margin-right:4px;flex-shrink:0" class="zulu-display">0000Z</div>
     <div id="status-badges" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap"></div>
     <span id="scan-prog" style="font-size:9px;color:#c8d0d8;display:none;animation:pulse 1s infinite"></span>
     <button id="gps-btn" onclick="startGPSWatch()" title="Show my location" style="background:transparent;border:1px solid #ffffff88;color:#ffffff;border-radius:4px;padding:5px 10px;font-size:13px;cursor:pointer;line-height:1">🎯</button>
@@ -1096,7 +1096,8 @@ function renderMyStationsDashboard() {
     ? '<button onclick="setFilter(\'all\')" style="display:flex;align-items:center;gap:6px;background:#0E2841;color:#fff;border:none;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer;width:100%;margin-bottom:12px">← All Locations</button>'
     : "";
   var html = '<div style="padding:14px">' + backBtn
-    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">My Stations — ' + stations.length + ' location' + (stations.length!==1?"s":"") + '</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">';
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">My Stations — ' + stations.length + ' location' + (stations.length!==1?"s":"") + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:8px">';
   stations.forEach(function(fbo) {
     var code=fbo.code, obs=obsData[code], r=results[code], spc1=spcData[1][code], ltng=getLightningStatus(code);
     var alerts=(r&&r.alerts)?r.alerts.filter(function(a){return !dismissedAlerts.has(a.id);}):[];
