@@ -110,6 +110,19 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
+    if (type === 'nearbymetar') {
+      const lat  = url.searchParams.get('lat');
+      const lon  = url.searchParams.get('lon');
+      const dist = parseFloat(url.searchParams.get('dist') || '1.0');
+      if (!lat || !lon) return new Response('Missing lat/lon', { status: 400, headers: CORS });
+      try {
+        const bbox = `${parseFloat(lon)-dist},${parseFloat(lat)-dist},${parseFloat(lon)+dist},${parseFloat(lat)+dist}`;
+        const res = await fetch(`https://aviationweather.gov/api/data/metar?bbox=${bbox}&format=json&taf=false&hours=2`,
+          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
+        return new Response(await res.text(), { headers: CORS });
+      } catch(e) { return new Response('[]', { headers: CORS }); }
+    }
+
     if (type === 'metar') {
       const icao = url.searchParams.get('icao');
       if (!icao) return new Response('Missing icao', { status: 400, headers: CORS });
