@@ -1049,7 +1049,12 @@ function renderMyStationsDashboard() {
       + '<div style="font-size:13px;color:#556070;font-weight:700">No stations saved yet</div>'
       + '<div style="font-size:11px;color:#8a9aaa;margin-top:6px">Tap 📍 to select your stations, then tap My Stations.</div></div>';
   }
-  var html = '<div style="padding:14px"><div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">My Stations — ' + stations.length + ' location' + (stations.length!==1?"s":"") + '</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">';
+  var isMob = typeof isMobile === "function" && isMobile();
+  var backBtn = isMob
+    ? '<button onclick="setFilter(\'all\')" style="display:flex;align-items:center;gap:6px;background:#0E2841;color:#fff;border:none;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer;width:100%;margin-bottom:12px">← All Locations</button>'
+    : "";
+  var html = '<div style="padding:14px">' + backBtn
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">My Stations — ' + stations.length + ' location' + (stations.length!==1?"s":"") + '</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">';
   stations.forEach(function(fbo) {
     var code=fbo.code, obs=obsData[code], r=results[code], spc1=spcData[1][code], ltng=getLightningStatus(code);
     var alerts=(r&&r.alerts)?r.alerts.filter(function(a){return !dismissedAlerts.has(a.id);}):[];
