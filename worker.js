@@ -84,6 +84,18 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
+    if (type === 'activefire') {
+      try {
+        // NIFC WFIGS current fire perimeters -- large fires updated twice daily
+        const res = await fetch(
+          'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query?where=GISAcres%3E100&outFields=IncidentName,GISAcres,DiscoveryAcres,PercentContained,ModifiedOnDateTime_dt&returnGeometry=true&outSR=4326&f=geojson&resultRecordCount=200',
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } }
+        );
+        if (!res.ok) return new Response(JSON.stringify({features:[]}), { headers: GEOJSON });
+        return new Response(await res.text(), { headers: GEOJSON });
+      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+    }
+
     if (type === 'firepoly') {
       const day = url.searchParams.get('day') || '1';
       const LAYER = { '1':1, '2':4 };
