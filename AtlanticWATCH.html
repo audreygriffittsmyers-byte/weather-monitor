@@ -1529,7 +1529,29 @@ function formatOutlookText(raw) {
   const hazardsMatch = clean.match(/\.\.\.HAZARDS\.\.\.([\s\S]*?)(?:\.\.\.[A-Z]|\n&&|\n\$\$)/i);
   const validMatch   = clean.match(/Valid\s+([\dZ\s\-]+)/i);
   const parts = [];
-  if (validMatch) parts.push(`<div style="font-size:10px;color:#556070;margin-bottom:10px">&#x23F1; Valid ${validMatch[1].trim()}</div>`);
+  if (validMatch) {
+    // Fix month rollover: SPC writes "May 31 ... May 1" meaning June 1
+    var rawValid = validMatch[1].trim();
+    var fixedValid = rawValid.replace(
+      /([A-Za-z]+ \d{1,2})[^–\-]*[–\-]\s*([A-Za-z]+ \d{1,2})/,
+      function(match, start, end) {
+        var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        var startMonth = start.split(" ")[0];
+        var endMonth   = end.split(" ")[0];
+        var startDay   = parseInt(start.split(" ")[1]);
+        var endDay     = parseInt(end.split(" ")[1]);
+        var startIdx   = months.findIndex(function(m){ return start.indexOf(m) === 0; });
+        var endIdx     = months.findIndex(function(m){ return end.indexOf(m) === 0; });
+        // If same month and end day < start day, end month is next month
+        if (startIdx === endIdx && endDay < startDay) {
+          var nextIdx = (startIdx + 1) % 12;
+          end = end.replace(endMonth, months[nextIdx]);
+        }
+        return start + match.slice(start.length, match.length - end.length) + end;
+      }
+    );
+    parts.push(`<div style="font-size:10px;color:#556070;margin-bottom:10px">&#x23F1; Valid ${fixedValid}</div>`);
+  }
   if (hazardsMatch) {
     const txt = hazardsMatch[1].trim().replace(/\n/g, '<br>');
     parts.push(`<div style="margin-bottom:12px"><div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Hazards</div><div style="font-size:11px;color:#1a2a3a;line-height:1.7">${txt}</div></div>`);
