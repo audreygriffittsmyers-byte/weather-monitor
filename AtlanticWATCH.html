@@ -895,10 +895,13 @@ function makeSidebarItem(fbo) {
     ? `<span title="SPC Day 1: ${SPC_LABEL_MAP[spc1.label]?.label || spc1.label}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${spcDotColor};margin-left:4px;flex-shrink:0"></span>`
     : '';
 
+  var ltng = getLightningStatus(fbo.code);
+  var ltngBolt = ltng ? '<span title="' + ltng.label + '" style="font-size:11px;margin-left:4px">⚡</span>' : '';
+
   div.innerHTML = `
     <span class="fbo-code" style="color:${textColor}">${fbo.code}</span>
     <span class="fbo-loc">${fbo.city}, ${fbo.state}</span>
-    <div class="fbo-badge-wrap" style="display:flex;align-items:center">${badgeHTML}${spcDot}</div>
+    <div class="fbo-badge-wrap" style="display:flex;align-items:center">${badgeHTML}${spcDot}${ltngBolt}</div>
   `;
   div.addEventListener('click', () => selectFBO(fbo.code));
   return div;
@@ -984,6 +987,7 @@ function renderDetail() {
       </div>`;
 
   // ── 1. Advisory cards (only show when triggered) ──────────────────────────
+  content += renderLightningCard(selected);
   content += renderGSPCard(selected);
   if (obs) content += renderDeiceCard(obs);
   if (obs) content += renderStressCard(obs);
@@ -3950,6 +3954,54 @@ function renderStressCard(obs) {
     + '<div><div style="font-size:10px;font-weight:700;color:' + s.color + ';text-transform:uppercase;letter-spacing:.06em">'
     + s.label + '</div>'
     + '<div style="font-size:10px;color:#556070;margin-top:1px">' + s.msg + '</div></div></div>';
+}
+
+// ── Lightning / Thunderstorm Advisory ──────────────────────────────────────────────────
+function getLightningStatus(code) {
+  var obs = obsData[code];
+  var taf = tafData[code];
+
+  if (obs) {
+    var wx = (obs.condition || "").toUpperCase();
+    var hasActiveTS = /\bTS\b|TSRA|TSGR|TSGS|TSSN|\+TS/.test(wx);
+    if (!hasActiveTS && obs.rawOb) hasActiveTS = /\bTS[A-Z]*\b/.test(obs.rawOb.toUpperCase());
+    var hasCB = obs.clouds && obs.clouds.some(function(c){ return c.type==="CB"||(c.cover&&/CB/.test(c.cover)); });
+    if (hasActiveTS) return { level:"active", color:"#dc2626", bg:"#fff0f0", icon:"⚡",
+      label:"LIGHTNING PROTOCOL",
+      msg:"Thunderstorm at station. Cease all outdoor ramp operations immediately per lightning safety protocol." };
+    if (hasCB) return { level:"cb", color:"#d97706", bg:"#fffbeb", icon:"⚡",
+      label:"CONVECTIVE ADVISORY",
+      msg:"Cumulonimbus clouds reported. Monitor radar. Prepare for rapid protocol activation." };
+  }
+
+  if (taf && taf.rawTAF) {
+    var raw = taf.rawTAF.toUpperCase();
+    var parts = raw.split(/FM\d{6}/);
+    var checkText = (parts[0]||"") + (parts[1]||"");
+    var tempoMatch = raw.match(/TEMPO\s+\d{4}\/\d{4}[^\n]+/g) || [];
+    var probMatch  = raw.match(/PROB\d{2}\s+\d{4}\/\d{4}[^\n]+/g) || [];
+    if (/\bTS[A-Z]*\b/.test(checkText) && !tempoMatch.concat(probMatch).every(function(t){return /\bTS/.test(t);})) {
+      return { level:"imminent", color:"#ea580c", bg:"#fff7ed", icon:"⚡",
+        label:"LIGHTNING WATCH",
+        msg:"Thunderstorm in TAF forecast. Brief crew on protocol. Assign lightning lookout." };
+    }
+    var tempoHasTS = tempoMatch.some(function(t){ return /\bTS/.test(t); });
+    var probHasTS  = probMatch.some(function(t){ return /\bTS/.test(t); });
+    if (tempoHasTS || probHasTS) return { level:"possible", color:"#ca8a04", bg:"#fefce8", icon:"⚡",
+      label:"CONVECTIVE POSSIBLE",
+      msg:"Thunderstorm possible (TAF TEMPO/PROB). Ensure crew is briefed on protocol trigger criteria." };
+  }
+  return null;
+}
+
+function renderLightningCard(code) {
+  var s = getLightningStatus(code);
+  if (!s) return "";
+  return '<div style="border:1px solid ' + s.color + ';border-left:5px solid ' + s.color + ';background:' + s.bg + ';border-radius:6px;padding:10px 14px;margin-bottom:12px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+    + '<span style="font-size:20px">' + s.icon + '</span>'
+    + '<div><div style="font-size:11px;font-weight:700;color:' + s.color + ';text-transform:uppercase;letter-spacing:.08em">' + s.label + '</div>'
+    + '<div style="font-size:10px;color:#556070;margin-top:2px">' + s.msg + '</div></div></div></div>';
 }
 
 function renderDeiceCard(obs) {
