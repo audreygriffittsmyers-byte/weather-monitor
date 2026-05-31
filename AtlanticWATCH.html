@@ -5214,7 +5214,58 @@ function updatePickerFooter() {
   if (count) count.textContent = n > 0 ? n + ' selected' : 'All locations';
   if (summary) summary.textContent = n === 0 ? 'Showing all ' + COVERED.length + ' locations' : 'Showing ' + n + ' of ' + COVERED.length + ' locations';
 }
-
+  // Mobile: use Web Share API or clipboard; Desktop: open print window
+  if (typeof isMobile === 'function' && isMobile() && navigator.share) {
+    // Build plain text version for sharing
+    var plainText = 'ATLANTIC AVIATION -- WATCH\n'
+      + 'Generated: ' + now.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}) + '\n'
+      + 'Locations: ' + label + '\n\n';
+    codes.forEach(function(code) {
+      var obs = obsData[code];
+      var fbo = COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
+      plainText += code + ' -- ' + fbo.city + ', ' + fbo.state + '\n';
+      if (obs) {
+        plainText += '  ' + (obs.flightCat||'--') + ' | '
+          + (obs.tempF!=null?obs.tempF+'F ':'')
+          + (obs.windKts!=null?windDirLabel(obs.windDir)+' '+obs.windKts+'kt ':'')
+          + (obs.visib!=null?obs.visib+'SM ':'')
+          + (obs.obsTime?'(obs '+fmtAge(obs.obsTime)+')':'') + '\n';
+      }
+      var alerts = (results[code]&&results[code].alerts)||[];
+      alerts.forEach(function(a){ plainText += '  !! ' + a.event + ' -- expires ' + (a.expires?a.expires.toLocaleTimeString():'?') + '\n'; });
+      plainText += '\n';
+    });
+    if (notes) plainText += 'SHIFT NOTES:\n' + notes + '\n';
+    navigator.share({ title: 'WATCH Briefing -- ' + label, text: plainText })
+      .catch(function(e){ if (e.name !== 'AbortError') alert('Share failed: ' + e.message); });
+    return;
+  }
+  if (typeof isMobile === 'function' && isMobile()) {
+    // Fallback: copy to clipboard
+    var plainText2 = document.createElement('textarea');
+    plainText2.value = html.replace(/<[^>]+>/g,' ').replace(/  +/g,' ');
+    document.body.appendChild(plainText2);
+    plainText2.select();
+    try { document.execCommand('copy'); alert('Briefing copied to clipboard. Paste into email or message.'); }
+    catch(e) { alert('Could not copy -- try on desktop for full print briefing.'); }
+    document.body.removeChild(plainText2);
+    return;
+  }
+  // Desktop: open print window
+  var win=window.open('','_blank','width=900,height=700');
+  if(!win){alert('Please allow popups for this site to generate briefings.');return;}
+  win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
+    +'<meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>WATCH Briefing -- '+label+'</title>'
+    +'<style>body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:20px;max-width:900px;margin:0 auto}'
+    +'table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:4px 6px}'
+    +'@media print{.noprint{display:none!important}}</style></head><body>'
+    +'<div class="noprint" style="background:#0E2841;color:#fff;padding:8px 16px;margin:-20px -20px 16px;display:flex;justify-content:space-between;align-items:center">'
+    +'<span style="font-size:12px;font-weight:700">WATCH Briefing</span>'
+    +'<button onclick="window.print()" style="background:#fff;color:#0E2841;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">Print / Save PDF</button>'
+    +'</div>'+html+'</body></html>');
+  win.document.close();
+}
 </script>
 
 
