@@ -277,6 +277,20 @@
             <button onclick="generateSummary()" style="background:#ffffff;border:none;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:10px;font-weight:700;cursor:pointer">↺ Refresh</button>
           </div>
         </div>
+        <!-- Briefing filter/sort controls -->
+        <div style="padding:8px 20px;background:#f8f9fa;border-bottom:1px solid #e8e8e8;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div style="display:flex;gap:4px">
+            <span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;margin-right:4px;line-height:26px">Scope:</span>
+            <button id="bscope-all"   onclick="setBriefingScope('all')"    style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;border:1px solid #0E2841;background:#0E2841;color:#fff;cursor:pointer">All</button>
+            <button id="bscope-mine"  onclick="setBriefingScope('mine')"   style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;border:1px solid #c8d0d8;background:transparent;color:#556070;cursor:pointer">My Stations</button>
+            <button id="bscope-active" onclick="setBriefingScope('active')" style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;border:1px solid #c8d0d8;background:transparent;color:#556070;cursor:pointer">Active Only</button>
+          </div>
+          <div style="display:flex;gap:4px;margin-left:auto">
+            <span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;margin-right:4px;line-height:26px">Sort:</span>
+            <button id="bsort-sev"    onclick="setBriefingSort('severity')" style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;border:1px solid #0E2841;background:#0E2841;color:#fff;cursor:pointer">Severity</button>
+            <button id="bsort-alpha"  onclick="setBriefingSort('alpha')"    style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;border:1px solid #c8d0d8;background:transparent;color:#556070;cursor:pointer">A-Z</button>
+          </div>
+        </div>
         <!-- Shift Notes -->
         <div style="padding:10px 20px;background:#f8f9fa;border-bottom:1px solid #e8e8e8">
           <div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Shift Notes</div>
@@ -1756,6 +1770,61 @@ function getZoneTiming(codes) {
   return null;
 }
 
+// ── Briefing filter/sort controls ───────────────────────────────────────────
+function setBriefingScope(scope) {
+  briefingScope = scope;
+  var ON = "background:#0E2841;border-color:#0E2841;color:#fff";
+  var OFF = "background:transparent;border-color:#c8d0d8;color:#556070";
+  ["all","mine","active"].forEach(function(s) {
+    var el = document.getElementById("bscope-" + s);
+    if (el) el.style.cssText = el.style.cssText.replace(/background:[^;]+;border[^;]+;color:[^;]+/, s === scope ? ON : OFF);
+  });
+  generateSummary();
+}
+
+function setBriefingSort(sort) {
+  briefingSort = sort;
+  var ON = "background:#0E2841;border-color:#0E2841;color:#fff";
+  var OFF = "background:transparent;border-color:#c8d0d8;color:#556070";
+  ["severity","alpha"].forEach(function(s) {
+    var el = document.getElementById("bsort-" + s);
+    if (el) el.style.cssText = el.style.cssText.replace(/background:[^;]+;border[^;]+;color:[^;]+/, s === sort ? ON : OFF);
+  });
+  generateSummary();
+}
+
+function getBriefingFBOs() {
+  var fbos = COVERED.slice();
+  // Filter
+  if (briefingScope === "mine" && myLocations.size > 0) {
+    fbos = fbos.filter(function(f){ return myLocations.has(f.code); });
+  } else if (briefingScope === "active") {
+    fbos = fbos.filter(function(f) {
+      var hasNWS  = results[f.code]?.alerts?.length > 0;
+      var hasSPC  = spcData[1][f.code]?.st === "ok" && spcData[1][f.code]?.label && spcData[1][f.code]?.label !== "TSTM";
+      var hasLtng = !!getLightningStatus(f.code);
+      return hasNWS || hasSPC || hasLtng;
+    });
+  }
+  // Sort
+  if (briefingSort === "severity") {
+    var sevOrd = {extreme:0, severe:1, moderate:2, minor:3};
+    fbos.sort(function(a, b) {
+      var sa = results[a.code]?.alerts?.length > 0 ? (sevOrd[topBucket(results[a.code].alerts)] || 4) : 5;
+      var sb = results[b.code]?.alerts?.length > 0 ? (sevOrd[topBucket(results[b.code].alerts)] || 4) : 5;
+      if (sa !== sb) return sa - sb;
+      // Secondary: lightning, then SPC
+      var la = getLightningStatus(a.code) ? 0 : 1;
+      var lb = getLightningStatus(b.code) ? 0 : 1;
+      if (la !== lb) return la - lb;
+      return a.code.localeCompare(b.code);
+    });
+  } else {
+    fbos.sort(function(a, b){ return a.code.localeCompare(b.code); });
+  }
+  return fbos;
+}
+
 function generateSummary() {
   const content = document.getElementById('summary-content');
   const ts = document.getElementById('summary-timestamp');
@@ -1787,7 +1856,7 @@ function _generateSummaryInner(content, ts, status) {
 
   // ── SECTION 1: SPC Convective Outlook ──────────────────────────────────────
   const spcZones = { Moderate:[], Enhanced:[], Slight:[], Marginal:[] };
-  COVERED.forEach(f => {
+  getBriefingFBOs().forEach(f => {
     const z = getLocationZone(f.code);
     if (z) spcZones[z].push(f.code);
   });
@@ -4807,7 +4876,7 @@ function playAlertTone(color) {
 function checkForNewAlerts() {
   const BUCKETS = new Set(['EXTREME','SEVERE']);
   const byEvent = {};
-  getActiveFBOs().forEach(fbo => {
+  getBriefingFBOs().forEach(fbo => {
     (results[fbo.code]?.alerts || []).forEach(a => {
       if (!BUCKETS.has(a.bucket)) return;
       const key = (a.id || '') + '|' + (a.expires?.toISOString() || '') + '|' + fbo.code;
