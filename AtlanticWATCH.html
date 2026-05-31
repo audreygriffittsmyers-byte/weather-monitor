@@ -870,10 +870,6 @@ function renderSidebar() {
 
   const container = document.getElementById('sidebar-list');
   container.innerHTML = '';
-  if (typeof getMyLocSidebarItem === 'function') {
-    var myEl = getMyLocSidebarItem();
-    if (myEl) container.appendChild(myEl);
-  }
   list.forEach(fbo => {
     const el = makeSidebarItem(fbo);
     container.appendChild(el);
@@ -948,7 +944,6 @@ function mobileBack() {
 function selectFBO(code) {
   selected = code;
   openAlert = null;
-  mobileShowDetail();
   document.querySelectorAll('.fbo-item').forEach(el => el.classList.toggle('selected', el.dataset.code === code));
   var _rc = COORDS[code];
   if (_rc && leafletMap && mapInitialized) { drawRangeRings(_rc[0], _rc[1]); }
@@ -1168,148 +1163,9 @@ var myLocObs = null;
 var myLocSelected = false;
 var myLocNWSStation = null;
 
-function getMyLocSidebarItem() {
-  if (!gpsActive || userLat === null) return null;
-  var nearest = _getNearbyFBOs(userLat, userLon, 1)[0];
-  var icao = nearest ? toICAO(nearest.code) : null;
-  var obs = myLocObs;
-  var fc = obs ? obs.flightCat : null;
-  var fcBg = fc ? flightCatColor(fc) : "#8a9aaa";
-  var distStr = myLocNWSStation ? myLocNWSStation + " (nearest station)" : (nearest ? nearest.dist + " mi to " + nearest.code : (userLat.toFixed(3) + "N, " + Math.abs(userLon).toFixed(3) + "W"));
-  var el = document.createElement("div");
-  el.id = "sidebar-myloc";
-  el.style.cssText = "padding:10px 14px;cursor:pointer;border-bottom:1px solid #1a3a5c;background:#0a1f35;display:flex;align-items:center;justify-content:space-between;flex-shrink:0";
-  el.onclick = function(e) { e.stopPropagation(); selectMyLoc(); };
-  el.innerHTML = '<div style="display:flex;align-items:center;gap:8px">'
-    + '<span style="width:8px;height:8px;border-radius:50%;background:#4fc3f7;display:inline-block"></span>'
-    + "<div>"
-    + '<div style="font-size:11px;font-weight:700;color:#4fc3f7">📍 My Location</div>'
-    + '<div style="font-size:9px;color:#7a9ab8;margin-top:1px">' + distStr + (icao ? " · " + icao : "") + "</div>"
-    + "</div></div>"
-    + (fc ? '<span style="background:' + fcBg + ';color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px">' + fc + "</span>" : "");
-  return el;
-}
 
-function selectMyLoc() {
-  myLocSelected = true;
-  selected = null;
-  mobileShowDetail();
-  document.querySelectorAll(".sidebar-item").forEach(function(el){ el.classList.remove("active"); });
-  var el = document.getElementById("sidebar-myloc");
-  if (el) el.style.background = "#1a3a5c";
-  renderMyLocDetail();
-}
 
-function renderMyLocDetail() {
-  var panel = document.getElementById("panel-monitor");
-  if (userLat === null) {
-    panel.innerHTML = '<div class="empty-state"><div style="font-size:36px">📍</div><div style="font-size:13px;color:#556070">GPS not active. Tap the 🎯 button to enable.</div></div>';
-    return;
-  }
-  // Resolve nearest ICAO via NWS points API -- returns closest obs station
-  // regardless of whether it is an Atlantic FBO
-  var nearest = _getNearbyFBOs(userLat, userLon, 1)[0];
-  var icao = nearest ? toICAO(nearest.code) : null; // fallback
-  // Try NWS points API for true nearest station
-  fetch("https://api.weather.gov/points/" + userLat.toFixed(4) + "," + userLon.toFixed(4))
-    .then(function(r){ return r.json(); })
-    .then(function(pt){
-      var obsUrl = pt.properties && pt.properties.observationStations;
-      if (!obsUrl) return _renderMyLocWithICAO(icao, nearest);
-      return fetch(obsUrl).then(function(r){ return r.json(); }).then(function(stations){
-        var features = stations.features || [];
-        var nwsICAO = features.length ? features[0].properties.stationIdentifier : null;
-        myLocNWSStation = nwsICAO || null; _renderMyLocWithICAO(nwsICAO || icao, nearest, nwsICAO); renderSidebar();
-      });
-    })
-    .catch(function(){ _renderMyLocWithICAO(icao, nearest); });
-}
 
-function _renderMyLocWithICAO(icao, nearest, nwsStation) {
-  var coordStr = userLat.toFixed(4) + "°N, " + Math.abs(userLon).toFixed(4) + "°W";
-  var nwsLink = "https://forecast.weather.gov/MapClick.php?textField1=" + userLat.toFixed(4) + "&textField2=" + userLon.toFixed(4);
-  var stationLabel = nwsStation ? nwsStation + " (nearest station)" : (icao || "unknown");
-
-  panel.innerHTML = '<div style="padding:18px">'
-    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">'
-    + "<div>"
-    + '<div style="font-size:20px;font-weight:700;color:#0E2841">📍 My Location</div>'
-    + '<div style="font-size:12px;color:#556070;margin-top:2px">' + coordStr + "</div>"
-    + (icao ? '<div style="font-size:10px;color:#8a9aaa;margin-top:3px">Nearest station: <b>' + stationLabel + '</b> &nbsp;·&nbsp; <a href="' + nwsLink + '" target="_blank" style="font-size:10px;color:#0E2841">NWS forecast ↗</a></div>' : "")
-    + "</div>"
-    + '<button onclick="renderMyLocDetail()" style="background:#E8E8E8;border:1px solid #c8d0d8;color:#0E2841;border-radius:4px;padding:4px 12px;font-size:10px;font-weight:700">Refresh</button>'
-    + "</div>"
-    + '<div id="myloc-alerts"><div style="font-size:10px;color:#8a9aaa">Checking NWS alerts for your position...</div></div>'
-    + '<div id="myloc-metar"><div style="font-size:10px;color:#8a9aaa">Loading nearest weather observation...</div></div>'
-    + '<div id="myloc-taf"></div>'
-    + '<div id="myloc-forecast"><div style="font-size:10px;color:#8a9aaa">Loading 7-day forecast...</div></div>'
-    + "</div>";
-
-  if (icao) {
-    fetch(PROXY + "?type=metar&icao=" + icao).then(function(r){ return r.json(); }).then(function(data){
-      var m = Array.isArray(data) ? data[0] : data;
-      var obs = m ? _parseMetarObj(m, icao) : null;
-      myLocObs = obs;
-      var el = document.getElementById("myloc-metar");
-      if (el && obs) {
-        var fcBg = flightCatColor(obs.flightCat);
-        el.innerHTML = '<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">'
-          + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
-          + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em">Current Conditions · METAR ' + icao + "</div>"
-          + (obs.flightCat ? '<span style="background:' + fcBg + ';color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">' + obs.flightCat + "</span>" : "")
-          + "</div>"
-          + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#1a2a3a">'
-          + (obs.tempF != null ? '<span>🌡 <b>' + obs.tempF + "°F</b></span>" : "")
-          + (obs.windKts != null ? "<span>" + windDirArrow(obs.windDir) + " <b>" + obs.windKts + "kts" + (obs.windGustKts ? " G" + obs.windGustKts : "") + "</b> " + windDirLabel(obs.windDir) + "</span>" : "")
-          + (obs.visib != null ? '<span>👁 <b>' + obs.visib + "sm</b></span>" : "")
-          + (obs.condition ? '<span style="color:#556070">' + obs.condition + "</span>" : "")
-          + "</div></div>"
-          + decodeMetarFull(obs);
-        renderSidebar();
-      }
-    }).catch(function(){});
-
-    fetch(PROXY + "?type=taf&icao=" + icao).then(function(r){ return r.json(); }).then(function(td){
-      if (td && !td.error) {
-        var key = "__myloc_taf__";
-        tafData[key] = Array.isArray(td) ? td[0] : td;
-        var el = document.getElementById("myloc-taf");
-        if (el) el.innerHTML = decodeTAFFull(key);
-      }
-    }).catch(function(){});
-  }
-
-  _fetchMyLocAlerts(userLat, userLon);
-
-  fetch("https://api.weather.gov/points/" + userLat.toFixed(4) + "," + userLon.toFixed(4))
-    .then(function(r){ return r.json(); })
-    .then(function(pt){
-      var furl = pt.properties && pt.properties.forecast;
-      if (!furl) return;
-      return fetch(furl).then(function(r){ return r.json(); }).then(function(fd){
-        var periods = fd.properties && fd.properties.periods ? fd.properties.periods.slice(0,14) : [];
-        var el = document.getElementById("myloc-forecast");
-        if (!el || !periods.length) return;
-        var days = [];
-        for (var i=0; i<periods.length; i+=2) days.push({day:periods[i], night:periods[i+1]});
-        var fhtml = '<div style="margin-top:12px;border-top:1px solid #e8e8e8;padding-top:10px">'
-          + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">7-Day Forecast</div>'
-          + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:6px">';
-        days.slice(0,7).forEach(function(pair){
-          var p=pair.day, n=pair.night;
-          var hasHazard=/thunder|severe|tornado|warning|watch/i.test(p.shortForecast||"");
-          var bg=hasHazard?"#fff5f0":"#f8f9fa"; var border=hasHazard?"#ea580c":"#e8e8e8";
-          fhtml += '<div style="background:'+bg+';border:1px solid '+border+';border-radius:6px;padding:6px 8px;text-align:center">'
-            + '<div style="font-size:9px;font-weight:700;color:#0E2841">' + (p.name||"").substring(0,3) + "</div>"
-            + '<div style="font-size:13px;font-weight:700;color:#1a2a3a;margin:2px 0">' + (p.temperature||"--") + "°"
-            + '<span style="font-size:10px;color:#8a9aaa">/' + (n&&n.temperature!=null?n.temperature:"--") + "°</span></div>"
-            + '<div style="font-size:9px;color:#556070">' + (p.shortForecast||"").substring(0,14) + "</div></div>";
-        });
-        fhtml += "</div></div>";
-        el.innerHTML = fhtml;
-      });
-    }).catch(function(){});
-}
 
 function switchTab(tab) {
   activeTab = tab;
@@ -4375,50 +4231,50 @@ let gpsActive     = false;
 let lastGPSAlertCheck = 0;
 
 function startGPSWatch() {
-  if (!navigator.geolocation) {
-    alert('Geolocation is not supported by this browser.');
-    return;
-  }
+  if (!navigator.geolocation) { alert("Geolocation not supported"); return; }
+  var btn = document.getElementById("gps-btn");
   if (gpsActive) {
     stopGPSWatch();
     return;
   }
   gpsActive = true;
-  updateGPSBtn();
-  gpsWatchId = navigator.geolocation.watchPosition(
-    pos => {
-      userLat = pos.coords.latitude;
-      userLon = pos.coords.longitude;
-      drawUserMarker();
-      // Check for nearby alerts every 60 seconds
-      const now = Date.now();
-      if (now - lastGPSAlertCheck > 60000) {
-        lastGPSAlertCheck = now;
-        checkProximityAlerts();
-      }
-    },
-    err => {
-      console.warn('GPS error:', err.message);
-      gpsActive = false;
-      updateGPSBtn();
-    },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
-  );
+  if (btn) { btn.style.background = "#16a34a"; btn.style.color = "#fff"; }
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    _placeGPSMarker(userLat, userLon);
+    // Switch to map tab so user sees their pin
+    switchTab("map");
+    if (myMap) myMap.setView([userLat, userLon], 10);
+  }, function(err) {
+    gpsActive = false;
+    if (btn) { btn.style.background = ""; btn.style.color = ""; }
+    alert("Location access denied or unavailable.");
+  }, { enableHighAccuracy: true });
+}
+
+var _gpsMarker = null;
+function _placeGPSMarker(lat, lon) {
+  if (!myMap) return;
+  if (_gpsMarker) { myMap.removeLayer(_gpsMarker); }
+  var pulseIcon = L.divIcon({
+    className: "",
+    html: '<div style="width:16px;height:16px;border-radius:50%;background:#4fc3f7;border:3px solid #fff;box-shadow:0 0 0 4px #4fc3f755;animation:pulse 1.5s infinite"></div>',
+    iconSize: [16,16],
+    iconAnchor: [8,8]
+  });
+  _gpsMarker = L.marker([lat, lon], {icon: pulseIcon, zIndexOffset: 1000})
+    .addTo(myMap)
+    .bindPopup("\U0001F4CD My Location<br><span style='font-size:10px;color:#556070'>" + lat.toFixed(4) + "°N, " + Math.abs(lon).toFixed(4) + "°W</span>")
+    .openPopup();
 }
 
 function stopGPSWatch() {
-  if (gpsWatchId !== null) {
-    navigator.geolocation.clearWatch(gpsWatchId);
-    gpsWatchId = null;
-  }
   gpsActive = false;
-  if (userMarker && leafletMap) {
-    leafletMap.removeLayer(userMarker);
-    userMarker = null;
-  }
-  userLat = null;
-  userLon = null;
-  updateGPSBtn();
+  userLat = null; userLon = null;
+  var btn = document.getElementById("gps-btn");
+  if (btn) { btn.style.background = ""; btn.style.color = ""; }
+  if (_gpsMarker && myMap) { myMap.removeLayer(_gpsMarker); _gpsMarker = null; }
 }
 
 function updateGPSBtn() {
