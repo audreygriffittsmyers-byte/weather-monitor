@@ -497,6 +497,9 @@ function topBucket(alerts) {
   return alerts && alerts.length ? alerts[0].bucket : 'NONE';
 }
 
+function fmtAge(v){if(!v)return"";var t=v instanceof Date?v:new Date(v);if(isNaN(t))return"";var m=Math.round((Date.now()-t.getTime())/60000);if(m<1)return"just now";if(m<60)return m+" min ago";var h=Math.floor(m/60);return h+"h "+(m%60)+"m ago";}
+function fmtZulu(){var n=new Date();return String(n.getUTCHours()).padStart(2,"0")+String(n.getUTCMinutes()).padStart(2,"0")+"Z";}
+
 function fmtTime(dt) {
   if (!dt) return '--';
   return dt.toLocaleString('en-US', {month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
@@ -941,7 +944,7 @@ function makeSidebarItem(fbo) {
   if (r?.st === 'loading') badgeHTML = '<span class="spin"></span>';
   else if (r?.st === 'error') badgeHTML = `<span style="font-size:9px;color:#ef4444" title="${r.error}">ERR</span>`;
   else if (n > 0) badgeHTML = `<span class="fbo-count" style="background:${badge}">${n}</span>`;
-  else if (r) badgeHTML = `<span style="font-size:9px;color:#0f1e2e">✓</span>`;
+  else if (r) { var _ag=(obsData[fbo.code]&&obsData[fbo.code].obsTime)?fmtAge(obsData[fbo.code].obsTime):""; badgeHTML=`<span style="font-size:9px;color:#0f1e2e">✓</span>`+(_ag?`<span style="font-size:8px;color:#8a9aaa;margin-left:3px">${_ag}</span>`:""); }
 
   // SPC risk dot -- only show when no NWS alert (alert badge already communicates severity)
   const spc1 = spcData[1][fbo.code];
@@ -1093,7 +1096,11 @@ function renderMyStationsDashboard() {
     html+='<div onclick="selectFBO(\''+code+'\')" style="background:#fff;border:1px solid '+bc+';border-top:4px solid '+bc+';border-radius:6px;padding:10px 12px;cursor:pointer">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:14px;font-weight:700;color:#0E2841">'+code+'</span>'
       +(fc?'<span style="background:'+fcBg+';color:#fff;font-size:8px;font-weight:700;padding:2px 6px;border-radius:3px">'+fc+'</span>':'<span style="font-size:9px;color:#8a9aaa">--</span>')
-      +'</div><div style="font-size:9px;color:#8a9aaa;margin-bottom:6px">'+fbo.city+', '+fbo.state+'</div>';
+    var obsAge=obs&&obs.obsTime?fmtAge(obs.obsTime):'';
+    html+='<div style="display:flex;justify-content:space-between;margin-bottom:6px">'
+      +'<span style="font-size:9px;color:#8a9aaa">'+fbo.city+', '+fbo.state+'</span>'
+      +(obsAge?'<span style="font-size:8px;color:#8a9aaa;font-style:italic">'+obsAge+'</span>':'')
+      +'</div>';
     if(obs){
       html+='<div style="font-size:10px;color:#1a2a3a;margin-bottom:4px;display:flex;gap:8px;flex-wrap:wrap">';
       if(obs.tempF!=null) html+='<span>🌡 '+obs.tempF+'°F</span>';
@@ -1156,6 +1163,7 @@ function renderDetail() {
     content += `<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em">Current Conditions · METAR ${obs.icao}</div>
+        ${obs.obsTime?`<span style="font-size:8px;color:#8a9aaa;font-style:italic;margin-left:6px">${fmtAge(obs.obsTime)}</span>`:""}
         ${obs.flightCat ? `<span style="background:${fcBg};color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">${obs.flightCat}</span>` : ''}
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#1a2a3a">
