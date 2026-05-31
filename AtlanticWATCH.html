@@ -845,7 +845,12 @@ function updateScanBtn() {
 }
 
 function updateActiveCount() {
-  const n = COVERED.filter(f => results[f.code]?.alerts?.length > 0).length;
+  const n = COVERED.filter(function(f) {
+    var hasNWS  = results[f.code]?.alerts?.length > 0;
+    var hasSPC  = spcData[1][f.code]?.st === "ok" && spcData[1][f.code]?.label && spcData[1][f.code]?.label !== "TSTM";
+    var hasLtng = !!getLightningStatus(f.code);
+    return hasNWS || hasSPC || hasLtng;
+  }).length;
   document.getElementById('btn-active').textContent = `Active (${n})`;
 }
 
@@ -872,7 +877,12 @@ function renderSidebar() {
   const q = searchVal.toLowerCase();
   const list = COVERED.filter(f => {
     if (q && !f.code.toLowerCase().includes(q) && !f.city.toLowerCase().includes(q) && !f.state.toLowerCase().includes(q)) return false;
-    if (onlyActive && !(results[f.code]?.alerts?.length > 0)) return false;
+    if (onlyActive) {
+      var hasNWS  = results[f.code]?.alerts?.length > 0;
+      var hasSPC  = spcData[1][f.code]?.st === "ok" && spcData[1][f.code]?.label && spcData[1][f.code]?.label !== "TSTM";
+      var hasLtng = !!getLightningStatus(f.code);
+      if (!hasNWS && !hasSPC && !hasLtng) return false;
+    }
     if (spcFilter && spcData[1][f.code]?.label !== spcFilter) return false;
     if (stationFilter === "mine" && myLocations.size > 0 && !myLocations.has(f.code)) return false;
     return true;
