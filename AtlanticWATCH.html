@@ -3401,6 +3401,8 @@ var GRID_REGIONS = {
 };
 
 var gridRegion   = 'All';
+var gridSort     = 'severity'; // 'severity' | 'alpha' | 'temp'
+var gridMine     = false;
 var gridFetching = false;
 
 function selectFBOFromGrid(code) {
@@ -3424,18 +3426,44 @@ function renderOpsGrid() {
   });
   regionHtml += '</div>';
 
+  // Sort + My Stations controls
+  regionHtml += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:10px">';
+  regionHtml += '<span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;margin-right:2px">Sort:</span>';
+  [['severity','Severity'],['alpha','A–Z'],['temp','Temp ↓']].forEach(function(pair) {
+    var active = gridSort === pair[0];
+    regionHtml += '<button onclick="gridSort=\''+pair[0]+'\';renderOpsGrid()" '
+      + 'style="background:'+(active?'#0E2841':'#fff')+';color:'+(active?'#fff':'#556070')+';'
+      + 'border:1px solid '+(active?'#0E2841':'#c8d0d8')+';border-radius:4px;padding:3px 8px;font-size:9px;font-weight:700;cursor:pointer">'
+      + pair[1] + '</button>';
+  });
+  if (myLocations.size > 0) {
+    regionHtml += '<button onclick="gridMine=!gridMine;renderOpsGrid()" '
+      + 'style="margin-left:8px;background:'+(gridMine?'#0E2841':'#fff')+';color:'+(gridMine?'#fff':'#556070')+';'
+      + 'border:1px solid '+(gridMine?'#0E2841':'#c8d0d8')+';border-radius:4px;padding:3px 8px;font-size:9px;font-weight:700;cursor:pointer">'
+      + (gridMine?'★ My Stations':'☆ My Stations') + '</button>';
+  }
+  regionHtml += '</div>';
+
   // Get locations for region
   var codes = GRID_REGIONS[gridRegion];
   var fbos = COVERED.filter(function(f) {
-    if (codes) return codes.indexOf(f.code) !== -1;
+    if (codes && codes.indexOf(f.code) === -1) return false;
+    if (gridMine && myLocations.size > 0 && !myLocations.has(f.code)) return false;
     return true;
   });
 
-  // Sort by severity: locations with active alerts first, then GDP, then SPC risk
+  // Sort by selected mode
   fbos = fbos.slice().sort(function(a, b) {
+    if (gridSort === "alpha") return a.code.localeCompare(b.code);
+    if (gridSort === "temp") {
+      var ta = obsData[a.code]?.tempF ?? -999;
+      var tb = obsData[b.code]?.tempF ?? -999;
+      return tb - ta; // high to low
+    }
+    // Default: severity
     var aScore = _gridScore(a.code);
     var bScore = _gridScore(b.code);
-    return bScore - aScore;
+    return bScore !== aScore ? bScore - aScore : a.code.localeCompare(b.code);
   });
 
   // Build grid rows
