@@ -190,6 +190,12 @@
     <button id="scan-btn" style="background:#ffffff;border:1px solid #ffffff;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:.04em">▶ Scan All</button>
   </div>
 
+  <!-- New Alert Banner -->
+  <div id="new-alert-banner" style="display:none;background:#dc2626;color:#fff;padding:8px 16px;display:none;align-items:center;justify-content:space-between;gap:12px;font-size:11px;font-weight:700;z-index:100">
+    <span id="new-alert-text">⚠ NEW ALERT</span>
+    <button onclick="dismissAlertBanner()" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:3px;padding:2px 10px;font-size:10px;font-weight:700;cursor:pointer">Dismiss</button>
+  </div>
+
   <!-- TABS -->
   <div id="tabs">
     <button class="tab active" data-tab="map" style="background:transparent;border:none;border-bottom:2px solid #ffffff;color:#ffffff;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Map</button>
@@ -728,14 +734,57 @@ async function fetchAlerts(code) {
   }).sort((a, b) => ORD[a.bucket] - ORD[b.bucket]);
 }
 
-async function loadFBO(code) {
+async // ── New Alert Banner ────────────────────────────────────────────────────
+var knownAlertIds = new Set();
+var bannerDismissed = false;
+
+function checkForNewAlerts(code, alerts) {
+  var newOnes = alerts.filter(function(a) { return !knownAlertIds.has(a.id); });
+  newOnes.forEach(function(a) { knownAlertIds.add(a.id); });
+  if (newOnes.length && !bannerDismissed) {
+    showAlertBanner(newOnes);
+  }
+}
+
+function showAlertBanner(alerts) {
+  var banner = document.getElementById("new-alert-banner");
+  var text   = document.getElementById("new-alert-text");
+  if (!banner || !text) return;
+  var worst = alerts.reduce(function(a, b) {
+    var ord = {extreme:0,severe:1,moderate:2,minor:3};
+    return (ord[a.bucket]||3) <= (ord[b.bucket]||3) ? a : b;
+  });
+  var locs = [...new Set(alerts.map(function(a){ return a._code || ""; }))].filter(Boolean);
+  text.textContent = "⚠ NEW ALERT: " + worst.event
+    + (locs.length ? " at " + locs.slice(0,3).join(", ") + (locs.length>3?" +more":"") : "")
+    + " — tap to view";
+  banner.style.display = "flex";
+  bannerDismissed = false;
+  // Auto-navigate to alerted location on tap
+  banner.onclick = function(e) {
+    if (e.target.tagName === "BUTTON") return;
+    var firstLoc = locs[0];
+    if (firstLoc) { switchTab("monitor"); setFilter("active"); selectFBO(firstLoc); }
+  };
+}
+
+function dismissAlertBanner() {
+  var banner = document.getElementById("new-alert-banner");
+  if (banner) banner.style.display = "none";
+  bannerDismissed = true;
+}
+
+function loadFBO(code) {
   if (results[code]?.st === 'loading') return;
   results[code] = {st:'loading', alerts:[]};
   renderSidebarItem(code);
   if (selected === code) renderDetail();
   try {
     const alerts = await fetchAlerts(code);
+    // Tag each alert with its location code for banner display
+    alerts.forEach(function(a){ a._code = code; });
     results[code] = {st:'ok', alerts};
+    checkForNewAlerts(code, alerts);
   } catch(e) {
     results[code] = {st:'error', error: e.message, alerts:[]};
   }
@@ -749,6 +798,7 @@ async function loadFBO(code) {
 
 async function doScanAll() {
   if (scanning) { stopScan = true; return; }
+  bannerDismissed = false; // reset so new alerts show during this scan
   stopScan = false; scanning = true;
   const fbos = COVERED;
   scanD = 0; scanT = fbos.length;
