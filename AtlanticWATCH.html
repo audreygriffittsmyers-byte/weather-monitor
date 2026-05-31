@@ -4914,7 +4914,7 @@ function updateNotifBtn() {
   }
 }
 
-async function requestNotifPermission() {
+async async function requestNotifPermission() {
   if (!("Notification" in window)) { alert("Notifications not supported in this browser."); return; }
   if (Notification.permission === "granted") {
     new Notification("WATCH Alerts Active", { body: "You will receive alerts for severe weather at Atlantic locations.", icon: "/weather-monitor/icon-192.png" });
