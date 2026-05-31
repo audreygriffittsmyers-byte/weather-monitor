@@ -275,6 +275,11 @@
         </div>
         <!-- Summary content -->
         <div id="summary-content" style="padding:20px;max-width:860px">
+          <!-- Shift Notes -->
+          <div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:12px 14px;margin-bottom:16px">
+            <div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Shift Notes</div>
+            <textarea id="shift-notes" placeholder="Enter shift notes, handoff comments, or operational context to include in the printed briefing..." style="width:100%;min-height:80px;border:1px solid #e8e8e8;border-radius:4px;padding:8px;font-size:11px;color:#1a2a3a;resize:vertical;font-family:Arial,sans-serif;box-sizing:border-box" oninput="localStorage.setItem('watch_shift_notes',this.value)"></textarea>
+          </div>
           <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 0;color:#8a9aaa">
             <div style="font-size:32px;margin-bottom:10px">📋</div>
             <div style="font-size:13px">Open this tab to generate the current operational summary</div>
@@ -3564,7 +3569,8 @@ function openPrintBriefing() {
   } else {
     codes = COVERED.map(function(f){return f.code;});
   }
-  var notes = window.prompt('Optional notes for this briefing:','') || '';
+  var notesEl = document.getElementById('shift-notes');
+  var notes = notesEl ? notesEl.value.trim() : '';
   _doPrint(codes, notes);
 }
 
@@ -4667,6 +4673,7 @@ function decodeTAFFull(code) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadMyLocations();
+  loadShiftNotes();
 loadDismissed();
 updateLocFilterBtn();
 fetchNAS();
@@ -4787,6 +4794,14 @@ function saveDismissed() {
 }
 function dismissAlert(id) { dismissedAlerts.add(id); saveDismissed(); renderDetail(); }
 function undismissAlert(id) { dismissedAlerts.delete(id); saveDismissed(); renderDetail(); }
+
+function loadShiftNotes() {
+  try {
+    var saved = localStorage.getItem("watch_shift_notes");
+    var el = document.getElementById("shift-notes");
+    if (el && saved) el.value = saved;
+  } catch(e) {}
+}
 
 function loadMyLocations() {
   try {
