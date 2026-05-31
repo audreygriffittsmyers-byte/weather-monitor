@@ -4914,17 +4914,23 @@ function updateNotifBtn() {
   }
 }
 
-async async function requestNotifPermission() {
+function requestNotifPermission() {
   if (!("Notification" in window)) { alert("Notifications not supported in this browser."); return; }
   if (Notification.permission === "granted") {
-    new Notification("WATCH Alerts Active", { body: "You will receive alerts for severe weather at Atlantic locations.", icon: "/weather-monitor/icon-192.png" });
+    try { new Notification("WATCH Alerts Active", { body: "Alerts are already enabled.", icon: "/weather-monitor/icon-192.png" }); } catch(e) {}
     return;
   }
-  var perm = await Notification.requestPermission();
-  updateNotifBtn();
-  if (perm === "granted") {
-    new Notification("WATCH Alerts Enabled", { body: "You will now receive alerts for severe and extreme weather events.", icon: "/weather-monitor/icon-192.png" });
+  if (Notification.permission === "denied") {
+    alert("Notifications are blocked. Please enable them in your browser settings for this site.");
+    return;
   }
+  // Use callback form for broadest mobile support
+  Notification.requestPermission(function(perm) {
+    updateNotifBtn();
+    if (perm === "granted") {
+      try { new Notification("WATCH Alerts Enabled", { body: "You will now receive alerts for severe and extreme weather events." }); } catch(e) {}
+    }
+  });
 }
 
 function notifyIfPermitted(title, body) {
