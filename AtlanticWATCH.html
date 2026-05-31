@@ -3964,10 +3964,14 @@ function getLightningStatus(code) {
 
   if (obs) {
     var wx = (obs.condition || "").toUpperCase();
-    var hasActiveTS = /TS/.test(wx);
+    // Match only valid WX codes: TS, TSRA, TSGR, TSGS, TSSN, VCTS, +TSRA etc
+    var hasActiveTS = /(?:^|\s)[+-]?(?:VC)?TS[A-Z]*(?:\s|$)/.test(wx);
     if (!hasActiveTS && obs.rawOb) {
+      // Check token-by-token against valid TS wx codes only
       var rawParts = obs.rawOb.toUpperCase().split(" ");
-      hasActiveTS = rawParts.some(function(p){ return /^[+-]?TS[A-Z]*$|^VCTS$/.test(p); });
+      hasActiveTS = rawParts.some(function(p) {
+        return /^[+-]?(?:VC)?TS(?:RA|GR|GS|SN|SA|PE|HZ|FG|DS|SS|UP)?$/.test(p);
+      });
     }
     var hasCB = (obs.clouds && obs.clouds.some(function(c){ return c.type==="CB"||(c.cover&&/CB/.test(c.cover)); }))
       || (obs.rawOb && /\bBKN[0-9]*CB\b|\bOVC[0-9]*CB\b|\bFEW[0-9]*CB\b|\bSCT[0-9]*CB\b/.test(obs.rawOb.toUpperCase()));
