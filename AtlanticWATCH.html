@@ -322,6 +322,8 @@
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="nws-poly-toggle" onchange="toggleNWSPolygons(this.checked)" checked style="cursor:pointer"/> Watches/Warnings</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="winter-poly-toggle" onchange="toggleWinterPolygons(this.checked)" checked style="cursor:pointer"/> Winter</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="nhc-toggle" onchange="toggleNHC(this.checked)" checked style="cursor:pointer"/> Tropical</label>
+          <input type="checkbox" id="fire-perim-toggle" onchange="showFirePerim=this.checked;drawFirePerimLayer()" style="cursor:pointer"/>
+          <label for="fire-perim-toggle" style="font-size:10px;color:#e8e8e8;cursor:pointer"> Fire Perims</label>
           </div>
           <!-- Auto mode indicator -->
           <div id="map-mode-badge" style="font-size:9px;color:#fff;background:#0E2841;padding:2px 8px;border-radius:3px;font-weight:700;display:none"></div>
@@ -2312,6 +2314,7 @@ async function refreshMapLayers() {
   try {
     await Promise.all([drawSPCPolygons(), drawFirePolygons(), drawWPCPolygons(), drawWinterPolygons(), drawNWSPolygons()]);
     drawNHCLayer();
+    drawFirePerimLayer();
     renderMapMarkers();
     if (gpsActive) drawUserMarker();
     if (showRadar) drawRadar();
@@ -3103,7 +3106,33 @@ function toggleWinterPolygons(on) {
 // ── NHC Tropical ──────────────────────────────────────────────────────────────
 let nhcLayer = null;
 let showNHC  = true;
+let showFirePerim = false;
 const NHC_COLORS = { TD:'#a8d5ff', TS:'#fbbf24', HU:'#ef4444', TY:'#ef4444' };
+
+var firePerimLayer = null;
+async function drawFirePerimLayer() {
+  if (firePerimLayer) { leafletMap.removeLayer(firePerimLayer); firePerimLayer = null; }
+  if (!showFirePerim) return;
+  try {
+    var r = await fetchWithTimeout(PROXY + "?type=activefire");
+    if (!r.ok) return;
+    var data = await r.json();
+    if (!data.features || !data.features.length) return;
+    firePerimLayer = L.geoJSON(data, {
+      style: function(f) {
+        var a=f.properties.GISAcres||0;
+        var col=a>10000?"#7f1d1d":a>1000?"#dc2626":"#f97316";
+        return {color:col,fillColor:col,fillOpacity:0.25,weight:1.5};
+      },
+      onEachFeature: function(f,layer) {
+        var p=f.properties, name=p.IncidentName||"Unknown Fire";
+        var acres=p.GISAcres?Math.round(p.GISAcres).toLocaleString()+" ac":"";
+        var pct=p.PercentContained!=null?p.PercentContained+"% contained":"";
+        layer.bindTooltip("Fire: "+name+(acres?" - "+acres:"")+(pct?" - "+pct:""),{sticky:true});
+      }
+    }).addTo(leafletMap);
+  } catch(e) {}
+}
 
 async function drawNHCLayer() {
   if (nhcLayer) { leafletMap.removeLayer(nhcLayer); nhcLayer = null; }
