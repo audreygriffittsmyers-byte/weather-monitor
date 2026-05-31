@@ -2620,6 +2620,10 @@ function renderMapMarkers() {
       + alertBadge + '</div>'
       + probLine
       + alertBlock
+      + '<div style="border-top:1px solid #e8e8e8;margin-top:8px;padding-top:8px">'
+      + '<button onclick="switchTab(\'monitor\');selectFBO(\'" + fbo.code + "\');" '
+      + 'style="width:100%;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:7px;font-size:11px;font-weight:700;cursor:pointer">'
+      + 'View in Live Monitor →</button></div>'
       + '</div>';
 
     const marker = L.marker([lat,lon], {
