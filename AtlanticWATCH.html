@@ -189,6 +189,7 @@
     <button id="loc-filter-btn" onclick="openLocationPicker()" title="Filter locations" style="background:transparent;border:1px solid #ffffff88;color:#ffffff;border-radius:4px;padding:5px 10px;font-size:13px;cursor:pointer;line-height:1">📍</button>
     <button id="notif-btn" onclick="requestNotifPermission()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">🔔 Enable Alerts</button>
     <button onclick="openPrintBriefing()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer" title="Print briefing">🖨 Brief</button>
+    <button onclick="shareOrCopyBriefing()" style="background:#ffffff;border:1px solid #c8d0d8;color:#0E2841;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">📤 Share</button>
     <button id="scan-btn" style="background:#ffffff;border:1px solid #ffffff;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:.04em">▶ Scan All</button>
   </div>
 
@@ -3778,6 +3779,74 @@ function _renderGridRow(fbo) {
 
 
 // ── Print Briefing ────────────────────────────────────────────────────────────
+function shareOrCopyBriefing() {
+  var notesEl = document.getElementById("shift-notes");
+  var notes = notesEl ? notesEl.value.trim() : "";
+  var codes;
+  if (stationFilter === "mine" && myLocations.size > 0) {
+    codes = COVERED.filter(function(f){ return myLocations.has(f.code); }).map(function(f){ return f.code; });
+  } else if (selected) {
+    codes = [selected];
+  } else {
+    codes = COVERED.map(function(f){ return f.code; });
+  }
+  var now = new Date();
+  var ts = now.toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit",timeZoneName:"short"});
+  var zuluTs = now.toISOString().replace("T"," ").substring(0,16) + "Z";
+  var text = "ATLANTIC AVIATION -- WATCH\n";
+  text += "Generated: " + ts + " (" + zuluTs + ")\n";
+  text += "Locations: " + codes.length + "\n";
+  text += "=".repeat(40) + "\n\n";
+  codes.forEach(function(code) {
+    var obs = obsData[code];
+    var fbo = COVERED.find(function(f){ return f.code===code; }) || {city:"",state:""};
+    var alerts = (results[code] && results[code].alerts) ? results[code].alerts.filter(function(a){ return !dismissedAlerts.has(a.id); }) : [];
+    var ltng = getLightningStatus(code);
+    text += code + " -- " + fbo.city + ", " + fbo.state;
+    if (obs && obs.obsTime) text += " (obs " + fmtAge(obs.obsTime) + ")";
+    text += "\n";
+    if (obs) {
+      text += "  " + (obs.flightCat||"--") + " | ";
+      if (obs.tempF != null) text += obs.tempF + "F ";
+      if (obs.windKts != null) text += windDirLabel(obs.windDir) + " " + obs.windKts + (obs.windGustKts?"G"+obs.windGustKts:"") + "kt ";
+      if (obs.visib != null) text += obs.visib + "SM ";
+      text += "\n";
+    }
+    if (ltng) text += "  LIGHTNING: " + ltng.label + "\n";
+    alerts.forEach(function(a) {
+      text += "  ALERT: " + a.event;
+      if (a.expires) text += " (exp " + a.expires.toLocaleTimeString() + ")";
+      text += "\n";
+    });
+    text += "\n";
+  });
+  if (notes) text += "SHIFT NOTES:\n" + notes + "\n";
+  // Try Web Share API first (mobile), then clipboard
+  if (navigator.share) {
+    navigator.share({ title: "WATCH Briefing", text: text })
+      .catch(function(e){ if (e.name !== "AbortError") _copyToClipboard(text); });
+  } else {
+    _copyToClipboard(text);
+  }
+}
+
+function _copyToClipboard(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function(){
+      var btn = document.getElementById("share-btn");
+      if (btn) { btn.textContent = "\u2713 Copied!"; setTimeout(function(){ btn.innerHTML = "\U0001F4E4 Share"; }, 2000); }
+    }).catch(function(){ alert("Copy failed -- please copy manually."); });
+  } else {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    alert("Briefing copied to clipboard.");
+  }
+}
+
 function openPrintBriefing() {
   var codes;
   if (activeTab === 'grid') {
