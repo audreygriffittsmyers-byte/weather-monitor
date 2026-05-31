@@ -1109,6 +1109,10 @@ function renderDetail() {
         <button onclick="loadFBO('${selected.replace(/'/g,"\\'")}'); renderDetail();" style="background:#E8E8E8;border:1px solid #c8d0d8;color:#0E2841;border-radius:4px;padding:4px 12px;font-size:10px;font-weight:700">Refresh</button>
       </div>`;
 
+  if (stationFilter === 'mine') {
+    content += '<button onclick="selected=null;renderDetail()" style="background:transparent;border:none;color:#0E2841;font-size:10px;cursor:pointer;padding:4px 0 8px 0;display:block">← Back to My Stations</button>';
+  }
+
   // ── 1. Advisory cards (only show when triggered) ──────────────────────────
   content += renderLightningCard(selected);
   content += renderGSPCard(selected);
