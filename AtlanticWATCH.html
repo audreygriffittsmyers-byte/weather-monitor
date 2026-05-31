@@ -996,11 +996,18 @@ function mobileBack() {
   var s = document.getElementById("sidebar");
   var m = document.getElementById("main");
   var b = document.getElementById("mobile-back-btn");
-  if (s) { s.classList.remove("mobile-hidden"); s.style.display = "flex"; }
-  if (m) m.classList.add("mobile-hidden");
-  if (b) b.classList.remove("active");
   selected = null;
-  renderSidebar();
+  if (stationFilter === "mine") {
+    if (s) s.classList.add("mobile-hidden");
+    if (m) m.classList.remove("mobile-hidden");
+    if (b) b.classList.remove("active");
+    renderDetail();
+  } else {
+    if (s) { s.classList.remove("mobile-hidden"); s.style.display = "flex"; }
+    if (m) m.classList.add("mobile-hidden");
+    if (b) b.classList.remove("active");
+    renderSidebar();
+  }
 }
 
 function selectFBO(code) {
@@ -4062,7 +4069,9 @@ function renderLightningCard(code) {
     + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
     + '<span style="font-size:20px">' + s.icon + '</span>'
     + '<div><div style="font-size:11px;font-weight:700;color:' + s.color + ';text-transform:uppercase;letter-spacing:.08em">' + s.label + '</div>'
-    + '<div style="font-size:10px;color:#556070;margin-top:2px">' + s.msg + '</div></div></div></div>';
+    + '<div style="font-size:10px;color:#556070;margin-top:2px">' + s.msg + '</div>'
+    + '<div style="font-size:9px;color:#8a9aaa;margin-top:4px;font-style:italic">Based on METAR at station. Detection lags -- storm may be within protocol range before METAR updates. TAF watch provides earlier notice.</div>'
+    + '</div></div></div>';
 }
 
 function renderDeiceCard(obs) {
