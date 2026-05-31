@@ -151,7 +151,8 @@
   /* ── Mobile navigation ── */
   @media (max-width: 600px) {
     #body { position: relative; overflow: hidden; }
-    #sidebar { width: 100% !important; flex: 1; height: 100%; }
+    #sidebar { width: 100% !important; flex: 1; min-height: 0; }
+    #sidebar-list { flex: 1; min-height: 0; overflow-y: auto; }
     #main { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100% !important; overflow-y: auto; }
     #main.mobile-hidden { display: none !important; }
     #sidebar.mobile-hidden { display: none !important; }
@@ -1165,6 +1166,7 @@ function toggleAlert(id) {
 // ── My Location in Live Monitor ─────────────────────────────────────────
 var myLocObs = null;
 var myLocSelected = false;
+var myLocNWSStation = null;
 
 function getMyLocSidebarItem() {
   if (!gpsActive || userLat === null) return null;
@@ -1173,11 +1175,11 @@ function getMyLocSidebarItem() {
   var obs = myLocObs;
   var fc = obs ? obs.flightCat : null;
   var fcBg = fc ? flightCatColor(fc) : "#8a9aaa";
-  var distStr = nearest ? nearest.dist + " mi to " + nearest.code : (userLat.toFixed(3) + "N, " + Math.abs(userLon).toFixed(3) + "W");
+  var distStr = myLocNWSStation ? myLocNWSStation + " (nearest station)" : (nearest ? nearest.dist + " mi to " + nearest.code : (userLat.toFixed(3) + "N, " + Math.abs(userLon).toFixed(3) + "W"));
   var el = document.createElement("div");
   el.id = "sidebar-myloc";
   el.style.cssText = "padding:10px 14px;cursor:pointer;border-bottom:1px solid #1a3a5c;background:#0a1f35;display:flex;align-items:center;justify-content:space-between;flex-shrink:0";
-  el.onclick = function() { selectMyLoc(); };
+  el.onclick = function(e) { e.stopPropagation(); selectMyLoc(); };
   el.innerHTML = '<div style="display:flex;align-items:center;gap:8px">'
     + '<span style="width:8px;height:8px;border-radius:50%;background:#4fc3f7;display:inline-block"></span>'
     + "<div>"
@@ -1217,7 +1219,7 @@ function renderMyLocDetail() {
       return fetch(obsUrl).then(function(r){ return r.json(); }).then(function(stations){
         var features = stations.features || [];
         var nwsICAO = features.length ? features[0].properties.stationIdentifier : null;
-        _renderMyLocWithICAO(nwsICAO || icao, nearest, nwsICAO);
+        myLocNWSStation = nwsICAO || null; _renderMyLocWithICAO(nwsICAO || icao, nearest, nwsICAO); renderSidebar();
       });
     })
     .catch(function(){ _renderMyLocWithICAO(icao, nearest); });
