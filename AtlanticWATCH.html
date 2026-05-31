@@ -234,7 +234,16 @@
       </div>
 
       <!-- SPC panel -->
-      <div style="display:flex;gap:4px;flex-wrap:wrap">
+      <div id="panel-spc" style="display:none;flex-direction:column;height:100%;overflow:hidden">
+        <!-- SPC top bar -->
+        <div style="background:#ffffff;border-bottom:1px solid #c8d0d8;padding:10px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex-shrink:0">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="display:flex;gap:2px;background:#E8E8E8;border-radius:5px;padding:3px">
+              <button class="day-tab" data-day="1" onclick="switchDay(1)" style="background:#0E2841;color:#fff;border:none;border-radius:3px;padding:4px 12px;font-size:10px;font-weight:700;cursor:pointer">Day 1</button>
+              <button class="day-tab" data-day="2" onclick="switchDay(2)" style="background:transparent;color:#556070;border:none;border-radius:3px;padding:4px 12px;font-size:10px;font-weight:700;cursor:pointer">Day 2</button>
+              <button class="day-tab" data-day="3" onclick="switchDay(3)" style="background:transparent;color:#556070;border:none;border-radius:3px;padding:4px 12px;font-size:10px;font-weight:700;cursor:pointer">Day 3</button>
+            </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
               <span style="background:#196B24;color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px">MARGINAL</span>
               <span style="background:#FFC000;color:#000;font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px">SLIGHT</span>
               <span style="background:#E97132;color:#000;font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px">ENHANCED</span>
@@ -340,7 +349,11 @@
       </div>
 
       <!-- My Location panel -->
-      <div style="font-size:13px;color:#556070;margin-top:8px">Open this tab to load weather for your current location</div>
+      <div id="panel-myloc" style="display:none;height:100%;overflow-y:auto;background:#E8E8E8">
+        <div id="myloc-panel-inner" style="padding:20px;max-width:860px">
+          <div class="empty-state">
+            <div style="font-size:36px">📍</div>
+            <div style="font-size:13px;color:#556070;margin-top:8px">Open this tab to load weather for your current location</div>
           </div>
         </div>
       </div>
@@ -898,8 +911,25 @@ function makeSidebarItem(fbo) {
   return div;
 }
 
+function renderSidebarItem(code) {
+  const existing = document.querySelector(`[data-code="${CSS.escape(code)}"]`);
+  const fbo = COVERED.find(f => f.code === code);
+  if (!fbo) return;
+  const newEl = makeSidebarItem(fbo);
+  if (existing) existing.replaceWith(newEl);
+}
+
 // ── Mobile navigation ────────────────────────────────────────────────
 function isMobile() { return window.innerWidth <= 600; }
+function mobileShowDetail() {
+  if (!isMobile() || activeTab !== "monitor") return;
+  var s = document.getElementById("sidebar");
+  var m = document.getElementById("main");
+  var b = document.getElementById("mobile-back-btn");
+  if (s) s.classList.add("mobile-hidden");
+  if (m) m.classList.remove("mobile-hidden");
+  if (b) b.classList.add("active");
+}
 function mobileBack() {
   var s = document.getElementById("sidebar");
   var m = document.getElementById("main");
@@ -1129,9 +1159,9 @@ function toggleAlert(id) {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 // ── My Location in Live Monitor ─────────────────────────────────────────
-
-
-
+var myLocObs = null;
+var myLocSelected = false;
+var myLocNWSStation = null;
 
 
 
@@ -2715,6 +2745,38 @@ async function fetchTAF(code) {
   } catch(e) { tafData[code] = null; }
 }
 
+function renderTAFStrip(code) {
+  const taf = tafData[code];
+  if (!taf) return '<div style="font-size:10px;color:#8a9aaa;padding:8px 0">TAF not available</div>';
+  const forecasts = taf.fcsts || taf.forecast || taf.fcstGroups || [];
+  if (!forecasts.length) return '';
+  let html = '<div style="margin-top:12px;border-top:1px solid #e8e8e8;padding-top:10px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">TAF Forecast</div>'
+    + '<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px">';
+  forecasts.slice(0,8).forEach(f => {
+    const timeStr = f.timeFrom ? new Date(f.timeFrom).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'}) : '';
+    const wind = f.wspd != null ? (f.wspd + 'kts' + (f.wgst ? ' G'+f.wgst : '')) : '';
+    const vis  = f.visib != null ? f.visib + 'sm' : '';
+    const wx   = f.wxString || '';
+    const sky  = (f.clouds||[]).map(c=>(c.cover||'')+(c.base?c.base+'ft':'')).join(' ');
+    const cat  = f.flightCategory || '';
+    const catColor = {VFR:'#16a34a',MVFR:'#2563eb',IFR:'#dc2626',LIFR:'#7c3aed'}[cat] || '#8a9aaa';
+    html += `<div style="flex-shrink:0;background:#f8f9fa;border:1px solid #e8e8e8;border-radius:4px;padding:6px 8px;min-width:88px">
+      <div style="font-size:9px;color:#8a9aaa;margin-bottom:3px">${timeStr}</div>
+      ${cat ? `<div style="background:${catColor};color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;display:inline-block;margin-bottom:3px">${cat}</div>` : ''}
+      ${wind ? `<div style="font-size:10px;color:#1a2a3a"><b>${wind}</b></div>` : ''}
+      ${vis  ? `<div style="font-size:10px;color:#556070">${vis}</div>` : ''}
+      ${wx   ? `<div style="font-size:10px;color:#556070">${wx}</div>` : ''}
+      ${sky  ? `<div style="font-size:9px;color:#8a9aaa">${sky}</div>` : ''}
+    </div>`;
+  });
+  html += '</div>';
+  if (taf.rawTAF) html += `<div style="font-size:9px;color:#8a9aaa;margin-top:6px;font-family:monospace;overflow-x:auto;white-space:nowrap">${taf.rawTAF}</div>`;
+  html += '</div>';
+  return html;
+}
+
+
 // ── 7-Day Forecast ────────────────────────────────────────────────────────────
 const forecastData  = {}; // code -> 7-day periods array
 let   nasPrograms   = []; // [{type,arpt,reason,avg,max,end}]
@@ -2953,6 +3015,257 @@ function getTropicalOutlookSection() {
 
 
 // ── My Location Tab ───────────────────────────────────────────────────────────
+let myLocTabLat = null;
+let myLocTabLon = null;
+let myLocTabWatchId = null;
+
+function renderMyLocTab() {
+  const panel = document.getElementById('myloc-panel-inner');
+  if (!panel) return;
+
+  if (!navigator.geolocation) {
+    panel.innerHTML = `<div class="empty-state"><div style="font-size:36px">📍</div><div style="font-size:13px;color:#556070">Geolocation is not supported by this browser.</div></div>`;
+    return;
+  }
+
+  // If we already have a fix, render it
+  if (myLocTabLat !== null) {
+    _renderMyLocData(panel);
+    return;
+  }
+
+  // Show loading state and request position
+  panel.innerHTML = `<div class="empty-state"><span class="spin"></span><div style="font-size:12px;color:#556070;margin-top:10px">Getting your location...</div></div>`;
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      myLocTabLat = pos.coords.latitude;
+      myLocTabLon = pos.coords.longitude;
+      _renderMyLocData(panel);
+      // Keep watching for updates
+      if (myLocTabWatchId === null) {
+        myLocTabWatchId = navigator.geolocation.watchPosition(
+          p => { myLocTabLat = p.coords.latitude; myLocTabLon = p.coords.longitude; },
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 60000 }
+        );
+      }
+    },
+    err => {
+      panel.innerHTML = `<div class="empty-state"><div style="font-size:36px">📍</div>
+        <div style="font-size:13px;color:#c0392b;font-weight:700;margin-top:8px">Location access denied</div>
+        <div style="font-size:11px;color:#556070;margin-top:6px;max-width:300px;text-align:center">
+          Allow location access in your browser, then tap the button below.</div>
+        <button onclick="renderMyLocTab()" style="margin-top:14px;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:8px 20px;font-size:12px;font-weight:700;cursor:pointer">Try Again</button>
+      </div>`;
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+  );
+}
+
+function _renderMyLocData(panel) {
+  const lat = myLocTabLat;
+  const lon = myLocTabLon;
+  const nearbyFBOs = _getNearbyFBOs(lat, lon, 5);
+  const nearest = nearbyFBOs[0] || null;
+
+  // Find the nearest ICAO for raw weather fetch
+  const nearestICAO = nearest ? toICAO(nearest.code) : _nearestICAOFromCoords(lat, lon);
+  const coordStr = `${lat.toFixed(4)}°N, ${Math.abs(lon).toFixed(4)}°W`;
+  const nwsLink = `https://forecast.weather.gov/MapClick.php?textField1=${lat.toFixed(4)}&textField2=${lon.toFixed(4)}`;
+
+  let html = `<div style="padding:4px 0 18px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:20px;font-weight:700;color:#0E2841">📍 My Location</div>
+        <div style="font-size:11px;color:#556070;margin-top:3px">${coordStr}</div>
+        <a href="${nwsLink}" target="_blank" style="font-size:10px;color:#0E2841">NWS forecast ↗</a>
+      </div>
+      <button onclick="myLocTabLat=null;renderMyLocTab();" style="background:#E8E8E8;border:1px solid #c8d0d8;color:#0E2841;border-radius:4px;padding:4px 12px;font-size:10px;font-weight:700">Refresh Location</button>
+    </div>`;
+
+  // Nearest FBO callouts
+  if (nearbyFBOs.length > 0) {
+    html += `<div style="background:#f0f7ff;border:1px solid #b8d4f0;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:11px;color:#0E2841">
+      <div style="font-weight:700;margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:.06em">Nearby Atlantic Locations</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">`;
+    nearbyFBOs.slice(0, 6).forEach(n => {
+      html += `<span style="background:#0E2841;color:#fff;border-radius:3px;padding:3px 9px;font-family:monospace;font-size:11px;cursor:pointer"
+        onclick="switchTab('monitor');selectFBO('${n.code}')">${n.code} <span style="opacity:.7;font-size:9px">${n.dist}mi</span></span>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // NWS alerts for user location
+  html += `<div id="myloc-alerts"><div style="font-size:10px;color:#8a9aaa">Checking NWS alerts for your position...</div></div>`;
+
+  // METAR from nearest station
+  html += `<div id="myloc-metar"><div style="font-size:10px;color:#8a9aaa">Loading nearest weather observation...</div></div>`;
+
+  // 7-day forecast
+  html += `<div id="myloc-forecast"><div style="font-size:10px;color:#8a9aaa">Loading 7-day forecast...</div></div>`;
+
+  html += `</div>`;
+  panel.innerHTML = html;
+
+  // --- Async: NWS alerts for user coords ---
+  _fetchMyLocAlerts(lat, lon);
+
+  // --- Async: METAR from nearest ICAO ---
+  if (nearestICAO) _fetchMyLocMETAR(nearestICAO);
+
+  // --- Async: 7-day NWS forecast ---
+  _fetchMyLocForecast(lat, lon);
+}
+
+function _getNearbyFBOs(lat, lon, maxCount) {
+  const results = [];
+  COVERED.forEach(fbo => {
+    const c = COORDS[fbo.code];
+    if (!c) return;
+    const dist = Math.round(distanceMiles(lat, lon, c[0], c[1]));
+    results.push({ ...fbo, dist });
+  });
+  results.sort((a, b) => a.dist - b.dist);
+  return results.slice(0, maxCount);
+}
+
+function _nearestICAOFromCoords(lat, lon) {
+  // fallback: find nearest FBO ICAO
+  const nearest = _getNearbyFBOs(lat, lon, 1)[0];
+  return nearest ? toICAO(nearest.code) : null;
+}
+
+async function _fetchMyLocAlerts(lat, lon) {
+  const el = document.getElementById('myloc-alerts');
+  if (!el) return;
+  try {
+    // Use NWS points API to get the alert zone for this coordinate
+    const ptRes = await fetch(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`);
+    if (!ptRes.ok) throw new Error('NWS points unavailable');
+    const ptData = await ptRes.json();
+    const county = ptData.properties?.county;
+    const zone   = ptData.properties?.forecastZone;
+    if (!county && !zone) throw new Error('No zone data');
+
+    // Fetch alerts for the zone
+    const alertUrl = county
+      ? `https://api.weather.gov/alerts/active?zone=${county.split('/').pop()}`
+      : `https://api.weather.gov/alerts/active?zone=${zone.split('/').pop()}`;
+    const aRes = await fetch(alertUrl);
+    const aData = await aRes.json();
+    const features = aData.features || [];
+
+    if (features.length === 0) {
+      el.innerHTML = `<div class="clear-box" style="margin-bottom:14px"><div style="font-size:24px;margin-bottom:4px">✓</div><div style="color:#1a6b30;font-weight:700;font-size:13px">No Active NWS Alerts</div><div style="color:#556070;font-size:11px;margin-top:2px">No watches, warnings, or advisories at your location</div></div>`;
+      return;
+    }
+
+    let html = `<div style="font-size:10px;color:#556070;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">${features.length} active alert${features.length !== 1 ? 's' : ''} at your location</div>`;
+    features.forEach(f => {
+      const p = f.properties;
+      const bucket = classifyAlert(p.event || '');
+      const bg = SBG[bucket]; const border = SBORDER[bucket]; const tc = STEXT[bucket];
+      html += `<div class="alert-card" style="background:${bg};border:1px solid ${border}88;margin-bottom:8px">
+        <div class="alert-header" style="background:${bg};padding:10px 14px">
+          <span class="dot" style="background:${SBADGE[bucket]}"></span>
+          <div style="flex:1">
+            <span class="alert-event" style="color:${tc}">${p.event}</span>
+            ${p.headline ? `<div style="font-size:10px;color:${tc};opacity:.8;margin-top:2px">${p.headline.substring(0,100)}</div>` : ''}
+          </div>
+        </div>
+        ${p.instruction ? `<div style="padding:8px 14px;font-size:11px;color:${tc};background:${bg};border-top:1px solid ${border}44;opacity:.9">${p.instruction.substring(0,400)}${p.instruction.length>400?'…':''}</div>` : ''}
+      </div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    // NWS api.weather.gov supports CORS -- if this fails it's usually a transient
+    // API outage or rate limit. Show a retryable message.
+    el.innerHTML = `<div style="background:#f8f9fa;border:1px solid #e0e8f0;border-radius:6px;padding:10px 14px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">NWS Alerts</div>
+      <div style="font-size:11px;color:#8a9aaa">Could not load alerts for your position. NWS may be briefly unavailable.</div>
+      <button onclick="_fetchMyLocAlerts(myLocTabLat, myLocTabLon)" style="margin-top:8px;background:#0E2841;color:#fff;border:none;border-radius:3px;padding:4px 12px;font-size:10px;cursor:pointer">Retry</button>
+    </div>`;
+  }
+}
+
+async function _fetchMyLocMETAR(icao) {
+  const el = document.getElementById('myloc-metar');
+  if (!el) return;
+  try {
+    const r = await fetch(`${PROXY}?type=metar&icao=${icao}`);
+    const data = await r.json();
+    if (!data || !data.length) throw new Error('No METAR');
+    const m = Array.isArray(data) ? data[0] : data;
+    const obs = _parseMetarObj(m, icao);
+    if (!obs) throw new Error('Parse failed');
+    const fcBg = flightCatColor(obs.flightCat);
+    let html = `<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em">Nearest Weather Observation · ${icao}</div>
+        ${obs.flightCat ? `<span style="background:${fcBg};color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">${obs.flightCat}</span>` : ''}
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#1a2a3a">
+        ${obs.tempF !== null ? `<span>🌡 <b>${obs.tempF}°F</b> <span style="color:#8a9aaa;font-size:10px">(${obs.tempC}°C)</span></span>` : ''}
+        ${obs.windKts !== null ? `<span>${windDirArrow(obs.windDir)} <b>${obs.windKts}kts${obs.windGustKts ? ' G'+obs.windGustKts : ''}</b> <span style="color:#8a9aaa;font-size:10px">${windDirLabel(obs.windDir)}${obs.windMph ? ' · '+obs.windMph+'mph' : ''}</span></span>` : ''}
+        ${obs.visib !== null ? `<span>👁 <b>${obs.visib}sm</b></span>` : ''}
+        ${obs.dewpointF !== null ? `<span>💧 Dew <b>${obs.dewpointF}°F</b></span>` : ''}
+        ${obs.condition ? `<span style="color:#556070">${obs.condition}</span>` : ''}
+      </div></div>`;
+    const rh = calcRelativeHumidity(obs.tempF, obs.dewpointF);
+    const hi = calcHeatIndex(obs.tempF, rh);
+    const wc = calcWindChill(obs.tempF, obs.windMph);
+    const feels = [];
+    if (hi && hi !== obs.tempF) feels.push('Heat Index: <b>'+hi+'°F</b>');
+    if (wc && wc !== obs.tempF) feels.push('Wind Chill: <b>'+wc+'°F</b>');
+    if (rh != null) feels.push('Humidity: <b>'+rh+'%</b>');
+    if (feels.length) html += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:8px 14px;margin-bottom:14px;font-size:11px;color:#556070">'+feels.join(' &nbsp;·&nbsp; ')+'</div>';
+    // decoded full METAR using obsData-style object
+    obsData['__myloc__'] = obs;
+    html += decodeMetarFull(obs);
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div style="font-size:11px;color:#8a9aaa;margin-bottom:10px">Weather observation unavailable for nearest station.</div>`;
+  }
+}
+
+async function _fetchMyLocForecast(lat, lon) {
+  const el = document.getElementById('myloc-forecast');
+  if (!el) return;
+  try {
+    const ptRes = await fetch(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`);
+    if (!ptRes.ok) throw new Error('points fail');
+    const ptData = await ptRes.json();
+    const fcastUrl = ptData.properties?.forecast;
+    if (!fcastUrl) throw new Error('no forecast url');
+    const fRes = await fetch(fcastUrl);
+    const fData = await fRes.json();
+    const periods = fData.properties?.periods || [];
+    if (!periods.length) throw new Error('no periods');
+
+    // Use existing render7Day-style layout but from raw periods array
+    const daytime = periods.filter(p => p.isDaytime).slice(0, 7);
+    let html = `<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">7-Day Forecast</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">`;
+    daytime.forEach(p => {
+      const spcRisk = '';
+      const high = p.temperature;
+      const nightPeriod = periods.find(x => !x.isDaytime && x.name.includes(p.name.replace('This ','')));
+      const low = nightPeriod ? nightPeriod.temperature : '--';
+      html += `<div style="background:#f8f9fa;border:1px solid #e0e8f0;border-radius:5px;padding:8px;min-width:80px;flex:1;text-align:center">
+        <div style="font-size:9px;font-weight:700;color:#0E2841;margin-bottom:4px">${p.name.replace('This ','')}</div>
+        <div style="font-size:14px;font-weight:700;color:#1a2a3a">${high}°</div>
+        <div style="font-size:10px;color:#8a9aaa">${low}° low</div>
+        <div style="font-size:9px;color:#556070;margin-top:4px;line-height:1.3">${p.shortForecast}</div>
+      </div>`;
+    });
+    html += `</div></div>`;
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div style="font-size:11px;color:#8a9aaa;margin-bottom:10px">7-day forecast unavailable for your position.</div>`;
+  }
+}
 
 // ── FAA NAS Status ───────────────────────────────────────────────────────────
 async function fetchNAS() {
@@ -3511,7 +3824,70 @@ function _doPrint(codes, notes) {
 
 
 // ── NOTAMs ────────────────────────────────────────────────────────────────────
-async // ── Satellite Layer ───────────────────────────────────────────────────────────
+async function fetchNOTAM(code) {
+  if (notamData[code] !== undefined) return;
+  const icao = toICAO(code);
+  if (!icao) { notamData[code] = []; return; }
+  try {
+    const r = await fetch(PROXY + '?type=notam&icao=' + icao);
+    if (!r.ok) { notamData[code] = []; return; }
+    const raw = await r.json();
+    if (!Array.isArray(raw)) { notamData[code] = []; return; }
+    const SKIP = /ODP|PART 77|SURVEY|CHECKLIST/i;
+    notamData[code] = raw
+      .filter(function(n) {
+        var txt = n.icaoMessage || n.traditionalMessage || n.text || '';
+        return txt && !SKIP.test(txt);
+      })
+      .slice(0, 10)
+      .map(function(n) {
+        return {
+          id:      n.notamID || n.id || '',
+          type:    n.classification || n.type || 'N',
+          text:    (n.icaoMessage || n.traditionalMessage || n.text || '').trim(),
+          start:   n.effectiveStart || n.startTime || '',
+          end:     n.effectiveEnd   || n.endTime   || '',
+          keyword: n.keyword || '',
+        };
+      });
+  } catch(e) { notamData[code] = []; }
+}
+
+function renderNOTAMCard(code) {
+  var notams = notamData[code];
+  if (!notams || !notams.length) return '';
+  var KW_COLOR = {
+    RWY:'#dc2626', TWY:'#d97706', AD:'#d97706',
+    NAV:'#7c3aed', COM:'#7c3aed', SVC:'#2563eb',
+    TFR:'#dc2626', AIRSPACE:'#0891b2'
+  };
+  var html = '<div style="margin-bottom:12px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">NOTAMs (' + notams.length + ')</div>';
+  notams.forEach(function(n) {
+    var kw    = (n.keyword || '').toUpperCase().trim();
+    var color = KW_COLOR[kw] || '#556070';
+    var endStr = '';
+    if (n.end) {
+      try { endStr = ' -- ' + new Date(n.end).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}); } catch(e) {}
+    }
+    html += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-left:3px solid ' + color + ';border-radius:4px;padding:6px 10px;margin-bottom:5px">';
+    if (n.id || kw) {
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">';
+      if (kw) html += '<span style="background:' + color + ';color:#fff;font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px">' + kw + '</span>';
+      if (n.id) html += '<span style="font-size:9px;font-weight:700;color:#0E2841">' + n.id + '</span>';
+      if (endStr) html += '<span style="font-size:9px;color:#8a9aaa;margin-left:auto">' + endStr + '</span>';
+      html += '</div>';
+    }
+    html += '<div style="font-size:10px;color:#1a2a3a;font-family:monospace;line-height:1.4;word-break:break-word">'
+      + n.text.substring(0, 300) + (n.text.length > 300 ? '...' : '')
+      + '</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+
+// ── Satellite Layer ───────────────────────────────────────────────────────────
 function drawSatellite() {
   if (!leafletMap) return;
   removeSatellite();
@@ -3656,6 +4032,66 @@ function renderDeiceCard(obs) {
 }
 
 // ── Crosswind Calculator ─────────────────────────────────────────────
+function renderCrosswindCalc(obs) {
+  if (!obs || obs.windKts === null || obs.windKts === undefined) return '';
+  var isVRB = (obs.windDir === null || obs.windDir === undefined);
+  var spd   = obs.windKts || 0;
+  var gust  = obs.windGustKts || spd;
+
+  var html = '<div style="margin-bottom:12px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Crosswind Calculator</div>'
+    + '<div style="background:#fff;border:1px solid #e8e8e8;border-radius:6px;padding:10px 12px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'
+    + '<label style="font-size:10px;color:#556070;font-weight:600">Runway Heading:</label>'
+    + '<input type="number" id="rwy-hdg" min="1" max="36" placeholder="e.g. 28" '
+    + 'oninput="updateXwind(\'' + obs.windDir + '\',' + spd + ',' + gust + ')" '
+    + 'style="width:70px;padding:4px 6px;border:1px solid #c8d0d8;border-radius:3px;font-size:11px;font-weight:700" />'
+    + '<span style="font-size:9px;color:#8a9aaa">(runway number, e.g. 28 for 280°)</span>'
+    + '</div>'
+    + '<div id="xwind-result" style="font-size:10px;color:#8a9aaa">Enter runway heading to calculate components.</div>'
+    + '</div></div>';
+  return html;
+}
+
+function updateXwind(windDir, spd, gust) {
+  var el = document.getElementById('xwind-result');
+  if (!el) return;
+  var rwyNum = parseInt(document.getElementById('rwy-hdg').value);
+  if (isNaN(rwyNum) || rwyNum < 1 || rwyNum > 36) {
+    el.innerHTML = '<span style="color:#8a9aaa">Enter runway heading to calculate components.</span>';
+    return;
+  }
+  var rwyHdg = rwyNum * 10;
+  if (windDir === null || windDir === undefined || windDir === 'null') {
+    el.innerHTML = '<span style="color:#8a9aaa">Wind is variable -- crosswind calculation not available.</span>';
+    return;
+  }
+  var wDir = parseInt(windDir);
+  var angle = Math.abs(rwyHdg - wDir);
+  if (angle > 180) angle = 360 - angle;
+  var rad = angle * Math.PI / 180;
+  var hw  = Math.round(spd  * Math.cos(rad));
+  var xw  = Math.round(spd  * Math.sin(rad));
+  var hwG = Math.round(gust * Math.cos(rad));
+  var xwG = Math.round(gust * Math.sin(rad));
+  var hwLabel = hw >= 0 ? 'Headwind' : 'Tailwind';
+  var hwAbs = Math.abs(hw);
+  var hwGAbs = Math.abs(hwG);
+  var xwColor = xw >= 15 ? '#dc2626' : xw >= 10 ? '#d97706' : '#16a34a';
+  var hwColor = hw < 0 ? '#d97706' : '#556070';
+  var gustLine = (gust > spd)
+    ? '<span style="color:#8a9aaa"> &nbsp;(gusts: ' + hwGAbs + ' kt ' + hwLabel.toLowerCase() + ' / ' + xwG + ' kt crosswind)</span>'
+    : '';
+  el.innerHTML =
+    '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">'
+    + '<div><span style="font-size:9px;color:#556070;text-transform:uppercase;font-weight:700">' + hwLabel + '</span>'
+    + '<div style="font-size:18px;font-weight:700;color:' + hwColor + '">' + hwAbs + ' <span style="font-size:11px">kts</span></div></div>'
+    + '<div><span style="font-size:9px;color:#556070;text-transform:uppercase;font-weight:700">Crosswind</span>'
+    + '<div style="font-size:18px;font-weight:700;color:' + xwColor + '">' + xw + ' <span style="font-size:11px">kts</span></div></div>'
+    + '<div style="font-size:10px;color:#556070">Angle: ' + Math.round(angle) + '°' + gustLine + '</div>'
+    + '</div>';
+}
+
 // ── Ground Stop Probability ──────────────────────────────────────────
 function calcGroundStopRisk(code) {
   var score = 0;
@@ -3733,7 +4169,60 @@ function renderGSPCard(code) {
 }
 
 // ── PIREPs ──────────────────────────────────────────────────────
-async // ── GPS User Location ─────────────────────────────────────────────────────────
+async function fetchPIREP(code) {
+  if (pirepData[code] !== undefined) return;
+  var c = COORDS[code];
+  if (!c) { pirepData[code] = []; return; }
+  try {
+    var bbox = (c[0]-1.5).toFixed(2) + ',' + (c[1]-1.5).toFixed(2) + ',' + (c[0]+1.5).toFixed(2) + ',' + (c[1]+1.5).toFixed(2);
+    var r = await fetch(PROXY + '?type=pirep&bbox=' + encodeURIComponent(bbox));
+    if (!r.ok) { pirepData[code] = []; return; }
+    var raw = await r.json();
+    if (!Array.isArray(raw)) { pirepData[code] = []; return; }
+    pirepData[code] = raw.slice(0, 8).map(function(p) {
+      return {
+        raw:    p.rawOb    || p.raw || '',
+        type:   p.pirepType || 'PIREP',
+        alt:    p.altitude  || p.flightLevel || null,
+        turb:   p.turbulenceIntensity || (p.turbulence && p.turbulence[0] && p.turbulence[0].intensity) || null,
+        ice:    p.icingIntensity     || (p.icing     && p.icing[0]     && p.icing[0].intensity)     || null,
+        time:   p.obsTime || p.receiptTime || '',
+        acType: p.acType  || '',
+      };
+    });
+  } catch(e) { pirepData[code] = []; }
+}
+
+function renderPIREPCard(code) {
+  var pireps = pirepData[code];
+  if (!pireps || !pireps.length) return '';
+  var TURB_COLOR = { NEG:'#16a34a', SMTH:'#16a34a', LGT:'#ca8a04', 'LGT-MOD':'#d97706', MOD:'#d97706', 'MOD-SEV':'#dc2626', SEV:'#dc2626', EXTM:'#7c3aed' };
+  var ICE_COLOR  = { NEG:'#16a34a', TRC:'#ca8a04', LGT:'#d97706', MOD:'#dc2626', SEV:'#7c3aed' };
+  var html = '<div style="margin-bottom:12px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">PIREPs Nearby (' + pireps.length + ')</div>';
+  pireps.forEach(function(p) {
+    var turbColor = TURB_COLOR[p.turb] || '#556070';
+    var iceColor  = ICE_COLOR[p.ice]   || '#556070';
+    var timeStr = '';
+    if (p.time) { try { timeStr = new Date(p.time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'}); } catch(e){} }
+    html += '<div style="background:#f8f9fa;border:1px solid #e8e8e8;border-radius:4px;padding:6px 10px;margin-bottom:5px">';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">';
+    html += '<span style="font-size:8px;font-weight:700;background:#0E2841;color:#fff;padding:1px 6px;border-radius:3px">' + p.type + '</span>';
+    if (p.alt) html += '<span style="font-size:9px;color:#556070">FL' + p.alt + '</span>';
+    if (p.acType) html += '<span style="font-size:9px;color:#8a9aaa">' + p.acType + '</span>';
+    if (timeStr) html += '<span style="font-size:9px;color:#8a9aaa;margin-left:auto">' + timeStr + '</span>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:12px;flex-wrap:wrap">';
+    if (p.turb) html += '<span style="font-size:10px"><b style="color:' + turbColor + '">' + p.turb + '</b> <span style="color:#8a9aaa">turb</span></span>';
+    if (p.ice)  html += '<span style="font-size:10px"><b style="color:' + iceColor  + '">' + p.ice  + '</b> <span style="color:#8a9aaa">ice</span></span>';
+    if (!p.turb && !p.ice && p.raw) html += '<span style="font-size:9px;color:#556070;font-family:monospace">' + p.raw.substring(0,80) + '</span>';
+    html += '</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// ── GPS User Location ─────────────────────────────────────────────────────────
 let userLat       = null;
 let userLon       = null;
 let userMarker    = null;
@@ -3787,6 +4276,66 @@ function stopGPSWatch() {
   if (btn) { btn.style.background = ""; btn.style.color = ""; }
   if (_gpsMarker && myMap) { myMap.removeLayer(_gpsMarker); _gpsMarker = null; }
 }
+
+function updateGPSBtn() {
+  const btn = document.getElementById('gps-btn');
+  if (!btn) return;
+  if (gpsActive) {
+    btn.style.background = '#16a34a';
+    btn.style.borderColor = '#16a34a';
+    btn.style.color = '#fff';
+    btn.title = 'GPS active — tap to stop';
+  } else {
+    btn.style.background = 'transparent';
+    btn.style.borderColor = '#ffffff88';
+    btn.style.color = '#ffffff';
+    btn.title = 'Show my location';
+  }
+}
+
+function drawUserMarker() {
+  if (!leafletMap || userLat === null) return;
+  const icon = L.divIcon({
+    html: '<div style="width:16px;height:16px;background:#3b82f6;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 3px rgba(59,130,246,0.4)"></div>',
+    className: '',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
+  if (userMarker) {
+    userMarker.setLatLng([userLat, userLon]);
+  } else {
+    userMarker = L.marker([userLat, userLon], { icon, zIndexOffset: 9999 })
+      .bindTooltip('Your Location', { permanent: false })
+      .addTo(leafletMap);
+  }
+}
+
+function checkProximityAlerts() {
+  if (userLat === null || userLon === null) return;
+  const RADIUS_MILES = 50;
+  const nearby = [];
+  getActiveFBOs().forEach(fbo => {
+    const c = COORDS[fbo.code];
+    if (!c) return;
+    const dist = distanceMiles(userLat, userLon, c[0], c[1]);
+    if (dist <= RADIUS_MILES) {
+      const alerts = results[fbo.code]?.alerts || [];
+      const severe = alerts.filter(a => ['EXTREME','SEVERE'].includes(a.bucket));
+      if (severe.length) {
+        nearby.push({ fbo, alert: severe[0], dist: Math.round(dist) });
+      }
+    }
+  });
+  if (!nearby.length) return;
+  nearby.sort((a, b) => a.dist - b.dist);
+  const top = nearby[0];
+  showAlertBanner(
+    `⚠ ${top.alert.event} — ${top.fbo.code} (${top.dist} mi away)`,
+    nearby.length > 1 ? `${nearby.length} alerted locations within ${RADIUS_MILES} miles of your position` : `${top.fbo.city}, ${top.fbo.state}`,
+    '#dc2626'
+  );
+}
+
 
 // ── Air Quality Index ─────────────────────────────────────────────────────────
 const aqiData = {}; // code -> { aqi, category, color, pollutant }
