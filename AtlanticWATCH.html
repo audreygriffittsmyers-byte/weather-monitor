@@ -187,6 +187,7 @@
     <span id="scan-prog" style="font-size:9px;color:#c8d0d8;display:none;animation:pulse 1s infinite"></span>
     <button id="gps-btn" onclick="startGPSWatch()" title="Show my location" style="background:transparent;border:1px solid #ffffff88;color:#ffffff;border-radius:4px;padding:5px 10px;font-size:13px;cursor:pointer;line-height:1">🎯</button>
     <button id="loc-filter-btn" onclick="openLocationPicker()" title="Filter locations" style="background:transparent;border:1px solid #ffffff88;color:#ffffff;border-radius:4px;padding:5px 10px;font-size:13px;cursor:pointer;line-height:1">📍</button>
+    <button id="notif-btn" onclick="requestNotifPermission()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">🔔 Enable Alerts</button>
     <button onclick="openPrintBriefing()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer" title="Print briefing">🖨 Brief</button>
     <button id="scan-btn" style="background:#ffffff;border:1px solid #ffffff;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:.04em">▶ Scan All</button>
   </div>
@@ -4752,6 +4753,7 @@ function decodeTAFFull(code) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadMyLocations();
   loadShiftNotes();
+  initServiceWorker();
   tickZuluClock();
   setInterval(tickZuluClock, 1000);
 loadDismissed();
@@ -4807,6 +4809,7 @@ function showAlertBanner(title, body, color) {
   if (bannerTimeout) clearTimeout(bannerTimeout);
   bannerTimeout = setTimeout(dismissBanner, 30000);
   playAlertTone(color);
+  notifyIfPermitted(title, body);
 }
 
 function dismissBanner() {
@@ -4881,6 +4884,53 @@ function loadShiftNotes() {
     var el = document.getElementById("shift-notes");
     if (el && saved) el.value = saved;
   } catch(e) {}
+}
+
+// ── Service Worker & Push Notifications ──────────────────────────────────────
+var swRegistration = null;
+
+async function initServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    swRegistration = await navigator.serviceWorker.register("/weather-monitor/service-worker.js");
+    if ("periodicSync" in swRegistration) {
+      try { await swRegistration.periodicSync.register("watch-alert-check", { minInterval: 15 * 60 * 1000 }); }
+      catch(e) {}
+    }
+    updateNotifBtn();
+  } catch(e) { console.log("SW registration failed:", e); }
+}
+
+function updateNotifBtn() {
+  var btn = document.getElementById("notif-btn");
+  if (!btn) return;
+  if (!("Notification" in window)) { btn.style.display = "none"; return; }
+  if (Notification.permission === "granted") {
+    btn.innerHTML = "🔔 Alerts On"; btn.style.background = "#16a34a"; btn.style.color = "#fff"; btn.style.borderColor = "#16a34a";
+  } else if (Notification.permission === "denied") {
+    btn.innerHTML = "🔕 Blocked"; btn.style.background = "#fee2e2"; btn.style.color = "#dc2626"; btn.style.borderColor = "#dc2626";
+  } else {
+    btn.innerHTML = "🔔 Enable Alerts"; btn.style.background = "#fff"; btn.style.color = "#0E2841";
+  }
+}
+
+async function requestNotifPermission() {
+  if (!("Notification" in window)) { alert("Notifications not supported in this browser."); return; }
+  if (Notification.permission === "granted") {
+    new Notification("WATCH Alerts Active", { body: "You will receive alerts for severe weather at Atlantic locations.", icon: "/weather-monitor/icon-192.png" });
+    return;
+  }
+  var perm = await Notification.requestPermission();
+  updateNotifBtn();
+  if (perm === "granted") {
+    new Notification("WATCH Alerts Enabled", { body: "You will now receive alerts for severe and extreme weather events.", icon: "/weather-monitor/icon-192.png" });
+  }
+}
+
+function notifyIfPermitted(title, body) {
+  if (Notification.permission !== "granted") return;
+  if (document.visibilityState === "visible") return;
+  try { new Notification(title, { body: body, icon: "/weather-monitor/icon-192.png", requireInteraction: true }); } catch(e) {}
 }
 
 function loadMyLocations() {
