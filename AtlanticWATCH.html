@@ -101,8 +101,8 @@
     /* Body */
     #body { flex-direction: column; }
 
-    /* Sidebar -- full width on mobile, full height */
-    #sidebar { width: 100% !important; border-right: none; }
+    /* Sidebar -- full width on mobile */
+    #sidebar { width: 100% !important; border-right: none; min-height: 0; }
 
     /* FBO items -- larger tap targets */
     .fbo-item { padding: 10px 12px; }
@@ -111,12 +111,6 @@
 
     /* Main panel */
     #main { overflow-y: auto; }
-
-    /* SPC panel -- allow full scroll on mobile */
-    #panel-spc { height: auto !important; min-height: 100%; overflow-y: auto !important; }
-    #panel-spc > div:last-child { flex-direction: column !important; height: auto !important; overflow: visible !important; }
-    #spc-table-wrap { width: 100% !important; max-height: 45vh; border-right: none; border-bottom: 1px solid #c8d0d8; }
-    #spc-detail { padding: 14px; min-height: 50vh; overflow-y: auto; }
 
     /* Map -- full height */
     #panel-map { height: 100%; }
@@ -146,7 +140,6 @@
   @media (max-width: 480px) {
     #tabs .tab { padding: 9px 10px; font-size: 8px; }
     .fbo-code { width: 60px; }
-    #spc-table-wrap { max-height: 35vh; }
   }
   /* ── Mobile navigation ── */
   @media (max-width: 600px) {
