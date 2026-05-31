@@ -3105,7 +3105,11 @@ async function drawNHCLayer() {
       if (!id) continue;
       const color = NHC_COLORS[storm.stormType] || '#fbbf24';
       try {
-        const cr = await fetchWithTimeout(`${PROXY}?type=nhccone&id=${id}`);
+        // Fetch cone and track in parallel
+        const [cr, tr] = await Promise.all([
+          fetchWithTimeout(`${PROXY}?type=nhccone&id=${id}`),
+          fetchWithTimeout(`${PROXY}?type=nhctrack&id=${id}`)
+        ]);
         if (cr.ok) {
           const cone = await cr.json();
           if (cone?.features?.length) {
@@ -3113,6 +3117,33 @@ async function drawNHCLayer() {
               style: { color, fillColor:color, fillOpacity:0.15, weight:1.5, dashArray:'6,3' },
               onEachFeature: (f,l) => l.bindTooltip('🌀 ' + (storm.name||id) + ' — ' + (storm.stormType||'Tropical'), {sticky:true})
             }));
+          }
+        }
+        if (tr.ok) {
+          const trackData = await tr.json();
+          // Draw forecast track line
+          if (trackData?.line?.features?.length) {
+            layers.push(L.geoJSON(trackData.line, {
+              style: { color, weight: 2.5, opacity: 0.9, dashArray: null }
+            }));
+          }
+          // Draw forecast points with time labels
+          if (trackData?.pts?.features?.length) {
+            trackData.pts.features.forEach(function(f) {
+              var coords = f.geometry?.coordinates;
+              if (!coords) return;
+              var props = f.properties || {};
+              var dtg   = props.DTG || props.validTime || "";
+              var ws    = props.MAXWIND || props.maxWindSpeed || "";
+              var label = dtg ? dtg.substring(0,10) : "";
+              var ptIcon = L.divIcon({
+                html: '<div style="width:10px;height:10px;border-radius:50%;background:' + color + ';border:2px solid #fff;margin:-5px"></div>',
+                className: "", iconSize: [10,10], iconAnchor: [5,5]
+              });
+              var marker = L.marker([coords[1], coords[0]], { icon: ptIcon });
+              if (label || ws) marker.bindTooltip((storm.name||id) + (label ? " " + label : "") + (ws ? " — " + ws + "kt" : ""), {sticky:true});
+              layers.push(marker);
+            });
           }
         }
       } catch(e) {}
