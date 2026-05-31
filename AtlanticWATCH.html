@@ -860,6 +860,13 @@ function setFilter(mode) {
   onlyActive = (mode === "active");
   spcFilter = null;
   selected = null;
+  // On mobile: show dashboard panel when switching to My Stations
+  if (mode === "mine" && typeof isMobile === "function" && isMobile()) {
+    var s = document.getElementById("sidebar");
+    var m = document.getElementById("main");
+    if (s) s.classList.add("mobile-hidden");
+    if (m) m.classList.remove("mobile-hidden");
+  }
   var ON  = {bg:"#0E2841", bc:"#0E2841", tc:"#ffffff"};
   var OFF = {bg:"transparent", bc:"#c8d0d8", tc:"#556070"};
   ["all","active","mine"].forEach(function(m) {
@@ -944,6 +951,13 @@ function setFilter(mode) {
   onlyActive = (mode === "active");
   spcFilter = null;
   selected = null;
+  // On mobile: show dashboard panel when switching to My Stations
+  if (mode === "mine" && typeof isMobile === "function" && isMobile()) {
+    var s = document.getElementById("sidebar");
+    var m = document.getElementById("main");
+    if (s) s.classList.add("mobile-hidden");
+    if (m) m.classList.remove("mobile-hidden");
+  }
   var ON  = {bg:"#0E2841", bc:"#0E2841", tc:"#ffffff"};
   var OFF = {bg:"transparent", bc:"#c8d0d8", tc:"#556070"};
   ["all","active","mine"].forEach(function(m) {
@@ -1018,6 +1032,11 @@ function selectFBO(code) {
 // ── My Stations Dashboard ──────────────────────────────────────────────────
 function renderMyStationsDashboard() {
   var stations = myLocations.size > 0 ? COVERED.filter(function(f){ return myLocations.has(f.code); }) : [];
+  // Fetch missing obs for dashboard stations
+  stations.forEach(function(fbo) {
+    if (!obsData[fbo.code]) fetchObs(fbo.code).then(function(){ if (stationFilter==="mine"&&!selected) renderDetail(); });
+    if (!results[fbo.code] || results[fbo.code].st === "error") loadFBO(fbo.code);
+  });
   if (!stations.length) {
     return '<div class="empty-state"><div style="font-size:32px;margin-bottom:8px">★</div>'
       + '<div style="font-size:13px;color:#556070;font-weight:700">No stations saved yet</div>'
