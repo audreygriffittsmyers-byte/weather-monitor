@@ -2621,7 +2621,7 @@ function renderMapMarkers() {
       + probLine
       + alertBlock
       + '<div style="border-top:1px solid #e8e8e8;margin-top:8px;padding-top:8px">'
-      + '<button onclick="switchTab(\'monitor\');selectFBO(\'" + fbo.code + "\');" '
+      + '<button class="watch-map-nav" data-code="' + fbo.code + '" '
       + 'style="width:100%;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:7px;font-size:11px;font-weight:700;cursor:pointer">'
       + 'View in Live Monitor →</button></div>'
       + '</div>';
@@ -2630,9 +2630,20 @@ function renderMapMarkers() {
       icon: makeMarkerIcon(fbo.code, hasAlert),
       zIndexOffset: hasAlert ? 1000 : 0
     }).bindPopup(popup, {maxWidth:280}).addTo(leafletMap);
-    marker.on('popupopen', (function(lat,lon) {
-      return function() { drawRangeRings(lat, lon); };
-    })(lat, lon));
+    marker.on('popupopen', (function(lat, lon, code) {
+      return function() {
+        drawRangeRings(lat, lon);
+        // Wire the nav button after popup renders
+        setTimeout(function() {
+          var btn = document.querySelector('.watch-map-nav[data-code="' + code + '"]');
+          if (btn) btn.addEventListener('click', function() {
+            leafletMap.closePopup();
+            switchTab('monitor');
+            selectFBO(code);
+          });
+        }, 50);
+      };
+    })(lat, lon, fbo.code));
     marker.on('popupclose', function() { clearRangeRings(); });
     mapMarkers.push(marker);
   });
