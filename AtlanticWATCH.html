@@ -182,6 +182,7 @@
       <div style="font-size:9px;color:#c8d4de;letter-spacing:.14em;text-transform:uppercase">Weather Awareness Tactical Command Hub</div>
     </div>
     <div style="flex:1"></div>
+    <div id="zulu-clock" style="font-size:11px;font-weight:700;color:#4fc3f7;letter-spacing:.08em;font-family:monospace;margin-right:4px;flex-shrink:0">0000Z</div>
     <div id="status-badges" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap"></div>
     <span id="scan-prog" style="font-size:9px;color:#c8d0d8;display:none;animation:pulse 1s infinite"></span>
     <button id="gps-btn" onclick="startGPSWatch()" title="Show my location" style="background:transparent;border:1px solid #ffffff88;color:#ffffff;border-radius:4px;padding:5px 10px;font-size:13px;cursor:pointer;line-height:1">🎯</button>
@@ -499,6 +500,18 @@ function topBucket(alerts) {
 
 function fmtAge(v){if(!v)return"";var t=v instanceof Date?v:new Date(v);if(isNaN(t))return"";var m=Math.round((Date.now()-t.getTime())/60000);if(m<1)return"just now";if(m<60)return m+" min ago";var h=Math.floor(m/60);return h+"h "+(m%60)+"m ago";}
 function fmtZulu(){var n=new Date();return String(n.getUTCHours()).padStart(2,"0")+String(n.getUTCMinutes()).padStart(2,"0")+"Z";}
+
+// ── Zulu Clock ─────────────────────────────────────────────────────────────
+function tickZuluClock() {
+  var el = document.getElementById("zulu-clock");
+  if (!el) return;
+  var n = new Date();
+  var hh = String(n.getUTCHours()).padStart(2,"0");
+  var mm = String(n.getUTCMinutes()).padStart(2,"0");
+  var ss = String(n.getUTCSeconds()).padStart(2,"0");
+  el.textContent = hh + mm + "Z";
+  el.title = "UTC " + hh + ":" + mm + ":" + ss + "  |  Local: " + n.toLocaleTimeString();
+}
 
 function fmtTime(dt) {
   if (!dt) return '--';
@@ -4709,6 +4722,8 @@ function decodeTAFFull(code) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadMyLocations();
   loadShiftNotes();
+  tickZuluClock();
+  setInterval(tickZuluClock, 1000);
 loadDismissed();
 updateLocFilterBtn();
 fetchNAS();
