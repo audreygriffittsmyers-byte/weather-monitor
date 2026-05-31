@@ -273,13 +273,13 @@
             <button onclick="generateSummary()" style="background:#ffffff;border:none;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:10px;font-weight:700;cursor:pointer">↺ Refresh</button>
           </div>
         </div>
+        <!-- Shift Notes -->
+        <div style="padding:10px 20px;background:#f8f9fa;border-bottom:1px solid #e8e8e8">
+          <div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Shift Notes</div>
+          <textarea id="shift-notes" placeholder="Enter shift notes, handoff comments, or operational context..." style="width:100%;min-height:60px;border:1px solid #c8d0d8;border-radius:4px;padding:8px;font-size:11px;color:#1a2a3a;resize:vertical;font-family:Arial,sans-serif;box-sizing:border-box" oninput="localStorage.setItem('watch_shift_notes',this.value)"></textarea>
+        </div>
         <!-- Summary content -->
         <div id="summary-content" style="padding:20px;max-width:860px">
-          <!-- Shift Notes -->
-          <div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:12px 14px;margin-bottom:16px">
-            <div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Shift Notes</div>
-            <textarea id="shift-notes" placeholder="Enter shift notes, handoff comments, or operational context to include in the printed briefing..." style="width:100%;min-height:80px;border:1px solid #e8e8e8;border-radius:4px;padding:8px;font-size:11px;color:#1a2a3a;resize:vertical;font-family:Arial,sans-serif;box-sizing:border-box" oninput="localStorage.setItem('watch_shift_notes',this.value)"></textarea>
-          </div>
           <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 0;color:#8a9aaa">
             <div style="font-size:32px;margin-bottom:10px">📋</div>
             <div style="font-size:13px">Open this tab to generate the current operational summary</div>
@@ -3566,6 +3566,8 @@ function openPrintBriefing() {
     codes = COVERED.filter(function(f){ return rCodes ? rCodes.indexOf(f.code)!==-1 : true; }).map(function(f){return f.code;});
   } else if (selected) {
     codes = [selected];
+  } else if (stationFilter === 'mine' && myLocations.size > 0) {
+    codes = COVERED.filter(function(f){ return myLocations.has(f.code); }).map(function(f){return f.code;});
   } else {
     codes = COVERED.map(function(f){return f.code;});
   }
