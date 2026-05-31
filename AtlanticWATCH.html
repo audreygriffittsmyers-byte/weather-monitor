@@ -859,6 +859,7 @@ function setFilter(mode) {
   stationFilter = mode;
   onlyActive = (mode === "active");
   spcFilter = null;
+  selected = null;
   var ON  = {bg:"#0E2841", bc:"#0E2841", tc:"#ffffff"};
   var OFF = {bg:"transparent", bc:"#c8d0d8", tc:"#556070"};
   ["all","active","mine"].forEach(function(m) {
@@ -942,6 +943,7 @@ function setFilter(mode) {
   stationFilter = mode;
   onlyActive = (mode === "active");
   spcFilter = null;
+  selected = null;
   var ON  = {bg:"#0E2841", bc:"#0E2841", tc:"#ffffff"};
   var OFF = {bg:"transparent", bc:"#c8d0d8", tc:"#556070"};
   ["all","active","mine"].forEach(function(m) {
@@ -954,6 +956,7 @@ function setFilter(mode) {
   });
   renderSidebar();
   updateHeader();
+  renderDetail();
 }
 
 function renderSidebarItem(code) {
@@ -1012,10 +1015,55 @@ function selectFBO(code) {
 }
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
+// ── My Stations Dashboard ──────────────────────────────────────────────────
+function renderMyStationsDashboard() {
+  var stations = myLocations.size > 0 ? COVERED.filter(function(f){ return myLocations.has(f.code); }) : [];
+  if (!stations.length) {
+    return '<div class="empty-state"><div style="font-size:32px;margin-bottom:8px">★</div>'
+      + '<div style="font-size:13px;color:#556070;font-weight:700">No stations saved yet</div>'
+      + '<div style="font-size:11px;color:#8a9aaa;margin-top:6px">Tap 📍 to select your stations, then tap My Stations.</div></div>';
+  }
+  var html = '<div style="padding:14px"><div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">My Stations — ' + stations.length + ' location' + (stations.length!==1?"s":"") + '</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">';
+  stations.forEach(function(fbo) {
+    var code=fbo.code, obs=obsData[code], r=results[code], spc1=spcData[1][code], ltng=getLightningStatus(code);
+    var alerts=(r&&r.alerts)?r.alerts.filter(function(a){return !dismissedAlerts.has(a.id);}):[];
+    var fc=obs?obs.flightCat:null, fcBg=fc?flightCatColor(fc):"#8a9aaa";
+    var bc="#e8e8e8";
+    if(ltng&&ltng.level==="active") bc="#dc2626";
+    else if(alerts.length>0) bc=SBADGE[topBucket(alerts)]||"#d97706";
+    else if(ltng) bc=ltng.color;
+    else if(spc1&&spc1.st==="ok"&&spc1.label) bc=(SPC_LABEL_MAP[spc1.label]||{}).bg||"#e8e8e8";
+    html+='<div onclick="selectFBO(\''+code+'\')" style="background:#fff;border:1px solid '+bc+';border-top:4px solid '+bc+';border-radius:6px;padding:10px 12px;cursor:pointer">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:14px;font-weight:700;color:#0E2841">'+code+'</span>'
+      +(fc?'<span style="background:'+fcBg+';color:#fff;font-size:8px;font-weight:700;padding:2px 6px;border-radius:3px">'+fc+'</span>':'<span style="font-size:9px;color:#8a9aaa">--</span>')
+      +'</div><div style="font-size:9px;color:#8a9aaa;margin-bottom:6px">'+fbo.city+', '+fbo.state+'</div>';
+    if(obs){
+      html+='<div style="font-size:10px;color:#1a2a3a;margin-bottom:4px;display:flex;gap:8px;flex-wrap:wrap">';
+      if(obs.tempF!=null) html+='<span>🌡 '+obs.tempF+'°F</span>';
+      if(obs.windKts!=null) html+='<span>'+windDirArrow(obs.windDir)+' '+obs.windKts+(obs.windGustKts?"G"+obs.windGustKts:"")+'kt</span>';
+      if(obs.visib!=null&&parseFloat(obs.visib)<10) html+='<span>👁 '+obs.visib+'sm</span>';
+      html+='</div>';
+    }
+    if(ltng) html+='<div style="font-size:9px;font-weight:700;color:'+ltng.color+';margin-bottom:2px">⚡ '+ltng.label+'</div>';
+    if(alerts.length>0){
+      alerts.slice(0,2).forEach(function(a){html+='<div style="font-size:9px;color:'+( SBADGE[a.bucket]||"#d97706")+';font-weight:600;margin-bottom:1px">⚠ '+a.event+'</div>';});
+      if(alerts.length>2) html+='<div style="font-size:9px;color:#556070">+'+(alerts.length-2)+' more</div>';
+    } else if(r&&r.st==="ok"&&!ltng) html+='<div style="font-size:9px;color:#16a34a">✓ No active alerts</div>';
+    if(spc1&&spc1.st==="ok"&&spc1.label&&spc1.label!=="TSTM"){var sm=SPC_LABEL_MAP[spc1.label];if(sm) html+='<div style="margin-top:4px"><span style="background:'+sm.bg+';color:'+sm.text+';font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px">SPC '+sm.label+'</span></div>';}
+    html+='</div>';
+  });
+  html+='</div></div>';
+  return html;
+}
+
 function renderDetail() {
   const panel = document.getElementById('panel-monitor');
   if (!selected) {
-    panel.innerHTML = `<div class="empty-state"><div style="font-size:36px">🌩</div><div style="font-size:13px;color:#556070">Select a location or click Scan All</div><div id="covered-count" style="font-size:11px;color:#8a9aaa">Live NWS alerts for ${COVERED.length} US FBO locations</div></div>`;
+    if (stationFilter === "mine") {
+      panel.innerHTML = renderMyStationsDashboard();
+    } else {
+      panel.innerHTML = `<div class="empty-state"><div style="font-size:36px">🌩</div><div style="font-size:13px;color:#556070">Select a location or click Scan All</div><div id="covered-count" style="font-size:11px;color:#8a9aaa">Live NWS alerts for ${COVERED.length} US FBO locations</div></div>`;
+    }
     return;
   }
   const fbo    = COVERED.find(f => f.code === selected);
