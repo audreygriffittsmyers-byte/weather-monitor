@@ -1893,35 +1893,6 @@ function generateAIBriefing() {
   }
 }
 
-function assignCode(code, zone) {}
-
-
-function nonConvectiveSection(locations, icon, title, bgColor, textColor) {
-  if (!locations.length) return '';
-  const codes = [...new Set(locations.map(f => f.code))];
-  const alertsByCode = {};
-  codes.forEach(code => {
-    const nwsR = results[code];
-    if (nwsR?.alerts?.length > 0) alertsByCode[code] = nwsR.alerts[0];
-  });
-  return `
-    <div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;overflow:hidden;margin-bottom:12px">
-      <div style="background:${bgColor};padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <span style="font-size:13px;font-weight:700;color:${textColor}">${icon} ${title}</span>
-        <div style="display:flex;gap:5px;flex-wrap:wrap">
-          ${codes.map(c => '<span style="background:rgba(0,0,0,0.15);color:'+textColor+';font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:monospace">'+c+'</span>').join('')}
-        </div>
-      </div>
-      <div style="padding:12px 16px">
-        ${codes.map(code => {
-          const a = alertsByCode[code];
-          if (!a) return '';
-          return '<div style="font-size:11px;color:#1a2a3a;margin-bottom:4px"><b>'+code+':</b> '+a.event+(a.expires ? ' · Expires ' + fmtTime(a.expires) : '')+'</div>';
-        }).join('')}
-      </div>
-    </div>`;
-}
-
 // ── Wire up events ────────────────────────────────────────────────────────────
 document.getElementById('scan-btn').addEventListener('click', doScanAll);
 
