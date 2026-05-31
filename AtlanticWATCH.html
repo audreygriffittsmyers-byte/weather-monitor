@@ -2745,38 +2745,6 @@ async function fetchTAF(code) {
   } catch(e) { tafData[code] = null; }
 }
 
-function renderTAFStrip(code) {
-  const taf = tafData[code];
-  if (!taf) return '<div style="font-size:10px;color:#8a9aaa;padding:8px 0">TAF not available</div>';
-  const forecasts = taf.fcsts || taf.forecast || taf.fcstGroups || [];
-  if (!forecasts.length) return '';
-  let html = '<div style="margin-top:12px;border-top:1px solid #e8e8e8;padding-top:10px">'
-    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">TAF Forecast</div>'
-    + '<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px">';
-  forecasts.slice(0,8).forEach(f => {
-    const timeStr = f.timeFrom ? new Date(f.timeFrom).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'}) : '';
-    const wind = f.wspd != null ? (f.wspd + 'kts' + (f.wgst ? ' G'+f.wgst : '')) : '';
-    const vis  = f.visib != null ? f.visib + 'sm' : '';
-    const wx   = f.wxString || '';
-    const sky  = (f.clouds||[]).map(c=>(c.cover||'')+(c.base?c.base+'ft':'')).join(' ');
-    const cat  = f.flightCategory || '';
-    const catColor = {VFR:'#16a34a',MVFR:'#2563eb',IFR:'#dc2626',LIFR:'#7c3aed'}[cat] || '#8a9aaa';
-    html += `<div style="flex-shrink:0;background:#f8f9fa;border:1px solid #e8e8e8;border-radius:4px;padding:6px 8px;min-width:88px">
-      <div style="font-size:9px;color:#8a9aaa;margin-bottom:3px">${timeStr}</div>
-      ${cat ? `<div style="background:${catColor};color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;display:inline-block;margin-bottom:3px">${cat}</div>` : ''}
-      ${wind ? `<div style="font-size:10px;color:#1a2a3a"><b>${wind}</b></div>` : ''}
-      ${vis  ? `<div style="font-size:10px;color:#556070">${vis}</div>` : ''}
-      ${wx   ? `<div style="font-size:10px;color:#556070">${wx}</div>` : ''}
-      ${sky  ? `<div style="font-size:9px;color:#8a9aaa">${sky}</div>` : ''}
-    </div>`;
-  });
-  html += '</div>';
-  if (taf.rawTAF) html += `<div style="font-size:9px;color:#8a9aaa;margin-top:6px;font-family:monospace;overflow-x:auto;white-space:nowrap">${taf.rawTAF}</div>`;
-  html += '</div>';
-  return html;
-}
-
-
 // ── 7-Day Forecast ────────────────────────────────────────────────────────────
 const forecastData  = {}; // code -> 7-day periods array
 let   nasPrograms   = []; // [{type,arpt,reason,avg,max,end}]
