@@ -3929,7 +3929,8 @@ function _doPrint(codes, notes) {
       +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">ICAO</th>'
       +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Location</th>'
       +'<th style="text-align:center;padding:4px 6px;border:1px solid #ddd">Cat</th>'
-      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Conditions</th></tr>';
+      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Conditions</th>'
+      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Obs Age</th></tr>';
     withObs.forEach(function(code){
       var obs=obsData[code]; var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
       var fc=obs.flightCat||(function(){
@@ -3948,7 +3949,8 @@ function _doPrint(codes, notes) {
       html+='<tr><td style="padding:4px 6px;border:1px solid #ddd;font-family:monospace;font-weight:700">'+(toICAO(code)||code)+'</td>'
         +'<td style="padding:4px 6px;border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'
         +'<td style="padding:4px 6px;border:1px solid #ddd;text-align:center"><span style="background:'+fcColor+';color:#fff;padding:2px 6px;border-radius:3px;font-weight:700;font-size:9px">'+fc+'</span></td>'
-        +'<td style="padding:4px 6px;border:1px solid #ddd">'+cond.join(' &middot; ')+'</td></tr>';
+        +'<td style="padding:4px 6px;border:1px solid #ddd">'+cond.join(' &middot; ')+'</td>'
+        +'<td style="padding:4px 6px;border:1px solid #ddd;font-size:9px;color:#8a9aaa">'+(obs.obsTime?fmtAge(obs.obsTime):'--')+'</td></tr>';
     });
     html+='</table></div>';
   }
