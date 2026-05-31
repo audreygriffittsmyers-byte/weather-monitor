@@ -942,19 +942,20 @@ function selectFBO(code) {
   if (_rc && leafletMap && mapInitialized) { drawRangeRings(_rc[0], _rc[1]); }
   if (!results[code] || results[code].st === 'error') loadFBO(code);
   else renderDetail();
-  // Fetch METAR on demand if not yet loaded
+  // Fetch METAR on demand
   if (!obsData[code]) {
     fetchObs(code).then(() => { if (selected === code) renderDetail(); });
   }
   // Fetch AQI on demand
   if (aqiData[code] === undefined) fetchAQI(code);
-  // Fetch NOTAMs on demand
-  if (notamData[code] === undefined) {
-    fetchNOTAM(code).then(function() { if (selected === code) renderDetail(); });
-  }
-  // Fetch PIREPs on demand
-  if (pirepData[code] === undefined) {
-    fetchPIREP(code).then(function() { if (selected === code) renderDetail(); });
+  // Mobile: hide sidebar, show detail panel
+  if (typeof isMobile === "function" && isMobile() && activeTab === "monitor") {
+    var s = document.getElementById("sidebar");
+    var m = document.getElementById("main");
+    var b = document.getElementById("mobile-back-btn");
+    if (s) s.classList.add("mobile-hidden");
+    if (m) m.classList.remove("mobile-hidden");
+    if (b) b.classList.add("active");
   }
 }
 
