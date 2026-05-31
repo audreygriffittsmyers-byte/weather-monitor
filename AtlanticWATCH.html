@@ -861,11 +861,20 @@ function setFilter(mode) {
   spcFilter = null;
   selected = null;
   // On mobile: show dashboard panel when switching to My Stations
-  if (mode === "mine" && typeof isMobile === "function" && isMobile()) {
+  if (typeof isMobile === "function" && isMobile()) {
     var s = document.getElementById("sidebar");
     var m = document.getElementById("main");
-    if (s) s.classList.add("mobile-hidden");
-    if (m) m.classList.remove("mobile-hidden");
+    var b = document.getElementById("mobile-back-btn");
+    if (mode === "mine") {
+      // Show dashboard
+      if (s) s.classList.add("mobile-hidden");
+      if (m) m.classList.remove("mobile-hidden");
+    } else {
+      // Restore sidebar list
+      if (s) { s.classList.remove("mobile-hidden"); s.style.display = "flex"; }
+      if (m) m.classList.add("mobile-hidden");
+      if (b) b.classList.remove("active");
+    }
   }
   var ON  = {bg:"#0E2841", bc:"#0E2841", tc:"#ffffff"};
   var OFF = {bg:"transparent", bc:"#c8d0d8", tc:"#556070"};
@@ -952,11 +961,20 @@ function setFilter(mode) {
   spcFilter = null;
   selected = null;
   // On mobile: show dashboard panel when switching to My Stations
-  if (mode === "mine" && typeof isMobile === "function" && isMobile()) {
+  if (typeof isMobile === "function" && isMobile()) {
     var s = document.getElementById("sidebar");
     var m = document.getElementById("main");
-    if (s) s.classList.add("mobile-hidden");
-    if (m) m.classList.remove("mobile-hidden");
+    var b = document.getElementById("mobile-back-btn");
+    if (mode === "mine") {
+      // Show dashboard
+      if (s) s.classList.add("mobile-hidden");
+      if (m) m.classList.remove("mobile-hidden");
+    } else {
+      // Restore sidebar list
+      if (s) { s.classList.remove("mobile-hidden"); s.style.display = "flex"; }
+      if (m) m.classList.add("mobile-hidden");
+      if (b) b.classList.remove("active");
+    }
   }
   var ON  = {bg:"#0E2841", bc:"#0E2841", tc:"#ffffff"};
   var OFF = {bg:"transparent", bc:"#c8d0d8", tc:"#556070"};
