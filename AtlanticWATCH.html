@@ -150,8 +150,8 @@
   }
   /* ── Mobile navigation ── */
   @media (max-width: 600px) {
-    #body { position: relative; overflow: hidden; }
-    #sidebar { width: 100% !important; flex: 1; min-height: 0; }
+    #body { position: relative; overflow: hidden; height: 100%; }
+    #sidebar { width: 100% !important; display: flex !important; flex-direction: column; flex: 1; height: 100%; }
     #sidebar-list { flex: 1; min-height: 0; overflow-y: auto; }
     #main { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100% !important; overflow-y: auto; }
     #main.mobile-hidden { display: none !important; }
