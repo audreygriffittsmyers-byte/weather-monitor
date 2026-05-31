@@ -1317,6 +1317,8 @@ function renderDetail() {
             + '<div class="alert-meta" style="color:rgba(255,255,255,0.95)">'
             + '<span>Onset: <b>' + fmtTime(a.onset) + '</b></span>'
             + '<span>Expires: <b>' + fmtTime(a.expires) + '</b></span>'
+            + (a.onset ? '<span style="color:#8a9aaa">Issued: <b>' + fmtAge(a.onset) + '</b></span>' : '')
+            + (a.expires && (a.expires - Date.now()) < 7200000 ? '<span style="color:#dc2626;font-weight:700">Expires in: ' + Math.round((a.expires - Date.now())/60000) + ' min</span>' : '')
             + (a.distMiles !== null && a.distMiles !== undefined ? '<span>Distance: <b>~' + a.distMiles + ' mi</b></span>' : "")
             + (a.sender ? '<span>By: <b>' + a.sender + '</b></span>' : "") + '</div>'
             + (a.instruction ? '<div class="alert-instruction">' + a.instruction.substring(0,600) + (a.instruction.length>600?"\u2026":"") + '</div>' : "") + '</div>';
