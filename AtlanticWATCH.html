@@ -2558,6 +2558,7 @@ async function scanAllObs() {
   const fbos = COVERED;
   for (let i = 0; i < fbos.length; i += BATCH) {
     await Promise.all(fbos.slice(i, i+BATCH).map(f => fetchObs(f.code)));
+    await Promise.all(fbos.slice(i, i+BATCH).map(f => { if (!tafData[f.code]) return fetchTAF(f.code); }));
     if (i + BATCH < fbos.length) await new Promise(r => setTimeout(r, 1000));
   }
   renderSidebar();
@@ -3963,9 +3964,13 @@ function getLightningStatus(code) {
 
   if (obs) {
     var wx = (obs.condition || "").toUpperCase();
-    var hasActiveTS = /\bTS\b|TSRA|TSGR|TSGS|TSSN|\+TS/.test(wx);
-    if (!hasActiveTS && obs.rawOb) hasActiveTS = /\bTS[A-Z]*\b/.test(obs.rawOb.toUpperCase());
-    var hasCB = obs.clouds && obs.clouds.some(function(c){ return c.type==="CB"||(c.cover&&/CB/.test(c.cover)); });
+    var hasActiveTS = /TS/.test(wx);
+    if (!hasActiveTS && obs.rawOb) {
+      var rawParts = obs.rawOb.toUpperCase().split(" ");
+      hasActiveTS = rawParts.some(function(p){ return /^[+-]?TS[A-Z]*$|^VCTS$/.test(p); });
+    }
+    var hasCB = (obs.clouds && obs.clouds.some(function(c){ return c.type==="CB"||(c.cover&&/CB/.test(c.cover)); }))
+      || (obs.rawOb && /\bBKN[0-9]*CB\b|\bOVC[0-9]*CB\b|\bFEW[0-9]*CB\b|\bSCT[0-9]*CB\b/.test(obs.rawOb.toUpperCase()));
     if (hasActiveTS) return { level:"active", color:"#dc2626", bg:"#fff0f0", icon:"⚡",
       label:"LIGHTNING PROTOCOL",
       msg:"Thunderstorm at station. Cease all outdoor ramp operations immediately per lightning safety protocol." };
