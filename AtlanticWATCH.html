@@ -1136,6 +1136,63 @@ function renderMyStationsDashboard() {
   return html;
 }
 
+// ── Nearby METARs ─────────────────────────────────────────────────────
+var nearbyMetarData = {};
+
+async function fetchNearbyMetar(code) {
+  var c = COORDS[code];
+  if (!c) { nearbyMetarData[code] = []; return; }
+  try {
+    var r = await fetch(PROXY + "?type=nearbymetar&lat=" + c[0].toFixed(3) + "&lon=" + c[1].toFixed(3) + "&dist=0.8");
+    if (!r.ok) { nearbyMetarData[code] = []; return; }
+    var stations = await r.json();
+    if (!Array.isArray(stations)) { nearbyMetarData[code] = []; return; }
+    var primary = toICAO(code);
+    // Filter out the primary station, keep up to 3 closest
+    nearbyMetarData[code] = stations
+      .filter(function(s){ return s.icaoId && s.icaoId !== primary; })
+      .slice(0, 3)
+      .map(function(s) {
+        return {
+          icao:    s.icaoId,
+          name:    s.name || s.icaoId,
+          tempF:   s.temp != null ? Math.round(s.temp * 9/5 + 32) : null,
+          windKts: s.wspd != null ? Math.round(s.wspd) : null,
+          windDir: s.wdir,
+          windGust:s.wgst != null ? Math.round(s.wgst) : null,
+          visib:   s.visib,
+          wx:      s.wxString || "",
+          fc:      s.flightCategory || s.fltcat || null,
+          raw:     s.rawOb || "",
+          age:     s.reportTime ? fmtAge(s.reportTime) : ""
+        };
+      });
+  } catch(e) { nearbyMetarData[code] = []; }
+}
+
+function renderNearbyMetarCard(code) {
+  var stations = nearbyMetarData[code];
+  if (!stations || !stations.length) return "";
+  var html = '<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Nearby Stations</div>';
+  stations.forEach(function(s) {
+    var fcBg = s.fc ? flightCatColor(s.fc) : "#8a9aaa";
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0f0f0">'
+      + '<div>'
+      + '<span style="font-size:10px;font-weight:700;color:#0E2841">' + s.icao + '</span>'
+      + '<span style="font-size:9px;color:#8a9aaa;margin-left:5px">' + s.name + '</span>'
+      + (s.age ? '<span style="font-size:8px;color:#8a9aaa;font-style:italic;margin-left:5px">' + s.age + '</span>' : "")
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:6px">'
+      + (s.tempF != null ? '<span style="font-size:10px;color:#1a2a3a">' + s.tempF + '°F</span>' : "")
+      + (s.windKts != null ? '<span style="font-size:9px;color:#556070">' + windDirLabel(s.windDir) + ' ' + s.windKts + (s.windGust ? "G"+s.windGust : "") + "kt</span>" : "")
+      + (s.fc ? '<span style="background:' + fcBg + ';color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px">' + s.fc + '</span>' : "")
+      + '</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
 function renderDetail() {
   const panel = document.getElementById('panel-monitor');
   if (!selected) {
@@ -1300,7 +1357,15 @@ function renderDetail() {
   }
 
   // ── 7. PIREPs ─────────────────────────────────────────────────────────────
-    // ── 8. Hourly conditions ──────────────────────────────────────────────────
+    // ── 7b. Nearby stations
+  if (nearbyMetarData[selected] === undefined) {
+    fetchNearbyMetar(selected).then(function(){ if (selected) { var el = document.getElementById("nearby-strip-" + selected); if (el) el.outerHTML = renderNearbyMetarCard(selected); } });
+    content += '<div id="nearby-strip-' + selected + '"></div>';
+  } else {
+    content += renderNearbyMetarCard(selected);
+  }
+
+  // ── 8. Hourly conditions ──────────────────────────────────────────────────
   var hourlySlot = 'hourly-' + selected;
   if (hourlyData[selected]) {
     content += '<div id="' + hourlySlot + '">' + renderHourly(selected) + '</div>';
