@@ -209,6 +209,21 @@ export default {
       } catch(e) { return new Response(JSON.stringify({activeStorms:[]}), { headers: CORS }); }
     }
 
+    if (type === 'nhctrack') {
+      const stormId = url.searchParams.get('id');
+      if (!stormId) return new Response('Missing id', { status: 400, headers: CORS });
+      try {
+        // Fetch both track line and forecast points
+        const [lineRes, ptRes] = await Promise.all([
+          fetch(`https://www.nhc.noaa.gov/storm_graphics/api/${stormId}_5day_lin.json`, { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } }),
+          fetch(`https://www.nhc.noaa.gov/storm_graphics/api/${stormId}_5day_pts.json`, { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } }),
+        ]);
+        const line = lineRes.ok ? await lineRes.json() : {features:[]};
+        const pts  = ptRes.ok  ? await ptRes.json()  : {features:[]};
+        return new Response(JSON.stringify({ line, pts }), { headers: GEOJSON });
+      } catch(e) { return new Response(JSON.stringify({line:{features:[]},pts:{features:[]}}), { headers: GEOJSON }); }
+    }
+
     if (type === 'nhccone') {
       const stormId = url.searchParams.get('id');
       if (!stormId) return new Response('Missing id', { status: 400, headers: CORS });
