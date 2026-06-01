@@ -2,7 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<link rel="manifest" href="/weather-monitor/manifest.json"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="WATCH"/>
+<meta name="theme-color" content="#0E2841"/>
+<link rel="apple-touch-icon" href="/weather-monitor/icon-192.png"/>
+<link rel="apple-touch-icon" sizes="192x192" href="/weather-monitor/icon-192.png"/>
+<link rel="apple-touch-icon" sizes="512x512" href="/weather-monitor/icon-512.png"/>
 <title>Atlantic Aviation — WATCH</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -188,6 +197,7 @@
     <button id="gps-btn" onclick="startGPSWatch()" title="Show my location" style="background:transparent;border:1px solid #ffffff88;color:#ffffff;border-radius:4px;padding:5px 10px;font-size:13px;cursor:pointer;line-height:1">🎯</button>
     <button id="loc-filter-btn" onclick="openLocationPicker()" title="Filter locations" style="background:transparent;border:1px solid #ffffff88;color:#ffffff;border-radius:4px;padding:5px 10px;font-size:13px;cursor:pointer;line-height:1">📍</button>
     <button id="notif-btn" onclick="requestNotifPermission()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">🔔 Enable Alerts</button>
+    <button id="install-btn" onclick="promptInstall()" style="display:none;background:#4fc3f7;color:#0E2841;border:none;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;align-items:center;gap:4px">⬇ Install App</button>
     <button onclick="openPrintBriefing()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer" title="Print briefing">🖨 Brief</button>
     <button onclick="shareOrCopyBriefing()" style="background:#ffffff;border:1px solid #c8d0d8;color:#0E2841;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">📤 Share</button>
     <button id="scan-btn" style="background:#ffffff;border:1px solid #ffffff;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:.04em">▶ Scan All</button>
@@ -5219,6 +5229,36 @@ function notifyIfPermitted(title, body) {
   if (Notification.permission !== "granted") return;
   if (document.visibilityState === "visible") return;
   try { new Notification(title, { body: body, icon: "/weather-monitor/icon-192.png", requireInteraction: true }); } catch(e) {}
+}
+
+// ── PWA Install Prompt ────────────────────────────────────────────────────
+var _pwaPrompt = null;
+window.addEventListener("beforeinstallprompt", function(e) {
+  e.preventDefault();
+  _pwaPrompt = e;
+  // Show install button if not already installed
+  var btn = document.getElementById("install-btn");
+  if (btn) btn.style.display = "inline-flex";
+});
+window.addEventListener("appinstalled", function() {
+  var btn = document.getElementById("install-btn");
+  if (btn) btn.style.display = "none";
+  _pwaPrompt = null;
+});
+function promptInstall() {
+  if (_pwaPrompt) {
+    _pwaPrompt.prompt();
+    _pwaPrompt.userChoice.then(function(r) {
+      if (r.outcome === "accepted") {
+        var btn = document.getElementById("install-btn");
+        if (btn) btn.style.display = "none";
+      }
+      _pwaPrompt = null;
+    });
+  } else {
+    // iOS fallback
+    alert("To install WATCH on iOS: tap the Share button \u2197 then \"Add to Home Screen\"");
+  }
 }
 
 function loadMyLocations() {
