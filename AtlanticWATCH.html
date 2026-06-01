@@ -1270,6 +1270,132 @@ function renderCaribWxCard(code) {
     + '<div style="font-size:10px;color:#1a2a3a;white-space:pre-wrap;font-family:monospace;line-height:1.5;max-height:200px;overflow-y:auto">' + excerpt + '</div></div>';
 }
 
+
+// ── Acknowledgement Log ──────────────────────────────────────────────────────
+var ACK_KEY = "watch_ack_log";
+var ACK_RETAIN_DAYS = 60;
+
+function getDeviceLabel() {
+  var k = "watch_device_label";
+  try {
+    var saved = localStorage.getItem(k);
+    if (saved) return saved;
+    var ua = navigator.userAgent;
+    var device = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad"
+      : /Android/.test(ua) ? "Android" : /Macintosh/.test(ua) ? "Mac"
+      : /Windows/.test(ua) ? "Windows" : "Browser";
+    var id = Math.random().toString(36).substring(2,6).toUpperCase();
+    var label = device + "-" + id;
+    localStorage.setItem(k, label);
+    return label;
+  } catch(e) { return "Unknown"; }
+}
+
+function loadAckLog() {
+  try {
+    var raw = localStorage.getItem(ACK_KEY);
+    if (!raw) return [];
+    var log = JSON.parse(raw);
+    var cutoff = Date.now() - (ACK_RETAIN_DAYS * 24 * 60 * 60 * 1000);
+    return log.filter(function(e){ return e.ts > cutoff; });
+  } catch(e) { return []; }
+}
+
+function saveAckLog(log) {
+  try { localStorage.setItem(ACK_KEY, JSON.stringify(log)); } catch(e) {}
+}
+
+function addAckEntry(code, note) {
+  var log = loadAckLog();
+  var obs = obsData[code];
+  var alerts = (results[code] && results[code].alerts)
+    ? results[code].alerts.filter(function(a){ return !dismissedAlerts.has(a.id); }) : [];
+  var ltng = getLightningStatus(code);
+  var entry = {
+    ts: Date.now(), code: code, device: getDeviceLabel(), note: note || "",
+    fc: obs ? (obs.flightCat || "--") : "--",
+    tempF: obs ? obs.tempF : null,
+    windKts: obs ? obs.windKts : null,
+    windDir: obs ? obs.windDir : null,
+    alerts: alerts.map(function(a){ return a.event; }),
+    lightning: ltng ? ltng.label : null
+  };
+  log.push(entry);
+  saveAckLog(log);
+  return entry;
+}
+
+function getAckEntries(code) {
+  return loadAckLog().filter(function(e){ return e.code === code; })
+    .sort(function(a,b){ return b.ts - a.ts; });
+}
+
+function renderAckCard(code) {
+  var entries = getAckEntries(code);
+  var fbo = COVERED.find(function(f){ return f.code === code; }) || {};
+  var html = '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em">Station Acknowledgement</div>'
+    + '<button onclick="showAckModal(\'' + code + '\')" '
+    + 'style="background:#0E2841;color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:10px;font-weight:700;cursor:pointer">\u2713 Acknowledge</button>'
+    + '</div>';
+  if (!entries.length) {
+    html += '<div style="font-size:10px;color:#8a9aaa">No acknowledgements logged for this station.</div>';
+  } else {
+    entries.slice(0,5).forEach(function(e) {
+      var d = new Date(e.ts);
+      var timeStr = d.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",timeZoneName:"short"});
+      var dateStr = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+      var condStr = e.fc + (e.tempF!=null?" | "+e.tempF+"\u00b0F":"") + (e.windKts!=null?" | "+windDirLabel(e.windDir)+" "+e.windKts+"kt":"");
+      html += '<div style="padding:6px 0;border-bottom:1px solid #f0f0f0">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center">'
+        + '<span style="font-size:10px;font-weight:700;color:#0E2841">' + e.device + '</span>'
+        + '<span style="font-size:9px;color:#8a9aaa">' + dateStr + ' ' + timeStr + '</span>'
+        + '</div>'
+        + '<div style="font-size:9px;color:#556070;margin-top:2px">' + condStr + '</div>';
+      if (e.alerts && e.alerts.length) html += '<div style="font-size:9px;color:#d97706;margin-top:1px">\u26a0 ' + e.alerts.join(", ") + '</div>';
+      if (e.lightning) html += '<div style="font-size:9px;color:#dc2626;margin-top:1px">\u26a1 ' + e.lightning + '</div>';
+      if (e.note) html += '<div style="font-size:9px;color:#1a2a3a;margin-top:2px;font-style:italic">&ldquo;' + e.note + '&rdquo;</div>';
+      html += '</div>';
+    });
+    if (entries.length > 5) html += '<div style="font-size:9px;color:#8a9aaa;margin-top:4px">+' + (entries.length-5) + ' older entries</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function showAckModal(code) {
+  var fbo = COVERED.find(function(f){ return f.code===code; }) || {};
+  var existing = document.getElementById("ack-modal");
+  if (existing) existing.remove();
+  var modal = document.createElement("div");
+  modal.id = "ack-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px";
+  modal.innerHTML = '<div style="background:#fff;border-radius:8px;padding:20px;width:100%;max-width:400px">'
+    + '<div style="font-size:14px;font-weight:700;color:#0E2841;margin-bottom:4px">Acknowledge ' + code + '</div>'
+    + '<div style="font-size:11px;color:#556070;margin-bottom:12px">' + (fbo.city||"") + ', ' + (fbo.state||"") + ' \u00b7 Device: ' + getDeviceLabel() + '</div>'
+    + '<textarea id="ack-note-input" placeholder="Optional note (e.g. Lightning protocol lifted, ramp ops resumed)..." '
+    + 'style="width:100%;min-height:70px;border:1px solid #c8d0d8;border-radius:4px;padding:8px;font-size:11px;font-family:Arial,sans-serif;box-sizing:border-box;resize:vertical"></textarea>'
+    + '<div style="display:flex;gap:8px;margin-top:12px">'
+    + '<button onclick="submitAck(\'' + code + '\')" style="flex:1;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:9px;font-size:12px;font-weight:700;cursor:pointer">\u2713 Log Acknowledgement</button>'
+    + '<button id="ack-cancel-btn" style="background:#f0f0f0;color:#556070;border:none;border-radius:4px;padding:9px 14px;font-size:12px;cursor:pointer">Cancel</button>'
+    + '</div></div>';
+  document.body.appendChild(modal);
+  modal.addEventListener("click", function(e){ if(e.target===modal) modal.remove(); });
+  var cancelBtn = document.getElementById("ack-cancel-btn");
+  if (cancelBtn) cancelBtn.addEventListener("click", function(){ modal.remove(); });
+  setTimeout(function(){ var el=document.getElementById("ack-note-input"); if(el) el.focus(); }, 100);
+}
+
+function submitAck(code) {
+  var noteEl = document.getElementById("ack-note-input");
+  var note = noteEl ? noteEl.value.trim() : "";
+  addAckEntry(code, note);
+  var modal = document.getElementById("ack-modal");
+  if (modal) modal.remove();
+  renderDetail();
+}
+
 function renderDetail() {
   const panel = document.getElementById('panel-monitor');
   if (!selected) {
@@ -1448,6 +1574,9 @@ function renderDetail() {
   } else {
     content += renderNearbyMetarCard(selected);
   }
+
+  // ── 7c. Acknowledgement log
+  content += renderAckCard(selected);
 
   // ── 8. Hourly conditions ──────────────────────────────────────────────────
   var hourlySlot = 'hourly-' + selected;
