@@ -782,6 +782,7 @@ async function loadFBO(code) {
   if (selected === code) renderDetail();
   updateHeader();
   updateActiveCount();
+  checkForNewAlerts();
   // refreshBuilder -- replaced by generateSummary
   if (mapInitialized) renderMapMarkers();
 }
@@ -4908,7 +4909,7 @@ function checkProximityAlerts() {
   if (userLat === null || userLon === null) return;
   const RADIUS_MILES = 50;
   const nearby = [];
-  getActiveFBOs().forEach(fbo => {
+  COVERED.forEach(fbo => {
     const c = COORDS[fbo.code];
     if (!c) return;
     const dist = distanceMiles(userLat, userLon, c[0], c[1]);
@@ -5325,7 +5326,7 @@ function playAlertTone(color) {
 function checkForNewAlerts() {
   const BUCKETS = new Set(['EXTREME','SEVERE']);
   const byEvent = {};
-  getActiveFBOs().forEach(fbo => {
+  COVERED.forEach(fbo => {
     (results[fbo.code]?.alerts || []).forEach(a => {
       if (!BUCKETS.has(a.bucket)) return;
       const key = (a.id || '') + '|' + (a.expires?.toISOString() || '') + '|' + fbo.code;
