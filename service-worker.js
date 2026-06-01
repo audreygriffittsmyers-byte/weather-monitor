@@ -1,107 +1,122 @@
-// WATCH Service Worker -- Atlantic Aviation
-// Handles background push notifications and periodic alert checks
+// WATCH Service Worker v2 -- PWA + Push Notifications
+const CACHE_NAME = 'watch-v2';
+const CACHE_URLS = [
+  '/weather-monitor/AtlanticWATCH.html',
+  '/weather-monitor/manifest.json',
+  '/weather-monitor/icon-192.png',
+  '/weather-monitor/icon-512.png',
+  'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
+  'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',
+];
 
-const CACHE_NAME = 'watch-v1';
-const PROXY = 'https://lucky-flower-26db.audreygriffitts-myers.workers.dev';
-
-// ── Install ───────────────────────────────────────────────────────────────────
+// ── Install: cache app shell ──────────────────────────────────────────────────
 self.addEventListener('install', function(e) {
+  e.waitUntil(
+    caches.open(CACHE_NAME).then(function(cache) {
+      return cache.addAll(CACHE_URLS).catch(function(err) {
+        console.log('WATCH SW: cache prefill partial', err);
+      });
+    })
+  );
   self.skipWaiting();
 });
 
+// ── Activate: clear old caches ────────────────────────────────────────────────
 self.addEventListener('activate', function(e) {
-  e.waitUntil(clients.claim());
+  e.waitUntil(
+    caches.keys().then(function(keys) {
+      return Promise.all(
+        keys.filter(function(k){ return k !== CACHE_NAME; })
+            .map(function(k){ return caches.delete(k); })
+      );
+    }).then(function(){ return clients.claim(); })
+  );
 });
 
-// ── Push event (from server-sent push) ───────────────────────────────────────
-self.addEventListener('push', function(e) {
-  var data = {};
-  try { data = e.data ? e.data.json() : {}; } catch(err) {}
-  var title   = data.title   || 'WATCH Alert';
-  var body    = data.body    || 'New weather alert at an Atlantic location.';
-  var tag     = data.tag     || 'watch-alert';
-  var urgency = data.urgency || 'normal';
-  e.waitUntil(
-    self.registration.showNotification(title, {
-      body:  body,
-      icon:  '/weather-monitor/icon-192.png',
-      badge: '/weather-monitor/icon-192.png',
-      tag:   tag,
-      requireInteraction: urgency === 'high',
-      data:  { url: data.url || '/weather-monitor/' }
+// ── Fetch: cache-first for app shell, network-first for API ──────────────────
+self.addEventListener('fetch', function(e) {
+  var url = e.request.url;
+  // Always network-first for API/weather data
+  if (url.includes('workers.dev') || url.includes('api.weather.gov') ||
+      url.includes('aviationweather') || url.includes('nhc.noaa.gov')) {
+    return; // let browser handle
+  }
+  // Cache-first for app shell
+  e.respondWith(
+    caches.match(e.request).then(function(cached) {
+      if (cached) return cached;
+      return fetch(e.request).then(function(resp) {
+        if (resp && resp.status === 200 && resp.type === 'basic') {
+          var clone = resp.clone();
+          caches.open(CACHE_NAME).then(function(c){ c.put(e.request, clone); });
+        }
+        return resp;
+      }).catch(function() { return cached; });
     })
   );
 });
 
-// ── Notification click -- open WATCH ─────────────────────────────────────────
+// ── Push notifications ────────────────────────────────────────────────────────
+self.addEventListener('push', function(e) {
+  var data = {};
+  try { data = e.data ? e.data.json() : {}; } catch(err) {}
+  e.waitUntil(
+    self.registration.showNotification(data.title || 'WATCH Alert', {
+      body: data.body || 'New weather alert at an Atlantic location.',
+      icon: '/weather-monitor/icon-192.png',
+      badge: '/weather-monitor/icon-192.png',
+      tag: data.tag || 'watch-alert',
+      requireInteraction: data.urgency === 'high',
+      data: { url: data.url || '/weather-monitor/AtlanticWATCH.html' }
+    })
+  );
+});
+
+// ── Notification click ────────────────────────────────────────────────────────
 self.addEventListener('notificationclick', function(e) {
   e.notification.close();
-  var target = (e.notification.data && e.notification.data.url) || '/weather-monitor/';
+  var target = (e.notification.data && e.notification.data.url) || '/weather-monitor/AtlanticWATCH.html';
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list) {
       for (var i = 0; i < list.length; i++) {
-        if (list[i].url.includes('weather-monitor')) {
-          return list[i].focus();
-        }
+        if (list[i].url.includes('weather-monitor')) return list[i].focus();
       }
       return clients.openWindow(target);
     })
   );
 });
 
-// ── Periodic background sync (Android Chrome only) ───────────────────────────
-// Fires every ~15 min when page is closed, checks for new SEVERE/EXTREME alerts
+// ── Periodic background sync ──────────────────────────────────────────────────
 self.addEventListener('periodicsync', function(e) {
   if (e.tag === 'watch-alert-check') {
-    e.waitUntil(checkForNewAlertsBackground());
+    e.waitUntil(checkAlertsBackground());
   }
 });
 
-// Track known alert IDs in cache to avoid duplicate notifications
-async function checkForNewAlertsBackground() {
+async function checkAlertsBackground() {
   try {
-    // Get previously known alert IDs from cache storage
     var cache = await caches.open(CACHE_NAME);
     var knownResp = await cache.match('known-alerts');
     var knownIds = new Set();
-    if (knownResp) {
-      var knownArr = await knownResp.json();
-      knownArr.forEach(function(id) { knownIds.add(id); });
-    }
+    if (knownResp) { var arr = await knownResp.json(); arr.forEach(function(id){ knownIds.add(id); }); }
 
-    // Fetch alerts for a sample of high-traffic locations
-    // Full scan would be too slow -- SW fetches NWS summary endpoint
-    var resp = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert&severity=Extreme,Severe&limit=50', {
-      headers: { 'User-Agent': 'WATCH-ServiceWorker/1.0' }
-    });
+    var resp = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert&severity=Extreme,Severe&limit=50',
+      { headers: { 'User-Agent': 'WATCH-SW/2.0' } });
     if (!resp.ok) return;
     var data = await resp.json();
-    var features = data.features || [];
-
-    var newAlerts = features.filter(function(f) {
-      return !knownIds.has(f.id);
-    });
+    var newAlerts = (data.features || []).filter(function(f){ return !knownIds.has(f.id); });
 
     if (newAlerts.length > 0) {
-      // Save updated known IDs
-      var allIds = [...knownIds, ...newAlerts.map(function(f){ return f.id; })];
-      // Keep only last 200
-      if (allIds.length > 200) allIds = allIds.slice(-200);
+      var allIds = [...knownIds, ...newAlerts.map(function(f){ return f.id; })].slice(-200);
       await cache.put('known-alerts', new Response(JSON.stringify(allIds)));
-
-      // Show notification for worst alert
-      var worst = newAlerts[0];
-      var props = worst.properties || {};
+      var props = newAlerts[0].properties || {};
       await self.registration.showNotification('⚠ WATCH: ' + (props.event || 'New Alert'), {
-        body: (props.headline || props.description || '').substring(0, 120),
+        body: (props.headline || '').substring(0, 120),
         icon: '/weather-monitor/icon-192.png',
-        tag:  'watch-bg-alert',
+        tag: 'watch-bg-alert',
         requireInteraction: true,
-        data: { url: '/weather-monitor/' }
+        data: { url: '/weather-monitor/AtlanticWATCH.html' }
       });
     }
-  } catch(err) {
-    // Silent fail -- background checks are best-effort
-    console.log('WATCH SW background check failed:', err);
-  }
+  } catch(e) {}
 }
