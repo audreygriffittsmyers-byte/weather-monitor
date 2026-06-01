@@ -4557,7 +4557,7 @@ function getLightningStatus(code) {
   if (obs) {
     var wx = (obs.condition || "").toUpperCase();
     // Match only valid WX codes: TS, TSRA, TSGR, TSGS, TSSN, VCTS, +TSRA etc
-    var var hasVCTS = /(?:^|\s)VCTS(?:\s|$)/.test(wx);
+    var hasVCTS = /(?:^|\s)VCTS(?:\s|$)/.test(wx);
     hasActiveTS = /(?:^|\s)[+-]?TS[A-Z]*(?:\s|$)/.test(wx) && !hasVCTS;
     if (!hasActiveTS && obs.rawOb) {
       // Check token-by-token against valid TS wx codes only
@@ -4617,8 +4617,9 @@ function getLightningStatus(code) {
     // Also include base period (before first FM)
     var basePeriod = raw.split(/FM\d{6}/)[0] || "";
 
-    // Check base period for TS (always relevant -- it's now)
-    var baseHasTS = /\bTS[A-Z]*\b/.test(basePeriod) && !/\bVCTS\b/.test(basePeriod);
+    // Base period only valid if no FM group has started yet
+    var firstFmStarted = fmGroups.length > 0 && tafTimeToMins(fmGroups[0].time) <= 0;
+    var baseHasTS = !firstFmStarted && /\bTS[A-Z]*\b/.test(basePeriod) && !/\bVCTS\b/.test(basePeriod);
 
     // Check FM groups within 6 hours
     var fmHasTS = fmGroups.some(function(g) {
