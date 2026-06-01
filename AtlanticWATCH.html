@@ -4557,12 +4557,14 @@ function getLightningStatus(code) {
   if (obs) {
     var wx = (obs.condition || "").toUpperCase();
     // Match only valid WX codes: TS, TSRA, TSGR, TSGS, TSSN, VCTS, +TSRA etc
-    var hasActiveTS = /(?:^|\s)[+-]?(?:VC)?TS[A-Z]*(?:\s|$)/.test(wx);
+    var var hasVCTS = /(?:^|\s)VCTS(?:\s|$)/.test(wx);
+    hasActiveTS = /(?:^|\s)[+-]?TS[A-Z]*(?:\s|$)/.test(wx) && !hasVCTS;
     if (!hasActiveTS && obs.rawOb) {
       // Check token-by-token against valid TS wx codes only
       var rawParts = obs.rawOb.toUpperCase().split(" ");
-      hasActiveTS = rawParts.some(function(p) {
-        return /^[+-]?(?:VC)?TS(?:RA|GR|GS|SN|SA|PE|HZ|FG|DS|SS|UP)?$/.test(p);
+      var hasVCTS_raw = rawParts.some(function(p){ return p === "VCTS"; });
+      if (!hasActiveTS && !hasVCTS_raw) hasActiveTS = rawParts.some(function(p) {
+        return /^[+-]?TS(?:RA|GR|GS|SN|SA|PE|HZ|FG|DS|SS|UP)?$/.test(p);
       });
     }
     var hasCB = (obs.clouds && obs.clouds.some(function(c){ return c.type==="CB"||(c.cover&&/CB/.test(c.cover)); }))
@@ -4570,6 +4572,10 @@ function getLightningStatus(code) {
     if (hasActiveTS) return { level:"active", color:"#dc2626", bg:"#fff0f0", icon:"⚡",
       label:"LIGHTNING PROTOCOL",
       msg:"Thunderstorm at station. Cease all outdoor ramp operations immediately per lightning safety protocol." };
+    var hasVCTS_any = hasVCTS || hasVCTS_raw;
+    if (hasVCTS_any) return { level:"vcts", color:"#ea580c", bg:"#fff7ed", icon:"⚡",
+      label:"LIGHTNING VICINITY",
+      msg:"Thunderstorm within 5-10 miles of station (VCTS). Monitor closely. Prepare crew for protocol activation." };
     if (hasCB) return { level:"cb", color:"#d97706", bg:"#fffbeb", icon:"⚡",
       label:"CONVECTIVE ADVISORY",
       msg:"Cumulonimbus clouds reported. Monitor radar. Prepare for rapid protocol activation." };
@@ -4612,12 +4618,12 @@ function getLightningStatus(code) {
     var basePeriod = raw.split(/FM\d{6}/)[0] || "";
 
     // Check base period for TS (always relevant -- it's now)
-    var baseHasTS = /\b(?:VC)?TS[A-Z]*\b/.test(basePeriod);
+    var baseHasTS = /\bTS[A-Z]*\b/.test(basePeriod) && !/\bVCTS\b/.test(basePeriod);
 
     // Check FM groups within 6 hours
     var fmHasTS = fmGroups.some(function(g) {
       var startMins = tafTimeToMins(g.time + "");
-      return startMins < 360 && /\b(?:VC)?TS[A-Z]*\b/.test(g.text);
+      return startMins < 360 && /\bTS[A-Z]*\b/.test(g.text) && !/\bVCTS\b/.test(g.text);
     });
 
     if (baseHasTS || fmHasTS) {
