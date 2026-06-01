@@ -256,6 +256,20 @@ export default {
       } catch(e) { return new Response('', { headers: TEXT }); }
     }
 
+    if (type === 'caribwx') {
+      // Caribbean offshore waters forecast -- covers BDA, GCM, SXM, PLS region
+      const product = url.searchParams.get('product') || 'MIAOFFNT2';
+      const ALLOWED = ['MIAOFFNT2','MIAOFFNT1','MIAHSFAT1','MIATWOAT'];
+      if (!ALLOWED.includes(product)) return new Response('Invalid product', { status: 400, headers: CORS });
+      try {
+        const res = await fetch(`https://www.nhc.noaa.gov/text/${product}.shtml`,
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
+        const html = await res.text();
+        const match = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+        return new Response(JSON.stringify({ text: match ? match[1].trim() : '', product }), { headers: CORS });
+      } catch(e) { return new Response(JSON.stringify({ text: '', product }), { headers: CORS }); }
+    }
+
     if (type === 'nas') {
       try {
         const res = await fetch('https://nasstatus.faa.gov/api/airport-status-information',
