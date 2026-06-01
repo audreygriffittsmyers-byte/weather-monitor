@@ -4577,20 +4577,79 @@ function getLightningStatus(code) {
 
   if (taf && taf.rawTAF) {
     var raw = taf.rawTAF.toUpperCase();
-    var parts = raw.split(/FM\d{6}/);
-    var checkText = (parts[0]||"") + (parts[1]||"");
+    var nowUtc = new Date();
+    var nowHHMM = nowUtc.getUTCHours() * 100 + nowUtc.getUTCMinutes();
+    var nowDay  = nowUtc.getUTCDate();
+
+    // Parse DDHHMM time into minutes-from-now for comparison
+    function tafTimeToMins(ddhhmm) {
+      var dd = parseInt(ddhhmm.substring(0,2));
+      var hh = parseInt(ddhhmm.substring(2,4));
+      var mm = parseInt(ddhhmm.substring(4,6));
+      var dayDiff = dd - nowDay;
+      if (dayDiff < -15) dayDiff += 30; // month rollover
+      return dayDiff * 1440 + (hh * 60 + mm) - (nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes());
+    }
+
+    // Check if a DDHH/DDHH time range overlaps with now to +windowHrs
+    function periodInWindow(timeStr, windowHrs) {
+      var m = timeStr.match(/(\d{4})\/(\d{4})/);
+      if (!m) return true; // can't parse -- include by default
+      var startMins = tafTimeToMins(m[1] + "00");
+      var endMins   = tafTimeToMins(m[2] + "00");
+      // Period overlaps window [0, windowHrs*60] if start < window end AND end > 0
+      return startMins < (windowHrs * 60) && endMins > 0;
+    }
+
+    // Check FM groups -- each FM DDHHMM starts a new period until the next FM
+    var fmGroups = [];
+    var fmRe = /FM(\d{6})([^]*?)(?=FM\d{6}|BECMG|$)/g;
+    var fm;
+    while ((fm = fmRe.exec(raw)) !== null) {
+      fmGroups.push({ time: fm[1], text: fm[2] });
+    }
+    // Also include base period (before first FM)
+    var basePeriod = raw.split(/FM\d{6}/)[0] || "";
+
+    // Check base period for TS (always relevant -- it's now)
+    var baseHasTS = /\b(?:VC)?TS[A-Z]*\b/.test(basePeriod);
+
+    // Check FM groups within 6 hours
+    var fmHasTS = fmGroups.some(function(g) {
+      var startMins = tafTimeToMins(g.time + "");
+      return startMins < 360 && /\b(?:VC)?TS[A-Z]*\b/.test(g.text);
+    });
+
+    if (baseHasTS || fmHasTS) {
+      var hrs = fmHasTS && !baseHasTS
+        ? Math.round(fmGroups.find(function(g){ return tafTimeToMins(g.time+"") < 360 && /\bTS/.test(g.text); }).time.substring(2,4) - nowUtc.getUTCHours())
+        : 0;
+      var hrsMsg = hrs > 0 ? " Expected in ~" + hrs + "h." : "";
+      return { level:"imminent", color:"#ea580c", bg:"#fff7ed", icon:"\u26a1",
+        label:"LIGHTNING WATCH",
+        msg:"Thunderstorm in TAF within 6 hours." + hrsMsg + " Brief crew on protocol. Assign lightning lookout." };
+    }
+
+    // Check TEMPO/PROB groups within 6 hours
     var tempoMatch = raw.match(/TEMPO\s+\d{4}\/\d{4}[^\n]+/g) || [];
     var probMatch  = raw.match(/PROB\d{2}\s+\d{4}\/\d{4}[^\n]+/g) || [];
-    if (/\bTS[A-Z]*\b/.test(checkText) && !tempoMatch.concat(probMatch).every(function(t){return /\bTS/.test(t);})) {
-      return { level:"imminent", color:"#ea580c", bg:"#fff7ed", icon:"⚡",
-        label:"LIGHTNING WATCH",
-        msg:"Thunderstorm in TAF forecast. Brief crew on protocol. Assign lightning lookout." };
+    var tempoHasTS = tempoMatch.some(function(t){ return periodInWindow(t, 6) && /\bTS/.test(t); });
+    var probHasTS  = probMatch.some(function(t){  return periodInWindow(t, 6) && /\bTS/.test(t); });
+
+    // Also check beyond 6h for a softer advisory
+    var tempoLater = tempoMatch.some(function(t){ return !periodInWindow(t,6) && periodInWindow(t,24) && /\bTS/.test(t); });
+    var probLater  = probMatch.some(function(t){  return !periodInWindow(t,6) && periodInWindow(t,24) && /\bTS/.test(t); });
+
+    if (tempoHasTS || probHasTS) {
+      return { level:"possible", color:"#ca8a04", bg:"#fefce8", icon:"\u26a1",
+        label:"CONVECTIVE POSSIBLE \u2014 NEXT 6H",
+        msg:"Thunderstorm possible within 6 hours (TAF TEMPO/PROB). Ensure crew is briefed on protocol trigger criteria." };
     }
-    var tempoHasTS = tempoMatch.some(function(t){ return /\bTS/.test(t); });
-    var probHasTS  = probMatch.some(function(t){ return /\bTS/.test(t); });
-    if (tempoHasTS || probHasTS) return { level:"possible", color:"#ca8a04", bg:"#fefce8", icon:"⚡",
-      label:"CONVECTIVE POSSIBLE",
-      msg:"Thunderstorm possible (TAF TEMPO/PROB). Ensure crew is briefed on protocol trigger criteria." };
+    if (tempoLater || probLater) {
+      return { level:"later", color:"#84808a", bg:"#f8f8ff", icon:"\u26a1",
+        label:"CONVECTIVE LATER",
+        msg:"Thunderstorm possible later today (TAF TEMPO/PROB beyond 6h). Monitor for updates." };
+    }
   }
   return null;
 }
