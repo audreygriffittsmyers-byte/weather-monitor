@@ -479,6 +479,12 @@ const FBO_LIST = [
 const US_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);
 
 const COVERED = FBO_LIST.filter(f => COORDS[f.code] && US_STATES.has(f.state));
+// Add international locations
+[{code:'BDA',city:'Bermuda',state:'BM'},
+ {code:'GCM',city:'Grand Cayman',state:'KY'},
+ {code:'SXM',city:'Sint Maarten',state:'SX'},
+ {code:'PLS',city:'Turks & Caicos',state:'TC'}]
+.forEach(function(f){ if (COORDS[f.code] && !COVERED.find(function(c){return c.code===f.code;})) COVERED.push(f); });
 
 // ── Severity ──────────────────────────────────────────────────────────────────
 function getBucket(event = '') {
