@@ -1196,6 +1196,64 @@ function renderNearbyMetarCard(code) {
   return html;
 }
 
+// ── Caribbean / International Weather ─────────────────────────────────────
+var caribWxData = {}; // keyed by product
+var INTL_LOCATIONS = ['BDA','GCM','SXM','PLS'];
+
+function isIntlLocation(code) {
+  return INTL_LOCATIONS.indexOf(code) >= 0;
+}
+
+async function fetchCaribWx() {
+  if (caribWxData._loaded) return;
+  try {
+    // Caribbean offshore waters forecast covers BDA, GCM, SXM, PLS
+    var r = await fetch(PROXY + "?type=caribwx&product=MIAOFFNT2");
+    if (r.ok) {
+      var d = await r.json();
+      caribWxData.MIAOFFNT2 = d.text || "";
+    }
+    caribWxData._loaded = true;
+  } catch(e) { caribWxData._loaded = true; }
+}
+
+function renderCaribWxCard(code) {
+  if (!isIntlLocation(code)) return "";
+  var text = caribWxData.MIAOFFNT2 || "";
+  if (!text) {
+    // Trigger fetch and re-render when done
+    fetchCaribWx().then(function(){ if (selected === code) renderDetail(); });
+    return '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">'
+      + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em">Caribbean Marine Forecast</div>'
+      + '<div style="font-size:10px;color:#8a9aaa;margin-top:6px">Loading NHC Caribbean forecast...</div></div>';
+  }
+  // Extract relevant section for location
+  var sections = {
+    "BDA": "BERMUDA",
+    "GCM": "CAYMAN",
+    "SXM": "LEEWARD",
+    "PLS": "TURKS"
+  };
+  var keyword = sections[code] || "";
+  var excerpt = text;
+  if (keyword) {
+    var idx = text.toUpperCase().indexOf(keyword);
+    if (idx >= 0) {
+      // Get from keyword to next double newline or 600 chars
+      var start = Math.max(0, text.lastIndexOf("\n", idx) - 50);
+      excerpt = text.substring(start, start + 600).trim();
+      if (excerpt.length === 600) excerpt += "...";
+    } else {
+      excerpt = text.substring(0, 500).trim() + "...";
+    }
+  }
+  return '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">'
+    + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">'
+    + 'NHC Caribbean Marine Forecast'
+    + '<span style="font-size:8px;color:#8a9aaa;margin-left:8px;font-weight:400;text-transform:none">NWS alerts not available outside US</span></div>'
+    + '<div style="font-size:10px;color:#1a2a3a;white-space:pre-wrap;font-family:monospace;line-height:1.5;max-height:200px;overflow-y:auto">' + excerpt + '</div></div>';
+}
+
 function renderDetail() {
   const panel = document.getElementById('panel-monitor');
   if (!selected) {
@@ -1331,6 +1389,11 @@ function renderDetail() {
 
   // ── 4b. SPC Outlook (inline)
   content += renderSPCInline(selected);
+
+  // ── 4b. Caribbean wx for international locations
+  if (isIntlLocation(selected)) {
+    content += renderCaribWxCard(selected);
+  }
 
   // ── 5. NAS / FAA flow programs ────────────────────────────────────────────
   var nasCard = renderNASCard(selected);
