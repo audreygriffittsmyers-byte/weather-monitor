@@ -993,13 +993,15 @@ function makeSidebarItem(fbo) {
     ? `<span title="SPC Day 1: ${SPC_LABEL_MAP[spc1.label]?.label || spc1.label}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${spcDotColor};margin-left:4px;flex-shrink:0"></span>`
     : '';
 
-  var ltng = getLightningStatus(fbo.code);
-  var ltngBolt = ltng ? '<span title="' + ltng.label + '" style="font-size:11px;margin-left:4px">⚡</span>' : '';
+  var ltng=getLightningStatus(fbo.code);
+  var windSt=getWindStatus(fbo.code);
+  var windBolt=windSt?`<span title="${windSt.label}" style="font-size:11px;margin-left:3px">💨</span>`:""
+;  var ltngBolt = ltng ? '<span title="' + ltng.label + '" style="font-size:11px;margin-left:4px">⚡</span>' : '';
 
   div.innerHTML = `
     <span class="fbo-code" style="color:${textColor}">${fbo.code}</span>
     <span class="fbo-loc">${fbo.city}, ${fbo.state}</span>
-    <div class="fbo-badge-wrap" style="display:flex;align-items:center">${badgeHTML}${spcDot}${ltngBolt}</div>
+    <div class="fbo-badge-wrap" style="display:flex;align-items:center">${badgeHTML}${spcDot}${ltngBolt}${windBolt}</div>
   `;
   div.addEventListener('click', () => selectFBO(fbo.code));
   return div;
@@ -1434,6 +1436,11 @@ function renderDetail() {
   }
 
   // ── 1. Advisory cards (only show when triggered) ──────────────────────────
+  var _ws=getWindStatus(selected);
+  if(_ws)content+='<div style="background:'+_ws.bg+';border:1.5px solid '+_ws.color+';border-radius:6px;padding:12px 16px;margin-bottom:14px">'
+    +'<div style="display:flex;align-items:center;gap:10px"><span style="font-size:22px">'+_ws.icon+'</span>'
+    +'<div><div style="font-size:12px;font-weight:700;color:'+_ws.color+'">'+_ws.label+'</div>'
+    +'<div style="font-size:11px;color:#334155;margin-top:3px">'+_ws.msg+'</div></div></div></div>';
   content += renderLightningCard(selected);
   content += renderGSPCard(selected);
   if (obs) content += renderDeiceCard(obs);
@@ -3899,7 +3906,8 @@ function renderOpsGrid() {
   }
 }
 
-function _gridScore(code) {
+function _gridScore(code){
+  var _w=getWindStatus(code),_wsc=_w?(_w.level==='protocol'?15:8):0;
   var r = results[code];
   var score = 0;
   if (r && r.alerts) {
@@ -3919,7 +3927,7 @@ function _gridScore(code) {
     var SPCscore = { ENH:40, MDT:50, HIGH:60, SLGT:20, MRGL:10 };
     score += SPCscore[spc.cat] || 0;
   }
-  return score;
+  return score+_wsc;
 }
 
 function _renderGridRow(fbo) {
@@ -4556,6 +4564,21 @@ function renderStressCard(obs) {
 }
 
 // ── Lightning / Thunderstorm Advisory ──────────────────────────────────────────────────
+
+var WIND_ADVISORY_SPD=30,WIND_ADVISORY_GST=35,WIND_PROTOCOL_SPD=35,WIND_PROTOCOL_GST=40;
+function getWindStatus(code){
+  var obs=obsData[code];if(!obs)return null;
+  var spd=obs.windKts||0,gust=obs.windGustKts||0;
+  var d=spd+"kt"+(gust?" G"+gust+"kt":"");
+  if(spd>=WIND_PROTOCOL_SPD||gust>=WIND_PROTOCOL_GST)
+    return{level:"protocol",color:"#dc2626",bg:"#fff0f0",icon:"💨",label:"HIGH WIND — PROTOCOL",
+      msg:"Sustained "+d+". Cease tall equipment ops. Secure aircraft and GSE immediately.",spd:spd,gust:gust};
+  if(spd>=WIND_ADVISORY_SPD||gust>=WIND_ADVISORY_GST)
+    return{level:"advisory",color:"#ea580c",bg:"#fff7ed",icon:"💨",label:"HIGH WIND — ADVISORY",
+      msg:"Sustained "+d+". Alert ramp crew. Prepare to secure equipment.",spd:spd,gust:gust};
+  return null;
+}
+
 function getLightningStatus(code) {
   var obs = obsData[code];
   var taf = tafData[code];
@@ -5344,43 +5367,49 @@ function playAlertTone(color) {
   } catch(e) {}
 }
 
-function checkForNewAlerts() {
-  const BUCKETS = new Set(['EXTREME','SEVERE']);
-  // ── Lightning Protocol (METAR-based) -- fires banner regardless of NWS ──
-  COVERED.forEach(function(fbo) {
-    var ltng = getLightningStatus(fbo.code);
-    if (!ltng || ltng.level !== 'active') return;
-    var key = 'ltng|active|' + fbo.code;
-    if (notifiedAlertIds.has(key)) return;
-    notifiedAlertIds.add(key);
-    showAlertBanner(
-      '⚡ LIGHTNING PROTOCOL — ' + fbo.code + ' (' + fbo.city + ')',
-      'Thunderstorm at station. Cease all outdoor ramp operations.',
-      '#dc2626', true
-    );
-  });
-
-  const byEvent = {};
-  COVERED.forEach(fbo => {
-    (results[fbo.code]?.alerts || []).forEach(a => {
-      if (!BUCKETS.has(a.bucket)) return;
-      const key = (a.id || '') + '|' + (a.expires?.toISOString() || '') + '|' + fbo.code;
-      if (notifiedAlertIds.has(key)) return;
-      notifiedAlertIds.add(key);
-      if (!byEvent[a.event]) byEvent[a.event] = [];
-      byEvent[a.event].push(fbo.code);
+function checkForNewAlerts(){
+  var B=new Set(["EXTREME","SEVERE"]),loc={};
+  function eL(c,city){if(!loc[c])loc[c]={code:c,city:city,nws:[],lightning:null,wind:null};}
+  COVERED.forEach(function(f){
+    (results[f.code]?.alerts||[]).forEach(function(a){
+      if(!B.has(a.bucket))return;
+      var k="nws|"+(a.id||"")+"|"+f.code;
+      if(notifiedAlertIds.has(k))return;
+      notifiedAlertIds.add(k);eL(f.code,f.city);loc[f.code].nws.push(a.event);
     });
   });
-  const entries = Object.entries(byEvent);
-  if (!entries.length) return;
-  const [topEvent, codes] = entries[0];
-  const isExtreme = /Tornado Warning/.test(topEvent);
-  const color = isExtreme ? '#dc2626' : '#ea580c';
-  showAlertBanner(
-    '⚠ ' + topEvent + ' — ' + codes.join(', '),
-    entries.length > 1 ? (entries.length - 1) + ' additional alert type(s) active' : 'Tap to view details',
-    color
-  );
+  COVERED.forEach(function(f){
+    var lt=getLightningStatus(f.code);
+    if(!lt||lt.level!=="active")return;
+    var k="ltng|active|"+f.code;
+    if(notifiedAlertIds.has(k))return;
+    notifiedAlertIds.add(k);eL(f.code,f.city);loc[f.code].lightning=lt;
+  });
+  COVERED.forEach(function(f){
+    var w=getWindStatus(f.code);
+    if(!w)return;
+    var k="wind|"+w.level+"|"+f.code;
+    if(notifiedAlertIds.has(k))return;
+    notifiedAlertIds.add(k);eL(f.code,f.city);loc[f.code].wind=w;
+  });
+  var locs=Object.values(loc);
+  if(!locs.length)return;
+  function sc(x){return(x.lightning?8:0)+(x.wind&&x.wind.level==="protocol"?4:0)+(x.nws.some(function(e){return/Tornado/.test(e);})?6:0)+(x.nws.length?2:0)+(x.wind&&x.wind.level==="advisory"?1:0);}
+  locs.sort(function(a,b){return sc(b)-sc(a);});
+  var top=locs[0],pts=[];
+  if(top.lightning)pts.push("⚡ LIGHTNING PROTOCOL");
+  if(top.wind)pts.push("💨 "+top.wind.label);
+  top.nws.forEach(function(e){pts.push("⚠ "+e);});
+  var title=top.code+" ("+top.city+") — "+pts.join(" · ");
+  var bp=[];
+  if(locs.length>1){
+    var oth=locs.slice(1,5).map(function(l){return l.code+(l.lightning?"⚡":"")+(l.wind?"💨":"")+(l.nws.length?"⚠":"");});
+    if(locs.length>5)oth.push("+"+(locs.length-5)+" more");
+    bp.push("Also: "+oth.join(" · "));
+  }
+  bp.push(locs.length+" location"+(locs.length>1?"s":"")+" affected — tap to view");
+  var req=!!(top.lightning||(top.wind&&top.wind.level==="protocol")||top.nws.some(function(e){return/Tornado/.test(e);}));
+  showAlertBanner(title,bp.join(" | "),req?"#dc2626":"#ea580c",req);
 }
 
 
