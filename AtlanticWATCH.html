@@ -3794,7 +3794,7 @@ function renderOpsGrid() {
   // Sort + My Stations controls
   regionHtml += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:10px">';
   regionHtml += '<span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;margin-right:2px">Sort:</span>';
-  [['severity','Severity'],['alpha','A–Z'],['temp','Temp ↓']].forEach(function(pair) {
+  [['severity','Severity'],['alpha','A–Z'],['temp','Temp ↓'],['wind','Wind ↓']].forEach(function(pair) {
     var active = gridSort === pair[0];
     regionHtml += '<button onclick="gridSort=\''+pair[0]+'\';renderOpsGrid()" '
       + 'style="background:'+(active?'#0E2841':'#fff')+';color:'+(active?'#fff':'#556070')+';'
@@ -3823,7 +3823,13 @@ function renderOpsGrid() {
     if (gridSort === "temp") {
       var ta = obsData[a.code]?.tempF ?? -999;
       var tb = obsData[b.code]?.tempF ?? -999;
-      return tb - ta; // high to low
+      return tb - ta;
+    }
+    if (gridSort === "wind") {
+      // Sort by effective wind: use gust if available, else sustained
+      var wa = obsData[a.code] ? Math.max(obsData[a.code].windKts||0, obsData[a.code].windGustKts||0) : -1;
+      var wb = obsData[b.code] ? Math.max(obsData[b.code].windKts||0, obsData[b.code].windGustKts||0) : -1;
+      return wb - wa;
     }
     // Default: severity
     var aScore = _gridScore(a.code);
@@ -3947,7 +3953,10 @@ function _renderGridRow(fbo) {
     if (obs.windKts != null) {
       var wDir = windDirLabel(obs.windDir);
       var wSpd = obs.windKts + (obs.windGustKts ? 'G' + obs.windGustKts : '') + 'kt';
-      nowPill += '<br><span style="font-size:8px;color:#556070">' + wDir + ' ' + wSpd + '</span>';
+      var wEff = Math.max(obs.windKts||0, obs.windGustKts||0);
+      var wColor = wEff >= WIND_PROTOCOL_GST ? '#dc2626' : wEff >= WIND_ADVISORY_GST ? '#ea580c' : '#556070';
+      var wWeight = wEff >= WIND_ADVISORY_GST ? '700' : '400';
+      nowPill += '<br><span style="font-size:8px;color:' + wColor + ';font-weight:' + wWeight + '">' + wDir + ' ' + wSpd + '</span>';
     }
   }
   if (nasProg.length) {
