@@ -5368,48 +5368,63 @@ function playAlertTone(color) {
 }
 
 function checkForNewAlerts(){
-  var B=new Set(["EXTREME","SEVERE"]),loc={};
-  function eL(c,city){if(!loc[c])loc[c]={code:c,city:city,nws:[],lightning:null,wind:null};}
-  COVERED.forEach(function(f){
-    (results[f.code]?.alerts||[]).forEach(function(a){
+  var B=new Set(["EXTREME","SEVERE"]);
+
+  // Build per-location alert picture
+  COVERED.forEach(function(fbo){
+    var code=fbo.code, city=fbo.city;
+    var nws=[],lightning=null,wind=null;
+
+    // NWS severe/extreme
+    (results[code]?.alerts||[]).forEach(function(a){
       if(!B.has(a.bucket))return;
-      var k="nws|"+(a.id||"")+"|"+f.code;
-      if(notifiedAlertIds.has(k))return;
-      notifiedAlertIds.add(k);eL(f.code,f.city);loc[f.code].nws.push(a.event);
+      nws.push(a);
     });
+
+    // Lightning protocol
+    var lt=getLightningStatus(code);
+    if(lt&&lt.level==="active") lightning=lt;
+
+    // Wind protocol/advisory
+    var w=getWindStatus(code);
+    if(w) wind=w;
+
+    if(!nws.length&&!lightning&&!wind) return;
+
+    // Build a unique key for this location's current alert set
+    var keyParts=[];
+    if(lightning) keyParts.push("ltng:active");
+    if(wind) keyParts.push("wind:"+wind.level);
+    nws.forEach(function(a){keyParts.push("nws:"+(a.id||a.event));});
+    var locKey=code+"|"+keyParts.sort().join("|");
+    if(notifiedAlertIds.has(locKey)) return;
+    notifiedAlertIds.add(locKey);
+
+    // Build title: location + all active alert types
+    var parts=[];
+    if(lightning) parts.push("⚡ LIGHTNING PROTOCOL");
+    if(wind) parts.push("💨 "+wind.label);
+    nws.forEach(function(a){parts.push("⚠ "+a.event);});
+
+    var title=code+" ("+city+") — "+parts.join(" · ");
+
+    // Body: conditions snapshot
+    var obs=obsData[code];
+    var bodyParts=[];
+    if(obs){
+      if(obs.tempF!=null) bodyParts.push(obs.tempF+"°F");
+      if(obs.windKts!=null) bodyParts.push(windDirLabel(obs.windDir)+" "+obs.windKts+(obs.windGustKts?" G"+obs.windGustKts:"")+"kt");
+    }
+    if(nws.length&&nws[0].expires){
+      bodyParts.push("Expires "+fmtTime(nws[0].expires));
+    }
+    bodyParts.push("Tap to view");
+
+    var requireAck=!!(lightning||(wind&&wind.level==="protocol")||nws.some(function(a){return/Tornado/.test(a.event);}));
+    var color=requireAck?"#dc2626":"#ea580c";
+
+    showAlertBanner(title,bodyParts.join(" · "),color,requireAck);
   });
-  COVERED.forEach(function(f){
-    var lt=getLightningStatus(f.code);
-    if(!lt||lt.level!=="active")return;
-    var k="ltng|active|"+f.code;
-    if(notifiedAlertIds.has(k))return;
-    notifiedAlertIds.add(k);eL(f.code,f.city);loc[f.code].lightning=lt;
-  });
-  COVERED.forEach(function(f){
-    var w=getWindStatus(f.code);
-    if(!w)return;
-    var k="wind|"+w.level+"|"+f.code;
-    if(notifiedAlertIds.has(k))return;
-    notifiedAlertIds.add(k);eL(f.code,f.city);loc[f.code].wind=w;
-  });
-  var locs=Object.values(loc);
-  if(!locs.length)return;
-  function sc(x){return(x.lightning?8:0)+(x.wind&&x.wind.level==="protocol"?4:0)+(x.nws.some(function(e){return/Tornado/.test(e);})?6:0)+(x.nws.length?2:0)+(x.wind&&x.wind.level==="advisory"?1:0);}
-  locs.sort(function(a,b){return sc(b)-sc(a);});
-  var top=locs[0],pts=[];
-  if(top.lightning)pts.push("⚡ LIGHTNING PROTOCOL");
-  if(top.wind)pts.push("💨 "+top.wind.label);
-  top.nws.forEach(function(e){pts.push("⚠ "+e);});
-  var title=top.code+" ("+top.city+") — "+pts.join(" · ");
-  var bp=[];
-  if(locs.length>1){
-    var oth=locs.slice(1,5).map(function(l){return l.code+(l.lightning?"⚡":"")+(l.wind?"💨":"")+(l.nws.length?"⚠":"");});
-    if(locs.length>5)oth.push("+"+(locs.length-5)+" more");
-    bp.push("Also: "+oth.join(" · "));
-  }
-  bp.push(locs.length+" location"+(locs.length>1?"s":"")+" affected — tap to view");
-  var req=!!(top.lightning||(top.wind&&top.wind.level==="protocol")||top.nws.some(function(e){return/Tornado/.test(e);}));
-  showAlertBanner(title,bp.join(" | "),req?"#dc2626":"#ea580c",req);
 }
 
 
