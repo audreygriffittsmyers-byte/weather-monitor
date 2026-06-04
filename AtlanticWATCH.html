@@ -4356,7 +4356,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
 
   // ── 2. Risk summary row (one cell per zone) ───────────────────────────────
   html += '<table style="border:none;margin-bottom:16px;border-spacing:2px;border-collapse:separate"><tr>';
-  if (sections.spc) activeZones.forEach(function(z) {
+  if (sections.spc) activeZones.filter(function(z){return z!=='TSTM';}).forEach(function(z) {
     var zone = SPC_ZONES[z];
     var locs = zoneMap[z];
     html += '<td style="background:'+zone.bg+';color:#fff;padding:8px 12px;border:none;vertical-align:top;min-width:140px">'
@@ -4365,6 +4365,12 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     +'<div style="font-size:10px">'+locs.join(' | ')+'</div>'
     +'</td>';
   });
+  if (sections.spc && zoneMap['TSTM'] && zoneMap['TSTM'].length) {
+    html += '<td style="background:#f0f4f7;color:#556070;padding:6px 10px;border:none;vertical-align:top;border-left:2px solid #c8d0d8">'
+    +'<div style="font-size:10px;font-weight:700">TSTM \u2014 Awareness</div>'
+    +'<div style="font-size:9px;margin-top:2px">'+zoneMap['TSTM'].join(' | ')+'</div>'
+    +'</td>';
+  }
   // Add alert-only locations not in SPC zones
   var alertOnlyCodes = alertCodes.filter(function(c) {
     return !activeZones.some(function(z) { return zoneMap[z] && zoneMap[z].indexOf(c) >= 0; });
@@ -4393,7 +4399,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     briefText = '<p style="margin:0 0 10px 0">'+
       'Severe weather is expected to affect Atlantic Aviation locations today. '+
       (activeZones.length ? 'The highest threat area is under a '+SPC_ZONES[activeZones[0]].label+' risk designation from the Storm Prediction Center, affecting '+highLocs.join(', ')+'. ' : '')+
-      (activeZones.length > 1 ? 'Additional locations are under '+(activeZones.slice(1).map(function(z){return SPC_ZONES[z].label+' risk';}).join(' and '))+' designations. ' : '')+
+      (activeZones.filter(function(z){return z!=='TSTM';}).length > 1 ? 'Additional locations are under '+(activeZones.filter(function(z){return z!=='TSTM'&&z!==activeZones[0];}).map(function(z){return SPC_ZONES[z].label+' risk';}).join(' and '))+' designations. ' : '')+
       'All impacted locations should ensure applicable procedures are in place before conditions arrive.'+
       '</p>';
     briefText += '<p style="margin:0 0 10px 0">'+
@@ -4417,6 +4423,14 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   if (sections.spc) activeZones.forEach(function(z) {
     var zone = SPC_ZONES[z];
     var locs = zoneMap[z];
+    if (z === 'TSTM') {
+      html += '<div style="margin-bottom:12px">'
+        +'<div style="background:#8a9aaa;color:#fff;font-size:10px;font-weight:700;padding:4px 8px">'
+        +'GENERAL THUNDERSTORM AREA \u2014 Awareness Only | Monitor for development</div>'
+        +'<div style="font-size:10px;color:#556070;padding:4px 8px;border:1px solid #c8d0d8;border-top:none">'
+        +locs.join(' \u00b7 ')+'</div></div>';
+      return;
+    }
     html += '<table><tr><td colspan="3" style="background:'+zone.bg+';color:#fff;font-weight:700;font-size:11px;padding:6px 8px;border:1px solid '+zone.bg+'">'
     +zone.label+' RISK \u2014 '+zone.action+' | '+zone.hazards+'</td></tr>';
     html += '<tr style="background:#f0f4f7"><th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th>'
