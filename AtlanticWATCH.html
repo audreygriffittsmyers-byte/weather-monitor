@@ -5315,7 +5315,7 @@ setTimeout(() => {
 let bannerTimeout = null;
 const notifiedAlertIds = new Set();
 
-function showAlertBanner(title, body, color, requireAck) {
+function showAlertBanner(title, body, color, requireAck, code) {
   color = color || '#dc2626';
   const banner = document.getElementById('alert-banner');
   if (!banner) return;
@@ -5326,7 +5326,11 @@ function showAlertBanner(title, body, color, requireAck) {
   textDiv.style.cssText = 'flex:1;cursor:pointer';
   textDiv.innerHTML = '<div style="font-weight:700;font-size:13px">' + title + '</div>'
     + '<div style="font-size:11px;opacity:.9;margin-top:2px">' + body + '</div>';
-  textDiv.addEventListener('click', () => { switchTab('monitor'); dismissBanner(); });
+  textDiv.addEventListener('click', function() {
+    switchTab('monitor');
+    if (code) selectFBO(code);
+    if (!requireAck) dismissBanner();
+  });
   const btn = document.createElement('button');
   if (requireAck) {
     btn.textContent = '✓ Acknowledge';
@@ -5434,7 +5438,7 @@ function checkForNewAlerts(){
     var requireAck=!!(lightning||(wind&&wind.level==="protocol")||nws.some(function(a){return/Tornado/.test(a.event);}));
     var color=requireAck?"#dc2626":"#ea580c";
 
-    showAlertBanner(title,bodyParts.join(" · "),color,requireAck);
+    showAlertBanner(title,bodyParts.join(" · "),color,requireAck,code);
   });
 }
 
