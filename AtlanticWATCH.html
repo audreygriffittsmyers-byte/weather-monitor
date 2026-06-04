@@ -4250,17 +4250,17 @@ function _doPrint(codes, notes) {
   // Open print window
   var win = window.open('','_blank','width=900,height=700');
   if (!win) { alert('Please allow popups for this site to generate briefings.'); return; }
-  win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'\
-    +'<meta name="viewport" content="width=device-width,initial-scale=1">'\
-    +'<title>WATCH Briefing -- '+dateStr+'</title>'\
-    +'<style>'\
-    +'body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:20px;max-width:780px;margin:0 auto;line-height:1.5}'\
-    +'table{border-collapse:collapse;width:100%;margin-bottom:16px}td,th{padding:5px 8px;font-size:11px}'\
-    +'@media print{.noprint{display:none!important}body{padding:10px}}</style></head><body>'\
-    +'<div class="noprint" style="background:#0E2841;color:#fff;padding:8px 16px;margin:-20px -20px 16px;display:flex;justify-content:space-between;align-items:center">'\
-    +'<span style="font-size:12px;font-weight:700">WATCH Briefing</span>'\
-    +'<button onclick="window.print()" style="background:#fff;color:#0E2841;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">Print / Save PDF</button>'\
-    +'</div>'+html+'</body></html>');
+  var head = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<title>WATCH Briefing — ' + dateStr + '</title>'
+    + '<style>body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:20px;max-width:780px;margin:0 auto;line-height:1.5}'
+    + 'table{border-collapse:collapse;width:100%;margin-bottom:16px}td,th{padding:5px 8px;font-size:11px}'
+    + '@media print{.noprint{display:none!important}body{padding:10px}}</style></head><body>';
+  var toolbar = '<div class="noprint" style="background:#0E2841;color:#fff;padding:8px 16px;margin:-20px -20px 16px;display:flex;justify-content:space-between;align-items:center">'
+    + '<span style="font-size:12px;font-weight:700">WATCH Briefing</span>'
+    + '<button onclick="window.print()" style="background:#fff;color:#0E2841;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">Print / Save PDF</button>'
+    + '</div>';
+  win.document.write(head + toolbar + html + '</body></html>');
   win.document.close();
 }
 
