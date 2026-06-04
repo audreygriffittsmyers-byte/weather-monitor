@@ -4328,17 +4328,14 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   sections = sections || {spc:true,nhc:true,winter:true,flood:true,wind:true,temp:true,alerts:true};
   var html = '';
   var topZone = SPC_ZONES[activeZones[0]] || {};
-  // Build hazard line from highest active SPC zone description
+
+  if (sections.spc) {
   var hazardLine;
   if (activeZones.length) {
-    // Use the top zone's hazard description -- matches the colored header rows
     hazardLine = SPC_ZONES[activeZones[0]].hazards;
-    // If multiple zones, append unique hazards from lower zones not already covered
     if (activeZones.length > 1 && activeZones[0] !== 'TSTM') {
       var extraZones = activeZones.slice(1).filter(function(z){ return z !== 'TSTM'; });
-      if (extraZones.length) {
-        hazardLine += ' | Also: ' + extraZones.map(function(z){ return SPC_ZONES[z].label+' Risk in additional areas'; }).join(', ');
-      }
+      if (extraZones.length) hazardLine += ' | Also: ' + extraZones.map(function(z){ return SPC_ZONES[z].label+' Risk in additional areas'; }).join(', ');
     }
   } else {
     hazardLine = Array.from(hazardSet).join(' | ') || 'Severe Weather';
@@ -4446,6 +4443,8 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     html += '</table>';
   });
 
+  } // end sections.spc
+
   // Extra sections
   if (sections.nhc) html += _buildNHCSection(codes);
   if (sections.winter) html += _buildNWSHazardSection(codes,'winter',/winter|snow|ice|blizzard|freeze|frost/i,'❄ WINTER STORM','#1e40af','#EFF6FF','Winter weather hazards expected. Ice accumulation, heavy snow, and hazardous travel conditions possible.',_getWinterActions());
@@ -4478,6 +4477,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   // ── 5. Immediate Actions ──────────────────────────────────────────────────
   var topRisk = activeZones[0] || 'MRGL';
   var actions = _getImmediateActions(topRisk, hazardSet);
+  if (sections.spc) {
   html += '<div style="margin-bottom:16px">'
     +'<div style="background:#0E2841;color:#fff;font-weight:700;font-size:11px;padding:6px 10px;letter-spacing:.04em">IMMEDIATE ACTIONS</div>'
     +'<div style="border:1px solid #ddd;border-top:none;padding:10px 14px">'
@@ -4486,6 +4486,8 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   html += '</ul></div></div>';
 
   // ── 6. Supervisor note ────────────────────────────────────────────────────
+  } // end sections.spc immediate actions
+
   html += '<div style="border:1px solid #ddd;padding:10px 14px;margin-bottom:12px;font-size:11px">'
     +'<strong>Supervisors:</strong> Brief your team on today\'s storm threat and expected timing before conditions arrive. Do not wait for a formal warning to begin preparations \u2014 once a Tornado Warning or Severe Thunderstorm Warning is issued, time is limited. Complete all outdoor preparations now and ensure every employee knows the shelter location and the protocol for suspending ramp operations. Employee safety is the priority above all else.</div>';
 
