@@ -4188,169 +4188,299 @@ function buildForwardLook(code) {
 
 function _doPrint(codes, notes) {
   var now = new Date();
+  var dateStr = now.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
   var utc = now.toISOString().replace('T',' ').substring(0,16)+'Z';
-  var label = codes.length===1 ? codes[0]+' -- '+(COVERED.find(function(f){return f.code===codes[0];})||{city:''}).city : codes.length+' locations';
-  var FC_COLOR = {VFR:'#16a34a',MVFR:'#2563eb',IFR:'#dc2626',LIFR:'#7c3aed'};
 
-  var html = '<div style="border-bottom:2px solid #0E2841;padding-bottom:8px;margin-bottom:16px">'
-    +'<div style="font-size:18px;font-weight:700;color:#0E2841">ATLANTIC AVIATION -- WATCH</div>'
-    +'<div style="font-size:12px;color:#556070">Weather Briefing -- '+label+'</div>'
-    +'<div style="font-size:10px;color:#8a9aaa">Generated '+utc+' UTC | Internal use only | Does not supersede official NWS products</div>'
-    +(notes?'<div style="margin-top:8px;padding:8px;background:#f8f9fa;border-left:3px solid #0E2841;font-size:11px">'+notes+'</div>':'')
-    +'</div>';
+  // ── Determine active SPC zones across selected locations ─────────────────
+  var SPC_ZONES = {
+    'ENH': { label:'ENHANCED', level:'3 of 5', color:'#c05928', bg:'#c05928', action:'Prepare Now',
+      hazards:'Severe thunderstorms, large hail, damaging winds, tornadoes possible' },
+    'MDT': { label:'MODERATE', level:'4 of 5', color:'#dc2626', bg:'#dc2626', action:'High Alert',
+      hazards:'Significant severe weather likely. Large hail, damaging winds, strong tornadoes possible' },
+    'HIGH':{ label:'HIGH',     level:'5 of 5', color:'#7c3aed', bg:'#7c3aed', action:'Immediate Action',
+      hazards:'Major severe weather outbreak expected. All hazards possible.' },
+    'SLGT':{ label:'SLIGHT',   level:'2 of 5', color:'#c4920a', bg:'#c4920a', action:'Be Ready',
+      hazards:'Large hail, damaging winds, isolated tornado possible' },
+    'MRGL':{ label:'MARGINAL', level:'1 of 5', color:'#16a34a', bg:'#16a34a', action:'Monitor',
+      hazards:'Isolated strong storms, gusty winds, small hail possible' },
+    'TSTM':{ label:'TSTM',     level:'0 of 5', color:'#8a9aaa', bg:'#8a9aaa', action:'Awareness',
+      hazards:'General thunderstorm area, no organized severe threat' },
+  };
+  var ZONE_ORDER = ['HIGH','MDT','ENH','SLGT','MRGL','TSTM'];
+
+  // Build zone -> [codes] map
+  var zoneMap = {};
+  codes.forEach(function(code) {
+    var spc = spcData[1] && spcData[1][code];
+    if (!spc || !spc.label || spc.label === 'No Risk') return;
+    var z = spc.label;
+    if (!zoneMap[z]) zoneMap[z] = [];
+    zoneMap[z].push(code);
+  });
+
+  // Collect active NWS alerts
+  var alertCodes = codes.filter(function(c) {
+    return results[c] && results[c].alerts && results[c].alerts.length > 0;
+  });
+
+  // Collect hazard types from alerts + SPC
+  var hazardSet = new Set();
+  codes.forEach(function(c) {
+    (results[c]&&results[c].alerts||[]).forEach(function(a) {
+      if (/thunder/i.test(a.event)) hazardSet.add('Severe Thunderstorms');
+      if (/hail/i.test(a.event)) hazardSet.add('Large Hail');
+      if (/wind/i.test(a.event) || /gust/i.test(a.event)) hazardSet.add('Damaging Winds');
+      if (/tornado/i.test(a.event)) hazardSet.add('Tornadoes');
+      if (/flood/i.test(a.event)) hazardSet.add('Flooding');
+      if (/winter/i.test(a.event) || /snow/i.test(a.event) || /ice/i.test(a.event)) hazardSet.add('Winter Weather');
+    });
+    var ws = getWindStatus(c);
+    if (ws && ws.level === 'protocol') hazardSet.add('High Winds');
+    var lt = getLightningStatus(c);
+    if (lt && lt.level === 'active') hazardSet.add('Active Lightning');
+  });
+  var activeZones = ZONE_ORDER.filter(function(z) { return zoneMap[z] && zoneMap[z].length; });
+  if (activeZones.length === 0 && !alertCodes.length) {
+    // No active hazards -- generate a simple all-clear brief
+    var html = _buildAllClearBrief(codes, notes, dateStr, utc);
+  } else {
+    var html = _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES);
+  }
+
+  // Open print window
+  var win = window.open('','_blank','width=900,height=700');
+  if (!win) { alert('Please allow popups for this site to generate briefings.'); return; }
+  win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'\
+    +'<meta name="viewport" content="width=device-width,initial-scale=1">'\
+    +'<title>WATCH Briefing -- '+dateStr+'</title>'\
+    +'<style>'\
+    +'body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:20px;max-width:780px;margin:0 auto;line-height:1.5}'\
+    +'table{border-collapse:collapse;width:100%;margin-bottom:16px}td,th{padding:5px 8px;font-size:11px}'\
+    +'@media print{.noprint{display:none!important}body{padding:10px}}</style></head><body>'\
+    +'<div class="noprint" style="background:#0E2841;color:#fff;padding:8px 16px;margin:-20px -20px 16px;display:flex;justify-content:space-between;align-items:center">'\
+    +'<span style="font-size:12px;font-weight:700">WATCH Briefing</span>'\
+    +'<button onclick="window.print()" style="background:#fff;color:#0E2841;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">Print / Save PDF</button>'\
+    +'</div>'+html+'</body></html>');
+  win.document.close();
+}
+
+function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES) {
+  var html = '';
+  var topZone = SPC_ZONES[activeZones[0]] || {};
+  var hazardLine = Array.from(hazardSet).join(' | ') || 'Severe Weather';
+
+  // ── 1. Header block ───────────────────────────────────────────────────────
+  html += '<table style="border:none;margin-bottom:0"><tr><td style="background:#0E2841;padding:12px 16px;border:none">'\
+    +'<div style="color:#ffffff;font-size:13px;font-weight:700;letter-spacing:.04em">ATLANTIC AVIATION</div>'\
+    +'<div style="color:#ffffff;font-size:15px;font-weight:700">SEVERE WEATHER ALERT \u2014 '+dateStr+'</div>'\
+    +'<div style="color:#c8d0d8;font-size:11px;margin-top:2px">'+hazardLine+'</div>'\
+    +'</td></tr></table>';
+
+  // ── 2. Risk summary row (one cell per zone) ───────────────────────────────
+  html += '<table style="border:none;margin-bottom:16px;border-spacing:2px;border-collapse:separate"><tr>';
+  activeZones.forEach(function(z) {
+    var zone = SPC_ZONES[z];
+    var locs = zoneMap[z];
+    html += '<td style="background:'+zone.bg+';color:#fff;padding:8px 12px;border:none;vertical-align:top;min-width:140px">'\
+      +'<div style="font-size:12px;font-weight:700">'+zone.label+' \u2014 Level '+zone.level+'</div>'\
+      +'<div style="font-size:10px;font-style:italic;margin-bottom:4px">'+zone.action+'</div>'\
+      +'<div style="font-size:10px">'+locs.join(' | ')+'</div>'\
+      +'</td>';
+  });
+  // Add alert-only locations not in SPC zones
+  var alertOnlyCodes = alertCodes.filter(function(c) {
+    return !activeZones.some(function(z) { return zoneMap[z] && zoneMap[z].indexOf(c) >= 0; });
+  });
+  if (alertOnlyCodes.length) {
+    html += '<td style="background:#dc2626;color:#fff;padding:8px 12px;border:none;vertical-align:top;min-width:140px">'\
+      +'<div style="font-size:12px;font-weight:700">NWS ALERTS</div>'\
+      +'<div style="font-size:10px;font-style:italic;margin-bottom:4px">Active Warnings</div>'\
+      +'<div style="font-size:10px">'+alertOnlyCodes.join(' | ')+'</div>'\
+      +'</td>';
+  }
+  html += '</tr></table>';
+
+  // ── 3. Salutation + body text ─────────────────────────────────────────────
+  html += '<p style="margin:0 0 10px 0">Team,</p>';
+
+  // AI briefing text if available, else generate from data
+  var briefText = '';
+  var bEl = document.getElementById('briefing-ai-text');
+  if (bEl && bEl.textContent && bEl.textContent.length > 100) {
+    briefText = bEl.innerHTML;
+  } else {
+    // Build from data
+    var locCount = codes.length;
+    var topZoneStr = activeZones.length ? SPC_ZONES[activeZones[0]].label.toLowerCase() + ' risk' : 'elevated risk';
+    var highZone = activeZones[0];
+    var highLocs = zoneMap[highZone] || [];
+    briefText = '<p style="margin:0 0 10px 0">'+
+      'Severe weather is expected to affect '+locCount+' Atlantic Aviation location'+(locCount>1?'s':'')+' today. '+
+      (activeZones.length ? 'The highest threat area is under a '+SPC_ZONES[activeZones[0]].label+' risk designation from the Storm Prediction Center, affecting '+highLocs.join(', ')+'. ' : '')+
+      (activeZones.length > 1 ? 'Additional locations are under '+(activeZones.slice(1).map(function(z){return SPC_ZONES[z].label+' risk';}).join(' and '))+' designations. ' : '')+
+      'All impacted locations should complete pre-storm preparations now and ensure crews are briefed on protocol activation criteria.'+
+      '</p>';
+    briefText += '<p style="margin:0 0 10px 0">'+
+      'Conditions could develop quickly. Do not wait for a formal warning to begin preparations \u2014 complete outdoor preparations now so your team is ready before storms arrive.'+
+      '</p>';
+    if (alertCodes.length) {
+      briefText += '<p style="margin:0 0 10px 0">'+
+        'Active NWS warnings are in effect for '+alertCodes.join(', ')+'. Local management at these locations should monitor conditions closely and be prepared to suspend ramp operations immediately upon deterioration.'+
+        '</p>';
+    }
+  }
+  html += briefText;
+  html += '<p style="margin:0 0 16px 0;font-style:italic;font-weight:700">This is the only alert that will be issued today. Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.</p>';
+
+  if (notes) {
+    html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px;font-size:11px">'\
+      +'<strong>Shift Notes:</strong> '+notes+'</div>';
+  }
+
+  // ── 4. Per-zone location tables ───────────────────────────────────────────
+  activeZones.forEach(function(z) {
+    var zone = SPC_ZONES[z];
+    var locs = zoneMap[z];
+    html += '<table><tr><td colspan="3" style="background:'+zone.bg+';color:#fff;font-weight:700;font-size:11px;padding:6px 8px;border:1px solid '+zone.bg+'">'\
+      +zone.label+' RISK \u2014 '+zone.action+' | '+zone.hazards+'</td></tr>';
+    html += '<tr style="background:#f0f4f7"><th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th>'\
+      +'<th style="border:1px solid #ddd;text-align:left;width:160px">City / State</th>'\
+      +'<th style="border:1px solid #ddd;text-align:left">Timing</th></tr>';
+    locs.forEach(function(code) {
+      var fbo = COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
+      var obs = obsData[code];
+      var alerts = (results[code]&&results[code].alerts)||[];
+      var alertEvt = alerts.length ? alerts[0].event : '';
+      // Build timing from TAF + alerts
+      var timing = '';
+      var taf = tafData[code];
+      if (alerts.length) {
+        timing = alerts[0].event + (alerts[0].expires ? ' until '+fmtTime(alerts[0].expires) : '');
+      } else if (taf && taf.rawTAF) {
+        var raw = taf.rawTAF.toUpperCase();
+        var tsMatch = raw.match(/FM(\d{2})(\d{2})\d{2}[^]*?(?:TSRA|TS\b)/);
+        if (tsMatch) timing = 'Thunderstorm activity possible from approx '+tsMatch[1]+':'+tsMatch[2]+'Z.';
+        else timing = 'Monitor for afternoon and evening convective development.';
+      } else {
+        timing = 'Monitor for convective development this period.';
+      }
+      var bg = locs.indexOf(code) % 2 === 0 ? '#fff' : '#f9f9f9';
+      html += '<tr style="background:'+bg+'">'\
+        +'<td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'\
+        +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'\
+        +'<td style="border:1px solid #ddd">'+timing+'</td></tr>';
+    });
+    html += '</table>';
+  });
+
+  // Alert-only locations table
+  var alertOnlyCodes2 = alertCodes.filter(function(c) {
+    return !activeZones.some(function(z){ return zoneMap[z]&&zoneMap[z].indexOf(c)>=0; });
+  });
+  if (alertOnlyCodes2.length) {
+    html += '<table><tr><td colspan="3" style="background:#dc2626;color:#fff;font-weight:700;font-size:11px;padding:6px 8px">ACTIVE NWS ALERTS</td></tr>';
+    html += '<tr style="background:#f0f4f7"><th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th>'\
+      +'<th style="border:1px solid #ddd;text-align:left;width:160px">City / State</th>'\
+      +'<th style="border:1px solid #ddd;text-align:left">Alert / Status</th></tr>';
+    alertOnlyCodes2.forEach(function(code) {
+      var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
+      var alerts=(results[code]&&results[code].alerts)||[];
+      var txt=alerts.map(function(a){return a.event+(a.expires?' until '+fmtTime(a.expires):'');}).join('; ');
+      html += '<tr><td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'\
+        +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'\
+        +'<td style="border:1px solid #ddd">'+txt+'</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  // ── 5. Immediate Actions ──────────────────────────────────────────────────
+  var topRisk = activeZones[0] || 'MRGL';
+  var actions = _getImmediateActions(topRisk, hazardSet);
+  html += '<div style="margin-bottom:16px">'\
+    +'<div style="background:#0E2841;color:#fff;font-weight:700;font-size:11px;padding:6px 10px;letter-spacing:.04em">IMMEDIATE ACTIONS</div>'\
+    +'<div style="border:1px solid #ddd;border-top:none;padding:10px 14px">'\
+    +'<ul style="margin:0;padding-left:18px">';
+  actions.forEach(function(a) { html += '<li style="margin-bottom:5px">'+a+'</li>'; });
+  html += '</ul></div></div>';
+
+  // ── 6. Supervisor note ────────────────────────────────────────────────────
+  html += '<div style="border:1px solid #ddd;padding:10px 14px;margin-bottom:12px;font-size:11px">'\
+    +'<strong>Supervisors:</strong> Brief your team on today\'s storm threat and expected timing before conditions arrive. Do not wait for a formal warning to begin preparations \u2014 once a Tornado Warning or Severe Thunderstorm Warning is issued, time is limited. Complete all outdoor preparations now and ensure every employee knows the shelter location and the protocol for suspending ramp operations. Employee safety is the priority above all else.</div>';
+
+  // ── 7. Safety tagline ─────────────────────────────────────────────────────
+  html += '<div style="background:#0E2841;color:#fff;font-weight:700;font-size:11px;padding:8px 14px;margin-bottom:10px;text-align:center">'\
+    +'Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.</div>';
+
+  // ── 8. Disclaimer ─────────────────────────────────────────────────────────
+  html += '<p style="font-size:9px;color:#666;font-style:italic;line-height:1.4">'\
+    +'DISCLAIMER: This alert is intended for internal use only. It is based on information available at the time of issuance and is subject to change. This alert does not supersede official National Weather Service watches, warnings, or advisories. All operational decisions remain the responsibility of local management.</p>';
+
+  // ── 9. Footer ─────────────────────────────────────────────────────────────
+  html += '<p style="font-size:9px;color:#8a9aaa;border-top:1px solid #ddd;padding-top:8px">'\
+    +'Generated '+utc+' by WATCH \u2014 Weather Awareness Tactical Command Hub \u2014 Atlantic Aviation \u2014 Internal Use Only</p>';
+
+  return html;
+}
+
+function _buildAllClearBrief(codes, notes, dateStr, utc) {
+  var html = '';
+  html += '<table style="border:none;margin-bottom:16px"><tr><td style="background:#0E2841;padding:12px 16px;border:none">'\
+    +'<div style="color:#fff;font-size:13px;font-weight:700">ATLANTIC AVIATION</div>'\
+    +'<div style="color:#fff;font-size:15px;font-weight:700">WEATHER BRIEFING \u2014 '+dateStr+'</div>'\
+    +'<div style="color:#c8d0d8;font-size:11px">'+codes.length+' locations \u2014 No Active Severe Hazards</div>'\
+    +'</td></tr></table>';
+  html += '<p>Team,</p>';
+  html += '<p>No severe weather is currently expected across Atlantic Aviation locations. All monitored locations are reporting favorable conditions. Continue to monitor weather.gov for any changes during your shift.</p>';
+  if (notes) html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px"><strong>Shift Notes:</strong> '+notes+'</div>';
 
   // Summary table
   var withObs = codes.filter(function(c){return obsData[c];});
   if (withObs.length) {
-    html += '<div style="margin-bottom:20px"><div style="font-size:10px;font-weight:700;color:#556070;text-transform:uppercase;margin-bottom:6px">Flight Category Summary</div>'
-      +'<table style="width:100%;border-collapse:collapse;font-size:10px"><tr style="background:#f0f4f7">'
-      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">ICAO</th>'
-      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Location</th>'
-      +'<th style="text-align:center;padding:4px 6px;border:1px solid #ddd">Cat</th>'
-      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Conditions</th>'
-      +'<th style="text-align:left;padding:4px 6px;border:1px solid #ddd">Obs Age</th></tr>';
-    withObs.forEach(function(code){
+    html += '<table><tr style="background:#f0f4f7">'\
+      +'<th style="border:1px solid #ddd;text-align:left">FBO</th>'\
+      +'<th style="border:1px solid #ddd;text-align:left">Location</th>'\
+      +'<th style="border:1px solid #ddd;text-align:center">Cat</th>'\
+      +'<th style="border:1px solid #ddd;text-align:left">Conditions</th>'\
+      +'<th style="border:1px solid #ddd;text-align:left">Obs Age</th></tr>';
+    withObs.forEach(function(code) {
       var obs=obsData[code]; var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
-      var fc=obs.flightCat||(function(){
-        var v=parseFloat(obs.visib); var cld=obs.clouds&&obs.clouds.length?obs.clouds[0]:null;
-        var cbase=cld&&cld.base!=null?cld.base:9999;
-        if(v<1||cbase<200) return 'LIFR';
-        if(v<3||cbase<500) return 'IFR';
-        if(v<5||cbase<1000) return 'MVFR';
-        return 'VFR';
-      })()||'--';
-      var fcColor=FC_COLOR[fc]||'#8a9aaa';
-      var cond=[];
-      if(obs.windKts!=null) cond.push(windDirLabel(obs.windDir)+' '+obs.windKts+'kt'+(obs.windGustKts?' G'+obs.windGustKts:''));
-      if(obs.visib!=null) cond.push(obs.visib+'SM');
-      if(obs.condition) cond.push(obs.condition);
-      html+='<tr><td style="padding:4px 6px;border:1px solid #ddd;font-family:monospace;font-weight:700">'+(toICAO(code)||code)+'</td>'
-        +'<td style="padding:4px 6px;border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'
-        +'<td style="padding:4px 6px;border:1px solid #ddd;text-align:center"><span style="background:'+fcColor+';color:#fff;padding:2px 6px;border-radius:3px;font-weight:700;font-size:9px">'+fc+'</span></td>'
-        +'<td style="padding:4px 6px;border:1px solid #ddd">'+cond.join(' &middot; ')+'</td>'
-        +'<td style="padding:4px 6px;border:1px solid #ddd;font-size:9px;color:#8a9aaa">'+(obs.obsTime?fmtAge(obs.obsTime):'--')+'</td></tr>';
+      var fc=obs.flightCat||'--'; var FC_COLOR={VFR:'#16a34a',MVFR:'#2563eb',IFR:'#dc2626',LIFR:'#7c3aed'};
+      var cond=[]; if(obs.tempF!=null)cond.push(obs.tempF+'\u00b0F'); if(obs.windKts!=null)cond.push(windDirLabel(obs.windDir)+' '+obs.windKts+'kt'); if(obs.visib!=null)cond.push(obs.visib+'SM');
+      var bg = withObs.indexOf(code)%2===0?'#fff':'#f9f9f9';
+      html += '<tr style="background:'+bg+'"><td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'\
+        +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'\
+        +'<td style="border:1px solid #ddd;text-align:center;color:'+(FC_COLOR[fc]||'#000')+';font-weight:700">'+fc+'</td>'\
+        +'<td style="border:1px solid #ddd">'+cond.join(' \u00b7 ')+'</td>'\
+        +'<td style="border:1px solid #ddd;color:#8a9aaa;font-style:italic">'+(obs.obsTime?fmtAge(obs.obsTime):'--')+'</td></tr>';
     });
-    html+='</table></div>';
+    html += '</table>';
   }
+  html += '<div style="background:#0E2841;color:#fff;font-weight:700;font-size:11px;padding:8px 14px;margin:16px 0;text-align:center">Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.</div>';
+  html += '<p style="font-size:9px;color:#8a9aaa;border-top:1px solid #ddd;padding-top:8px">Generated '+utc+' by WATCH \u2014 Atlantic Aviation \u2014 Internal Use Only</p>';
+  return html;
+}
 
-  // Per-location blocks
-  codes.forEach(function(code){
-    var obs=obsData[code]; var taf=tafData[code]; var r=results[code];
-    var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
-    var icao=toICAO(code)||code;
-    var fc=obs?(obs.flightCat||'--'):'--';
-    var fcColor=FC_COLOR[fc]||'#8a9aaa';
-
-    html+='<div style="page-break-inside:avoid;margin-bottom:14px;border:1px solid #ccc;border-radius:4px;padding:10px">'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'
-      +'<span style="font-size:15px;font-weight:700;color:#0E2841;font-family:monospace">'+code+'</span>'
-      +'<span style="font-size:12px;color:#556070">'+fbo.city+', '+fbo.state+' &middot; '+icao+'</span>'
-      +'<span style="background:'+fcColor+';color:#fff;padding:2px 6px;border-radius:3px;font-weight:700;font-size:9px;margin-left:auto">'+fc+'</span>'
-      +'</div>';
-
-    if(obs){
-      var decodedMetarHtml = decodeMetarFull(obs);
-      if(decodedMetarHtml) html += decodedMetarHtml;
-    }
-
-    if(taf){
-      var decodedTafHtml = decodeTAFFull(code);
-      if(decodedTafHtml) html += decodedTafHtml;
-    }
-
-    if(r&&r.alerts&&r.alerts.length){
-      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#dc2626;text-transform:uppercase">'+r.alerts.length+' Active Alert'+(r.alerts.length>1?'s':'')+'</span>';
-      r.alerts.forEach(function(a){
-        html+='<div style="padding:3px 6px;background:#fff0f0;border-left:3px solid #dc2626;margin-top:3px;font-size:10px"><b>'+a.event+'</b>'+(a.expires?' -- Expires '+fmtTime(a.expires):'')+'</div>';
-      });
-      html+='</div>';
-    }
-
-    var pNotams=notamData[code]||[];
-    if(pNotams.length){
-      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">NOTAMs ('+pNotams.length+')</span>';
-      pNotams.slice(0,5).forEach(function(n){
-        html+='<div style="padding:3px 6px;background:#f8f9fa;border-left:3px solid #556070;margin-top:3px;font-size:9px;font-family:monospace;word-break:break-word">'+(n.id?'<b>'+n.id+'</b> ':'')+n.text.substring(0,200)+(n.text.length>200?'...':'')+'</div>';
-      });
-      html+='</div>';
-    }
-    var nas=getNASForCode(code);
-    if(nas.length){
-      html+='<div><span style="font-size:9px;font-weight:700;color:#d97706;text-transform:uppercase">FAA Delay</span>';
-      nas.forEach(function(p){
-        html+='<div style="padding:3px 6px;background:#fffbeb;border-left:3px solid #d97706;margin-top:3px;font-size:10px"><b>'+p.type+'</b> -- '+p.reason+(p.avg?' (avg '+p.avg+' min)':'')+'</div>';
-      });
-      html+='</div>';
-    }
-
-    var spc1=spcData&&spcData[1]?spcData[1][code]:null;
-    if(spc1&&spc1.st==='ok'&&spc1.label){
-      var spcColors={MRGL:'#196B24',SLGT:'#FFC000',ENH:'#E97132',MDT:'#EA3232',HIGH:'#EA3232'};
-      var spcLbls={MRGL:'Marginal',SLGT:'Slight',ENH:'Enhanced',MDT:'Moderate',HIGH:'High',TSTM:'General Thunderstorm Risk'};
-      var sc=spcColors[spc1.label]||'#556070';
-      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">SPC Day 1</span> '
-        +'<span style="background:'+sc+';color:#fff;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700">'+(spcLbls[spc1.label]||spc1.label)+'</span>'
-        +(spc1.torn&&spc1.torn!=='0%'?' <span style="font-size:9px;color:#556070">Torn '+spc1.torn+'</span>':'')
-        +(spc1.hail&&spc1.hail!=='0%'?' <span style="font-size:9px;color:#556070">Hail '+spc1.hail+'</span>':'')
-        +(spc1.wind&&spc1.wind!=='0%'?' <span style="font-size:9px;color:#556070">Wind '+spc1.wind+'</span>':'')
-        +'</div>';
-    }
-    var stressObs=obsData[code];
-    if(stressObs){
-      var ss=getRampStressStatus(stressObs);
-      if(ss){
-        html+='<div style="margin-bottom:6px;padding:4px 8px;border-left:3px solid '+ss.color+';background:#f8f9fa">'
-          +'<span style="font-size:9px;font-weight:700;color:'+ss.color+';text-transform:uppercase">'+ss.label+'</span> '
-          +'<span style="font-size:9px;color:#556070">'+ss.msg+'</span></div>';
-      }
-    }
-    var fcast=forecastData[code];
-    if(fcast&&fcast.length){
-      html+='<div style="margin-bottom:6px"><span style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase">7-Day Forecast</span>'
-        +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">';
-      // Pair day/night periods
-      var fcastPairs=[];
-      for(var pi=0;pi<fcast.length;pi+=2){
-        var day=fcast[pi], night=fcast[pi+1];
-        if(day) fcastPairs.push({day:day,night:night});
-      }
-      fcastPairs.slice(0,7).forEach(function(pair){
-        var p=pair.day, n=pair.night;
-        var pname=(p.name||'').replace(/\s*(Night|Overnight)$/i,'').substring(0,3);
-        var hi=p.temperature!=null?p.temperature+'°':'--';
-        var lo=n&&n.temperature!=null?n.temperature+'°':'--';
-        var pshort=(p.shortForecast||'').substring(0,16);
-        var hasHazard=/thunder|severe|tornado|warning|watch/i.test(p.shortForecast||'');
-        var border=hasHazard?'#ea580c':'#e8e8e8';
-        html+='<div style="font-size:9px;text-align:center;padding:3px 5px;border:1px solid '+border+';border-radius:3px;min-width:48px">'
-          +'<div style="font-weight:700;color:#0E2841">'+pname+'</div>'
-          +'<div style="color:#1a2a3a">'+hi+'<span style="color:#8a9aaa">/'+lo+'</span></div>'
-          +'<div style="color:#556070;font-size:8px">'+pshort+'</div></div>';
-      });
-      html+='</div></div>';
-    }
-    if (hourlyData[code] && hourlyData[code].length) {
-      html += buildForwardLook(code);
-    }
-    html+='</div>';
-  });
-
-  html+='<div style="margin-top:16px;padding-top:8px;border-top:1px solid #e8e8e8;font-size:9px;color:#8a9aaa;text-align:center">'
-    +'Atlantic Aviation WATCH | Internal Use Only | Does not supersede official NWS products</div>';
-
-  var win=window.open('','_blank','width=900,height=700');
-  if(!win){alert('Please allow popups for this site to generate briefings.');return;}
-  win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
-    +'<meta name="viewport" content="width=device-width,initial-scale=1">'
-    +'<title>WATCH Briefing -- '+label+'</title>'
-    +'<style>body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:20px;max-width:900px;margin:0 auto}'
-    +'table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:4px 6px}'
-    +'@media print{.noprint{display:none!important}}</style></head><body>'
-    +'<div class="noprint" style="background:#0E2841;color:#fff;padding:8px 16px;margin:-20px -20px 16px;display:flex;justify-content:space-between;align-items:center">'
-    +'<span style="font-size:12px;font-weight:700">WATCH Briefing</span>'
-    +'<button onclick="window.print()" style="background:#fff;color:#0E2841;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">Print / Save PDF</button>'
-    +'</div>'+html+'</body></html>');
-  win.document.close();
+function _getImmediateActions(topRisk, hazardSet) {
+  var base = [
+    'Review the Atlantic Aviation Severe Weather Prep Guide on Flightdeck for full checklists and procedures.',
+    'Monitor IBM Weather, airport ATIS, NOTAMs, and radar. Pay close attention to storm developments, lightning activity, and any watches or warnings issued by your local NWS office.',
+    'Communicate weather status, expected response actions, and any operational holds to all staff and tenants immediately.',
+    'Move aircraft into hangars where possible. All aircraft remaining on the ramp must be securely triple-chocked. Offer tie-down spots for piston and light aircraft where available.',
+    'Secure all Ground Support Equipment (GSE) inside hangars or designated wind-sheltered areas. Chock mobile equipment, set parking brakes, and lower air stairs to the lowest setting.',
+    'Remove or secure all loose ramp items: cones, chocks, wands, ladders, mats, trash cans, and rolling dumpsters.',
+    'Close and secure all hangar and facility doors. Do not open bi-fold doors if winds exceed manufacturer limits.',
+    'Ensure all employees know the location of storm shelters and designated safe areas. Post operational hold or shelter signage as conditions develop.',
+    'Initiate a full stop of all outdoor operations when lightning is within 5 miles. Do not resume until lightning has cleared and ramp conditions have been reassessed.',
+  ];
+  var extra = [];
+  if (hazardSet.has('High Winds') || topRisk === 'ENH' || topRisk === 'MDT' || topRisk === 'HIGH') {
+    extra.push('Halt non-essential outdoor operations in high wind conditions. Avoid towing light aircraft, stop overwing fueling, and prohibit aerial lift and ladder use.');
+  }
+  if (hazardSet.has('Tornadoes') || topRisk === 'MDT' || topRisk === 'HIGH') {
+    extra.push('In a tornado warning: stop all operations immediately, move all personnel to designated tornado shelters or safe interior rooms, and stay away from windows and hangar doors.');
+  }
+  extra.push('After the storm: conduct a full walkthrough of aircraft, GSE, and facility structures, remove all FOD and debris, and document findings to your Regional Safety Manager and General Manager.');
+  return base.concat(extra);
 }
 
 
