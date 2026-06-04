@@ -341,8 +341,6 @@
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="nws-poly-toggle" onchange="toggleNWSPolygons(this.checked)" checked style="cursor:pointer"/> Watches/Warnings</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="winter-poly-toggle" onchange="toggleWinterPolygons(this.checked)" checked style="cursor:pointer"/> Winter</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="nhc-toggle" onchange="toggleNHC(this.checked)" checked style="cursor:pointer"/> Tropical</label>
-          <input type="checkbox" id="fire-perim-toggle" onchange="toggleFireLayer(this.checked)" style="cursor:pointer"/>
-          <label for="fire-perim-toggle" style="font-size:10px;color:#e8e8e8;cursor:pointer"> Active Fires</label>
           </div>
           <!-- Auto mode indicator -->
           <div id="map-mode-badge" style="font-size:9px;color:#fff;background:#0E2841;padding:2px 8px;border-radius:3px;font-weight:700;display:none"></div>
@@ -2543,7 +2541,6 @@ async function refreshMapLayers() {
   try {
     await Promise.all([drawSPCPolygons(), drawFirePolygons(), drawWPCPolygons(), drawWinterPolygons(), drawNWSPolygons()]);
     drawNHCLayer();
-    drawFirePerimLayer();
     renderMapMarkers();
     if (gpsActive) drawUserMarker();
     if (showRadar) drawRadar();
@@ -3335,36 +3332,9 @@ function toggleWinterPolygons(on) {
 // ── NHC Tropical ──────────────────────────────────────────────────────────────
 let nhcLayer = null;
 let showNHC  = true;
-let showFirePerim = false;
 const NHC_COLORS = { TD:'#a8d5ff', TS:'#fbbf24', HU:'#ef4444', TY:'#ef4444' };
 
-var firePerimLayer = null;
-function toggleFireLayer(on) {
-  showFirePerim = on;
-  if (!leafletMap) return;
-  if (!on) {
-    if (firePerimLayer) { leafletMap.removeLayer(firePerimLayer); firePerimLayer = null; }
-    return;
-  }
-  // NASA FIRMS VIIRS active fire detections -- raster tile, no API key, browser-direct
-  // Uses GIBS (Global Imagery Browse Services) -- same service as NASA Worldview
-  var today = new Date().toISOString().split("T")[0];
-  firePerimLayer = L.tileLayer(
-    "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_Fires_375m_Day/default/" + today + "/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png",
-    { opacity: 0.8, attribution: "NASA FIRMS / GIBS", maxNativeZoom: 8, maxZoom: 18, crossOrigin: true }
-  );
-  firePerimLayer.on("tileerror", function() {
-    // GIBS failed -- remove layer and uncheck box
-    if (firePerimLayer) { leafletMap.removeLayer(firePerimLayer); firePerimLayer = null; }
-    var cb = document.getElementById("fire-perim-toggle");
-    if (cb) cb.checked = false;
-    showFirePerim = false;
-    console.log("WATCH: Active fire tiles unavailable");
-  });
-  firePerimLayer.addTo(leafletMap);
-}
-// Keep old name for backward compat
-function drawFirePerimLayer() { toggleFireLayer(showFirePerim); }
+
 
 async function drawNHCLayer() {
   if (nhcLayer) { leafletMap.removeLayer(nhcLayer); nhcLayer = null; }
