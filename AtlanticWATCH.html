@@ -4310,15 +4310,13 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     briefText = bEl.innerHTML;
   } else {
     // Build from data
-    var locCount = codes.length;
-    var topZoneStr = activeZones.length ? SPC_ZONES[activeZones[0]].label.toLowerCase() + ' risk' : 'elevated risk';
     var highZone = activeZones[0];
     var highLocs = zoneMap[highZone] || [];
     briefText = '<p style="margin:0 0 10px 0">'+
-      'Severe weather is expected to affect '+locCount+' Atlantic Aviation location'+(locCount>1?'s':'')+' today. '+
+      'Severe weather is expected to affect Atlantic Aviation locations today. '+
       (activeZones.length ? 'The highest threat area is under a '+SPC_ZONES[activeZones[0]].label+' risk designation from the Storm Prediction Center, affecting '+highLocs.join(', ')+'. ' : '')+
       (activeZones.length > 1 ? 'Additional locations are under '+(activeZones.slice(1).map(function(z){return SPC_ZONES[z].label+' risk';}).join(' and '))+' designations. ' : '')+
-      'All impacted locations should complete pre-storm preparations now and ensure crews are briefed on protocol activation criteria.'+
+      'All impacted locations should ensure applicable procedures are in place before conditions arrive.'+
       '</p>';
     briefText += '<p style="margin:0 0 10px 0">'+
       'Conditions could develop quickly. Do not wait for a formal warning to begin preparations \u2014 complete outdoor preparations now so your team is ready before storms arrive.'+
@@ -4461,26 +4459,41 @@ function _buildAllClearBrief(codes, notes, dateStr, utc) {
 }
 
 function _getImmediateActions(topRisk, hazardSet) {
-  var base = [
-    'Review the Atlantic Aviation Severe Weather Prep Guide on Flightdeck for full checklists and procedures.',
-    'Monitor IBM Weather, airport ATIS, NOTAMs, and radar. Pay close attention to storm developments, lightning activity, and any watches or warnings issued by your local NWS office.',
-    'Communicate weather status, expected response actions, and any operational holds to all staff and tenants immediately.',
-    'Move aircraft into hangars where possible. All aircraft remaining on the ramp must be securely triple-chocked. Offer tie-down spots for piston and light aircraft where available.',
-    'Secure all Ground Support Equipment (GSE) inside hangars or designated wind-sheltered areas. Chock mobile equipment, set parking brakes, and lower air stairs to the lowest setting.',
-    'Remove or secure all loose ramp items: cones, chocks, wands, ladders, mats, trash cans, and rolling dumpsters.',
-    'Close and secure all hangar and facility doors. Do not open bi-fold doors if winds exceed manufacturer limits.',
-    'Ensure all employees know the location of storm shelters and designated safe areas. Post operational hold or shelter signage as conditions develop.',
-    'Initiate a full stop of all outdoor operations when lightning is within 5 miles. Do not resume until lightning has cleared and ramp conditions have been reassessed.',
-  ];
-  var extra = [];
-  if (hazardSet.has('High Winds') || topRisk === 'ENH' || topRisk === 'MDT' || topRisk === 'HIGH') {
-    extra.push('Halt non-essential outdoor operations in high wind conditions. Avoid towing light aircraft, stop overwing fueling, and prohibit aerial lift and ladder use.');
-  }
-  if (hazardSet.has('Tornadoes') || topRisk === 'MDT' || topRisk === 'HIGH') {
-    extra.push('In a tornado warning: stop all operations immediately, move all personnel to designated tornado shelters or safe interior rooms, and stay away from windows and hangar doors.');
-  }
-  extra.push('After the storm: conduct a full walkthrough of aircraft, GSE, and facility structures, remove all FOD and debris, and document findings to your Regional Safety Manager and General Manager.');
-  return base.concat(extra);
+  var hasTornado = topRisk === "MDT" || topRisk === "HIGH" || hazardSet.has("Tornadoes");
+  var hasHail    = topRisk === "ENH" || topRisk === "MDT" || topRisk === "HIGH" || hazardSet.has("Large Hail");
+  var actions = [];
+
+  actions.push(
+    "Review the applicable Prep Guide found on Flightdeck and ensure all applicable procedures are in place before conditions arrive at your location."
+  );
+
+  actions.push(
+    "Protect Aircraft: When able, ensure all aircraft are securely TRIPLE chocked, doors and panels secured, and tie-downs used where applicable. When necessary, requested, and safely able to do so, move aircraft into hangars before conditions deteriorate."
+    + (hasHail ? " Hail damage risk is elevated at impacted locations; prioritize employee safety above all else." : "")
+  );
+
+  actions.push(
+    "Ensure Employee Safety: Halt fueling and outdoor operations when lightning is within five miles. Suspend all outdoor work in high winds and direct employees to designated interior shelter areas, away from windows and exterior walls, before conditions become hazardous."
+    + (hasTornado ? " Upon issuance of a Tornado WARNING, cease all ramp operations immediately and direct all personnel and customers to interior shelter." : "")
+  );
+
+  actions.push(
+    "Secure the Ramp: Park and chock all fuel trucks, tugs, GPUs, belt loaders, baggage carts, and other GSE in designated areas away from high-wind exposure. Remove all loose equipment, cones, chocks, wands, ladders, mats, trash cans, rolling dumpsters, and any debris to prevent wind and hail hazards. Close and secure all hangar and facility doors. Do not open bi-fold doors if winds exceed manufacturer limits."
+  );
+
+  actions.push(
+    "Communicate with Your Customers: Proactively notify customers of any anticipated operational disruptions or delays in advance of deteriorating conditions."
+  );
+
+  actions.push(
+    "Monitor Weather Continuously: Ensure all weather monitoring and emergency communication systems are fully operational. Supervisors must conduct pre-shift briefings to update employees on anticipated weather impacts and ensure all team members are prepared for real-time operational adjustments."
+  );
+
+  actions.push(
+    "After the storm: conduct a full walkthrough of aircraft, GSE, and facility structures. Remove all FOD and debris and document findings to your Regional Safety Manager and General Manager before resuming normal operations."
+  );
+
+  return actions;
 }
 
 
