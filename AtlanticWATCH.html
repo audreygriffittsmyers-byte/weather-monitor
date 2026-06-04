@@ -5331,8 +5331,8 @@ function showAlertBanner(title, body, color, requireAck, code) {
     + '<div style="font-size:11px;opacity:.9;margin-top:2px">' + body + '</div>';
   textDiv.addEventListener('click', function() {
     switchTab('monitor');
-    if (code) selectFBO(code);
     if (!requireAck) dismissBanner();
+    if (code) setTimeout(function(){ selectFBO(code); }, 80);
   });
   const btn = document.createElement('button');
   if (requireAck) {
