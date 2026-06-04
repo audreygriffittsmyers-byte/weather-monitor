@@ -999,12 +999,18 @@ function makeSidebarItem(fbo) {
   var ltng=getLightningStatus(fbo.code);
   var windSt=getWindStatus(fbo.code);
   var windBolt=windSt?`<span title="${windSt.label}" style="font-size:11px;margin-left:3px">💨</span>`:""
+;
+  var _obs=obsData[fbo.code];
+  var heatIcon=(_obs&&_obs.tempF>=95)?`<span title="Extreme Heat: ${_obs.tempF}°F" style="font-size:11px;margin-left:3px">☀️</span>`:""
+;
+  var coldIcon=(_obs&&_obs.tempF<=15)?`<span title="Extreme Cold: ${_obs.tempF}°F" style="font-size:11px;margin-left:3px">🧊</span>`:""
+
 ;  var ltngBolt = ltng ? '<span title="' + ltng.label + '" style="font-size:11px;margin-left:4px">⚡</span>' : '';
 
   div.innerHTML = `
     <span class="fbo-code" style="color:${textColor}">${fbo.code}</span>
     <span class="fbo-loc">${fbo.city}, ${fbo.state}</span>
-    <div class="fbo-badge-wrap" style="display:flex;align-items:center">${badgeHTML}${spcDot}${ltngBolt}${windBolt}</div>
+    <div class="fbo-badge-wrap" style="display:flex;align-items:center">${badgeHTML}${spcDot}${ltngBolt}${windBolt}${heatIcon}${coldIcon}</div>
   `;
   div.addEventListener('click', () => selectFBO(fbo.code));
   return div;
