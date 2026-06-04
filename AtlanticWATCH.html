@@ -4281,22 +4281,22 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   activeZones.forEach(function(z) {
     var zone = SPC_ZONES[z];
     var locs = zoneMap[z];
-    html += '<td style="background:'+zone.bg+';color:#fff;padding:8px 12px;border:none;vertical-align:top;min-width:140px">'\
-      +'<div style="font-size:12px;font-weight:700">'+zone.label+' \u2014 Level '+zone.level+'</div>'\
-      +'<div style="font-size:10px;font-style:italic;margin-bottom:4px">'+zone.action+'</div>'\
-      +'<div style="font-size:10px">'+locs.join(' | ')+'</div>'\
-      +'</td>';
+    html += '<td style="background:'+zone.bg+';color:#fff;padding:8px 12px;border:none;vertical-align:top;min-width:140px">'
+    +'<div style="font-size:12px;font-weight:700">'+zone.label+' \u2014 Level '+zone.level+'</div>'
+    +'<div style="font-size:10px;font-style:italic;margin-bottom:4px">'+zone.action+'</div>'
+    +'<div style="font-size:10px">'+locs.join(' | ')+'</div>'
+    +'</td>';
   });
   // Add alert-only locations not in SPC zones
   var alertOnlyCodes = alertCodes.filter(function(c) {
     return !activeZones.some(function(z) { return zoneMap[z] && zoneMap[z].indexOf(c) >= 0; });
   });
   if (alertOnlyCodes.length) {
-    html += '<td style="background:#dc2626;color:#fff;padding:8px 12px;border:none;vertical-align:top;min-width:140px">'\
-      +'<div style="font-size:12px;font-weight:700">NWS ALERTS</div>'\
-      +'<div style="font-size:10px;font-style:italic;margin-bottom:4px">Active Warnings</div>'\
-      +'<div style="font-size:10px">'+alertOnlyCodes.join(' | ')+'</div>'\
-      +'</td>';
+    html += '<td style="background:#dc2626;color:#fff;padding:8px 12px;border:none;vertical-align:top;min-width:140px">'
+    +'<div style="font-size:12px;font-weight:700">NWS ALERTS</div>'
+    +'<div style="font-size:10px;font-style:italic;margin-bottom:4px">Active Warnings</div>'
+    +'<div style="font-size:10px">'+alertOnlyCodes.join(' | ')+'</div>'
+    +'</td>';
   }
   html += '</tr></table>';
 
@@ -4333,19 +4333,19 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   html += '<p style="margin:0 0 16px 0;font-style:italic;font-weight:700">This is the only alert that will be issued today. Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.</p>';
 
   if (notes) {
-    html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px;font-size:11px">'\
-      +'<strong>Shift Notes:</strong> '+notes+'</div>';
+    html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px;font-size:11px">'
+    +'<strong>Shift Notes:</strong> '+notes+'</div>';
   }
 
   // ── 4. Per-zone location tables ───────────────────────────────────────────
   activeZones.forEach(function(z) {
     var zone = SPC_ZONES[z];
     var locs = zoneMap[z];
-    html += '<table><tr><td colspan="3" style="background:'+zone.bg+';color:#fff;font-weight:700;font-size:11px;padding:6px 8px;border:1px solid '+zone.bg+'">'\
-      +zone.label+' RISK \u2014 '+zone.action+' | '+zone.hazards+'</td></tr>';
-    html += '<tr style="background:#f0f4f7"><th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th>'\
-      +'<th style="border:1px solid #ddd;text-align:left;width:160px">City / State</th>'\
-      +'<th style="border:1px solid #ddd;text-align:left">Timing</th></tr>';
+    html += '<table><tr><td colspan="3" style="background:'+zone.bg+';color:#fff;font-weight:700;font-size:11px;padding:6px 8px;border:1px solid '+zone.bg+'">'
+    +zone.label+' RISK \u2014 '+zone.action+' | '+zone.hazards+'</td></tr>';
+    html += '<tr style="background:#f0f4f7"><th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th>'
+    +'<th style="border:1px solid #ddd;text-align:left;width:160px">City / State</th>'
+    +'<th style="border:1px solid #ddd;text-align:left">Timing</th></tr>';
     locs.forEach(function(code) {
       var fbo = COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
       var obs = obsData[code];
@@ -4365,10 +4365,10 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
         timing = 'Monitor for convective development this period.';
       }
       var bg = locs.indexOf(code) % 2 === 0 ? '#fff' : '#f9f9f9';
-      html += '<tr style="background:'+bg+'">'\
-        +'<td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'\
-        +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'\
-        +'<td style="border:1px solid #ddd">'+timing+'</td></tr>';
+      html += '<tr style="background:'+bg+'">'
+    +'<td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'
+    +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'
+    +'<td style="border:1px solid #ddd">'+timing+'</td></tr>';
     });
     html += '</table>';
   });
@@ -4379,16 +4379,16 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   });
   if (alertOnlyCodes2.length) {
     html += '<table><tr><td colspan="3" style="background:#dc2626;color:#fff;font-weight:700;font-size:11px;padding:6px 8px">ACTIVE NWS ALERTS</td></tr>';
-    html += '<tr style="background:#f0f4f7"><th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th>'\
-      +'<th style="border:1px solid #ddd;text-align:left;width:160px">City / State</th>'\
-      +'<th style="border:1px solid #ddd;text-align:left">Alert / Status</th></tr>';
+    html += '<tr style="background:#f0f4f7"><th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th>'
+    +'<th style="border:1px solid #ddd;text-align:left;width:160px">City / State</th>'
+    +'<th style="border:1px solid #ddd;text-align:left">Alert / Status</th></tr>';
     alertOnlyCodes2.forEach(function(code) {
       var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
       var alerts=(results[code]&&results[code].alerts)||[];
       var txt=alerts.map(function(a){return a.event+(a.expires?' until '+fmtTime(a.expires):'');}).join('; ');
-      html += '<tr><td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'\
-        +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'\
-        +'<td style="border:1px solid #ddd">'+txt+'</td></tr>';
+      html += '<tr><td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'
+    +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'
+    +'<td style="border:1px solid #ddd">'+txt+'</td></tr>';
     });
     html += '</table>';
   }
@@ -4436,22 +4436,22 @@ function _buildAllClearBrief(codes, notes, dateStr, utc) {
   // Summary table
   var withObs = codes.filter(function(c){return obsData[c];});
   if (withObs.length) {
-    html += '<table><tr style="background:#f0f4f7">'\
-      +'<th style="border:1px solid #ddd;text-align:left">FBO</th>'\
-      +'<th style="border:1px solid #ddd;text-align:left">Location</th>'\
-      +'<th style="border:1px solid #ddd;text-align:center">Cat</th>'\
-      +'<th style="border:1px solid #ddd;text-align:left">Conditions</th>'\
-      +'<th style="border:1px solid #ddd;text-align:left">Obs Age</th></tr>';
+    html += '<table><tr style="background:#f0f4f7">'
+    +'<th style="border:1px solid #ddd;text-align:left">FBO</th>'
+    +'<th style="border:1px solid #ddd;text-align:left">Location</th>'
+    +'<th style="border:1px solid #ddd;text-align:center">Cat</th>'
+    +'<th style="border:1px solid #ddd;text-align:left">Conditions</th>'
+    +'<th style="border:1px solid #ddd;text-align:left">Obs Age</th></tr>';
     withObs.forEach(function(code) {
       var obs=obsData[code]; var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
       var fc=obs.flightCat||'--'; var FC_COLOR={VFR:'#16a34a',MVFR:'#2563eb',IFR:'#dc2626',LIFR:'#7c3aed'};
       var cond=[]; if(obs.tempF!=null)cond.push(obs.tempF+'\u00b0F'); if(obs.windKts!=null)cond.push(windDirLabel(obs.windDir)+' '+obs.windKts+'kt'); if(obs.visib!=null)cond.push(obs.visib+'SM');
       var bg = withObs.indexOf(code)%2===0?'#fff':'#f9f9f9';
-      html += '<tr style="background:'+bg+'"><td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'\
-        +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'\
-        +'<td style="border:1px solid #ddd;text-align:center;color:'+(FC_COLOR[fc]||'#000')+';font-weight:700">'+fc+'</td>'\
-        +'<td style="border:1px solid #ddd">'+cond.join(' \u00b7 ')+'</td>'\
-        +'<td style="border:1px solid #ddd;color:#8a9aaa;font-style:italic">'+(obs.obsTime?fmtAge(obs.obsTime):'--')+'</td></tr>';
+      html += '<tr style="background:'+bg+'"><td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'
+    +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'
+    +'<td style="border:1px solid #ddd;text-align:center;color:'+(FC_COLOR[fc]||'#000')+';font-weight:700">'+fc+'</td>'
+    +'<td style="border:1px solid #ddd">'+cond.join(' \u00b7 ')+'</td>'
+    +'<td style="border:1px solid #ddd;color:#8a9aaa;font-style:italic">'+(obs.obsTime?fmtAge(obs.obsTime):'--')+'</td></tr>';
     });
     html += '</table>';
   }
