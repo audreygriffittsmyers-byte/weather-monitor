@@ -4267,7 +4267,21 @@ function _doPrint(codes, notes) {
 function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES) {
   var html = '';
   var topZone = SPC_ZONES[activeZones[0]] || {};
-  var hazardLine = Array.from(hazardSet).join(' | ') || 'Severe Weather';
+  // Build hazard line from highest active SPC zone description
+  var hazardLine;
+  if (activeZones.length) {
+    // Use the top zone's hazard description -- matches the colored header rows
+    hazardLine = SPC_ZONES[activeZones[0]].hazards;
+    // If multiple zones, append unique hazards from lower zones not already covered
+    if (activeZones.length > 1 && activeZones[0] !== 'TSTM') {
+      var extraZones = activeZones.slice(1).filter(function(z){ return z !== 'TSTM'; });
+      if (extraZones.length) {
+        hazardLine += ' | Also: ' + extraZones.map(function(z){ return SPC_ZONES[z].label+' Risk in additional areas'; }).join(', ');
+      }
+    }
+  } else {
+    hazardLine = Array.from(hazardSet).join(' | ') || 'Severe Weather';
+  }
 
   // ── 1. Header block ───────────────────────────────────────────────────────
   html += '<table style="border:none;margin-bottom:0"><tr><td style="background:#0E2841;padding:12px 16px;border:none">'
