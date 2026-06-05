@@ -4615,6 +4615,7 @@ function _doPrint(codes, notes, sections) {
   if (!win) { alert('Please allow popups for this site to generate briefings.'); return; }
   var head = '<!DOCTYPE html><html><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<script src="https://unpkg.com/docx@8.5.0/build/index.js"><\/script>'
     + '<title>WATCH Briefing — ' + dateStr + '</title>'
     + '<style>body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:20px;max-width:780px;margin:0 auto;line-height:1.5}'
     + 'table{border-collapse:collapse;width:100%;margin-bottom:16px}td,th{padding:5px 8px;font-size:11px}'
@@ -4628,24 +4629,26 @@ function _doPrint(codes, notes, sections) {
   win.document.write(head + toolbar + html + '</body></html>');
   win.document.close();
   // Expose download function to the briefing window
-  // downloadBriefDocx runs in parent context where docx.js CDN is loaded
-  win.downloadBriefDocx = function() {
-    var body = win.document.body;
-    var noprint = body.querySelector('.noprint');
-    if (noprint) noprint.style.display = 'none';
-    var content = body.innerHTML;
-    if (noprint) noprint.style.display = '';
-    // Call parent window's function where docx.js is loaded
-    if (window.opener && window.opener._buildDocxFromHTML) {
-      window.opener._buildDocxFromHTML(content, dateStr);
-    } else {
-      // Fallback: inject docx.js into popup then call
-      var s = win.document.createElement('script');
-      s.src = 'https://unpkg.com/docx@8.5.0/build/index.js';
-      s.onload = function() { win._buildDocxFromHTML(content, dateStr); };
-      win.document.head.appendChild(s);
+  // Inject _buildDocxFromHTML into popup window after docx CDN loads
+  var _docxFnStr = window._buildDocxFromHTML.toString();
+  var _dateCapture = JSON.stringify(dateStr);
+  win.document.addEventListener('DOMContentLoaded', function() {});
+  // Poll until docx.js is ready in popup, then inject
+  var _injectInterval = setInterval(function() {
+    if (!win || win.closed) { clearInterval(_injectInterval); return; }
+    if (win.docx) {
+      clearInterval(_injectInterval);
+      win._buildDocxFromHTML = window._buildDocxFromHTML;
+      win.downloadBriefDocx = function() {
+        var body = win.document.body;
+        var noprint = body.querySelector('.noprint');
+        if (noprint) noprint.style.display = 'none';
+        var content = body.innerHTML;
+        if (noprint) noprint.style.display = '';
+        win._buildDocxFromHTML(content, _dateCapture);
+      };
     }
-  };
+  }, 100);
 }
 
 function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES, sections) {
