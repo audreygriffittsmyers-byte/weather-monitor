@@ -4440,7 +4440,11 @@ function openPrintBriefing() {
     var notesEl=document.getElementById('shift-notes');
     var notes=notesEl?notesEl.value.trim():'';
     modal.remove();
-    _watchDownloadDocx(codes,notes,sects);
+    try {
+      _watchDownloadDocx(codes,notes,sects);
+    } catch(e) {
+      alert('DOCX error: ' + e.message + '\n\n' + e.stack);
+    }
   });
 
   document.getElementById('bo-generate').addEventListener('click', function() {
