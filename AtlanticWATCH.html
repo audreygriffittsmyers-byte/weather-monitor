@@ -4194,7 +4194,7 @@ function _watchDownloadDocx(codes, notes, sections) {
           if(alerts.length){
             timing=alerts[0].event+(alerts[0].expires?' until '+fmtTime(alerts[0].expires):'');
           } else {
-            var spcT=parseSPCTiming(z);
+            var spcT=(typeof parseSPCTiming==='function')?parseSPCTiming(z):null;
             if(taf&&taf.rawTAF){
               var rawT=taf.rawTAF.toUpperCase();
               var tsM=rawT.match(/FM(\d{2})(\d{2})\d{2}[^]*?(?:TSRA|TS\b)/);
