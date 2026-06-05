@@ -4110,12 +4110,35 @@ function openPrintBriefing() {
     +'</div>'
     +'<div style="display:flex;gap:8px">'
     +'<button id="bo-generate" style="flex:1;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">Generate Brief</button>'
+    +'<button id="bo-docx" style="background:#1a6ba0;color:#fff;border:none;border-radius:4px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer">↓ DOCX</button>'
     +'<button id="bo-cancel" style="background:#f0f0f0;color:#556070;border:none;border-radius:4px;padding:10px 14px;font-size:12px;cursor:pointer">Cancel</button>'
     +'</div></div>';
 
   document.body.appendChild(modal);
   document.getElementById('bo-cancel').addEventListener('click', function(){ modal.remove(); });
   modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+  document.getElementById('bo-docx').addEventListener('click', function() {
+    var sections = {
+      spc:    document.getElementById('bo-spc')    && document.getElementById('bo-spc').checked,
+      nhc:    document.getElementById('bo-nhc')    && document.getElementById('bo-nhc').checked,
+      winter: document.getElementById('bo-winter') && document.getElementById('bo-winter').checked,
+      flood:  document.getElementById('bo-flood')  && document.getElementById('bo-flood').checked,
+      wind:   document.getElementById('bo-wind')   && document.getElementById('bo-wind').checked,
+      temp:   document.getElementById('bo-temp')   && document.getElementById('bo-temp').checked,
+      alerts: document.getElementById('bo-alerts') && document.getElementById('bo-alerts').checked,
+    };
+    var scopeEl = document.querySelector('input[name="bo-scope"]:checked');
+    var scope = scopeEl ? scopeEl.value : 'all';
+    var codes;
+    if (scope === 'mine' && myLocations.size > 0) codes = COVERED.filter(function(f){ return myLocations.has(f.code); }).map(function(f){ return f.code; });
+    else if (scope === 'location' && selected) codes = [selected];
+    else codes = COVERED.map(function(f){ return f.code; });
+    var notesEl = document.getElementById('shift-notes');
+    var notes = notesEl ? notesEl.value.trim() : '';
+    modal.remove();
+    _downloadDocx(codes, notes, sections);
+  });
+
   document.getElementById('bo-generate').addEventListener('click', function() {
     var sections = {
       spc:    document.getElementById('bo-spc')    && document.getElementById('bo-spc').checked,
@@ -4294,6 +4317,77 @@ function parseSPCTiming(zoneLabel) {
 
 
 // ── DOCX Export ───────────────────────────────────────────────────────────────
+// ── DOCX Download -- runs in main WATCH context where docx.js is loaded ──────
+function _downloadDocx(codes, notes, sections) {
+  if (!window.docx) {
+    alert('DOCX library not ready. Please wait a moment and try again.');
+    return;
+  }
+  var D = window.docx;
+  var now = new Date();
+  var dateStr = now.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
+
+  // Build the briefing HTML string (reuse existing _doPrint logic)
+  // but capture it instead of opening a window
+  var tmpHtml = _getBriefHtml(codes, notes, sections, dateStr);
+  if (!tmpHtml) { alert('No briefing content to export.'); return; }
+
+  _buildDocxFromHTML(tmpHtml, dateStr);
+}
+
+// Get briefing HTML without opening a window
+function _getBriefHtml(codes, notes, sections, dateStr) {
+  var utc = new Date().toISOString().replace('T',' ').substring(0,16)+'Z';
+  sections = sections || {spc:true,nhc:true,winter:true,flood:true,wind:true,temp:true,alerts:true};
+
+  var SPC_ZONES = {
+    'ENH': { label:'ENHANCED', level:'3 of 5', color:'#c05928', bg:'#c05928', action:'Prepare Now',
+      hazards:'Severe thunderstorms, large hail, damaging winds, tornadoes possible' },
+    'MDT': { label:'MODERATE', level:'4 of 5', color:'#dc2626', bg:'#dc2626', action:'High Alert',
+      hazards:'Significant severe weather likely. Large hail, damaging winds, strong tornadoes possible' },
+    'HIGH':{ label:'HIGH',     level:'5 of 5', color:'#7c3aed', bg:'#7c3aed', action:'Immediate Action',
+      hazards:'Major severe weather outbreak expected. All hazards possible.' },
+    'SLGT':{ label:'SLIGHT',   level:'2 of 5', color:'#c4920a', bg:'#c4920a', action:'Be Ready',
+      hazards:'Large hail, damaging winds, isolated tornado possible' },
+    'MRGL':{ label:'MARGINAL', level:'1 of 5', color:'#16a34a', bg:'#16a34a', action:'Monitor',
+      hazards:'Isolated strong storms, gusty winds, small hail possible' },
+    'TSTM':{ label:'TSTM',     level:'0 of 5', color:'#8a9aaa', bg:'#8a9aaa', action:'Awareness',
+      hazards:'General thunderstorm area, no organized severe threat' },
+  };
+  var ZONE_ORDER = ['HIGH','MDT','ENH','SLGT','MRGL','TSTM'];
+
+  var zoneMap = {};
+  codes.forEach(function(code) {
+    var spc = spcData[1] && spcData[1][code];
+    if (!spc || !spc.label || spc.label === 'No Risk') return;
+    var z = spc.label;
+    if (!zoneMap[z]) zoneMap[z] = [];
+    zoneMap[z].push(code);
+  });
+
+  var alertCodes = codes.filter(function(c) {
+    return results[c] && results[c].alerts && results[c].alerts.length > 0;
+  });
+  var hazardSet = new Set();
+  codes.forEach(function(c) {
+    (results[c]&&results[c].alerts||[]).forEach(function(a) {
+      if (/thunder/i.test(a.event)) hazardSet.add('Severe Thunderstorms');
+      if (/hail/i.test(a.event)) hazardSet.add('Large Hail');
+      if (/wind/i.test(a.event)) hazardSet.add('Damaging Winds');
+      if (/tornado/i.test(a.event)) hazardSet.add('Tornadoes');
+      if (/flood/i.test(a.event)) hazardSet.add('Flooding');
+      if (/winter|snow|ice/i.test(a.event)) hazardSet.add('Winter Weather');
+    });
+  });
+
+  var activeZones = ZONE_ORDER.filter(function(z) { return zoneMap[z] && zoneMap[z].length; });
+  if (activeZones.length === 0 && !alertCodes.length) {
+    return _buildAllClearBrief(codes, notes, dateStr, utc);
+  }
+  return _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES, sections);
+}
+
+
 window._buildDocxFromHTML = function _buildDocxFromHTML(htmlContent, dateStr) {
   // Parse the briefing HTML into a docx structure using docx.js
   // docx.js is loaded via CDN as window.docx
@@ -4615,7 +4709,6 @@ function _doPrint(codes, notes, sections) {
   if (!win) { alert('Please allow popups for this site to generate briefings.'); return; }
   var head = '<!DOCTYPE html><html><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    + '<script src="https://unpkg.com/docx@8.5.0/build/index.js"><\/script>'
     + '<title>WATCH Briefing — ' + dateStr + '</title>'
     + '<style>body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:20px;max-width:780px;margin:0 auto;line-height:1.5}'
     + 'table{border-collapse:collapse;width:100%;margin-bottom:16px}td,th{padding:5px 8px;font-size:11px}'
@@ -4629,26 +4722,20 @@ function _doPrint(codes, notes, sections) {
   win.document.write(head + toolbar + html + '</body></html>');
   win.document.close();
   // Expose download function to the briefing window
-  // Inject _buildDocxFromHTML into popup window after docx CDN loads
-  var _docxFnStr = window._buildDocxFromHTML.toString();
-  var _dateCapture = JSON.stringify(dateStr);
-  win.document.addEventListener('DOMContentLoaded', function() {});
-  // Poll until docx.js is ready in popup, then inject
-  var _injectInterval = setInterval(function() {
-    if (!win || win.closed) { clearInterval(_injectInterval); return; }
-    if (win.docx) {
-      clearInterval(_injectInterval);
-      win._buildDocxFromHTML = window._buildDocxFromHTML;
-      win.downloadBriefDocx = function() {
-        var body = win.document.body;
-        var noprint = body.querySelector('.noprint');
-        if (noprint) noprint.style.display = 'none';
-        var content = body.innerHTML;
-        if (noprint) noprint.style.display = '';
-        win._buildDocxFromHTML(content, _dateCapture);
-      };
-    }
-  }, 100);
+  // DOCX download -- called from popup button, runs in main WATCH context
+  win.downloadBriefDocx = function() {
+    // Capture content from popup
+    var body = win.document.body;
+    var noprint = body.querySelector('.noprint');
+    if (noprint) noprint.style.display = 'none';
+    var content = body.innerHTML;
+    if (noprint) noprint.style.display = '';
+    // Run docx generation in main page context via postMessage roundtrip
+    window._buildDocxFromHTML(content, dateStr);
+  };
+  // Also add direct download link that bypasses popup cross-origin restrictions
+  window._lastBriefContent = html;
+  window._lastBriefDate = dateStr;
 }
 
 function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES, sections) {
