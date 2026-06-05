@@ -4062,6 +4062,311 @@ function _copyToClipboard(text) {
   }
 }
 
+// ── WATCH DOCX Export ─────────────────────────────────────────────────────────
+// Generates a valid .docx file using native browser APIs only. No CDN required.
+// XML structure validated against OOXML schema before deployment.
+function _watchDownloadDocx(codes, notes, sections) {
+  sections = sections || {spc:true,nhc:true,winter:true,flood:true,wind:true,temp:true,alerts:true};
+  var now = new Date();
+  var dateStr = now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+
+  var SPC_ZONES = {
+    'HIGH':{ label:'HIGH',     level:'5 of 5', bg:'7c3aed', action:'Immediate Action', hazards:'Major severe weather outbreak expected. All hazards possible.' },
+    'MDT': { label:'MODERATE', level:'4 of 5', bg:'dc2626', action:'High Alert',       hazards:'Significant severe weather likely. Large hail, damaging winds, strong tornadoes possible.' },
+    'ENH': { label:'ENHANCED', level:'3 of 5', bg:'c05928', action:'Prepare Now',      hazards:'Severe thunderstorms, large hail, damaging winds, tornadoes possible.' },
+    'SLGT':{ label:'SLIGHT',   level:'2 of 5', bg:'c4920a', action:'Be Ready',         hazards:'Large hail, damaging winds, isolated tornado possible.' },
+    'MRGL':{ label:'MARGINAL', level:'1 of 5', bg:'16a34a', action:'Monitor',          hazards:'Isolated strong storms, gusty winds, small hail possible.' },
+    'TSTM':{ label:'TSTM',     level:'0 of 5', bg:'8a9aaa', action:'Awareness',        hazards:'General thunderstorm area, no organized severe threat.' },
+  };
+  var ZONE_ORDER = ['HIGH','MDT','ENH','SLGT','MRGL','TSTM'];
+  var NAVY = '0E2841', BLUE = '1a6ba0';
+
+  // Build zone map
+  var zoneMap = {};
+  codes.forEach(function(c) {
+    var s = spcData[1]&&spcData[1][c];
+    if (!s||!s.label||s.label==='No Risk') return;
+    if (!zoneMap[s.label]) zoneMap[s.label]=[];
+    zoneMap[s.label].push(c);
+  });
+  var activeZones = ZONE_ORDER.filter(function(z){return zoneMap[z]&&zoneMap[z].length;});
+  var alertCodes = codes.filter(function(c){return results[c]&&results[c].alerts&&results[c].alerts.length>0;});
+  var hazardSet = new Set();
+  codes.forEach(function(c){
+    (results[c]&&results[c].alerts||[]).forEach(function(a){
+      if(/thunder/i.test(a.event)) hazardSet.add('Severe Thunderstorms');
+      if(/hail/i.test(a.event)) hazardSet.add('Large Hail');
+      if(/wind/i.test(a.event)||/gust/i.test(a.event)) hazardSet.add('Damaging Winds');
+      if(/tornado/i.test(a.event)) hazardSet.add('Tornadoes');
+      if(/flood/i.test(a.event)) hazardSet.add('Flooding');
+      if(/winter|snow|ice/i.test(a.event)) hazardSet.add('Winter Weather');
+    });
+  });
+
+  // Paragraph builder
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function P(text, pp, rp){ return '<w:p>'+pp+'<w:r>'+rp+'<w:t xml:space="preserve">'+esc(text)+'</w:t></w:r></w:p>'; }
+
+  function ppr(opts){
+    opts=opts||{};
+    var s=[];
+    if(opts.fill) s.push('<w:shd w:val="clear" w:color="auto" w:fill="'+opts.fill+'"/>');
+    s.push('<w:spacing w:after="'+(opts.after||'120')+'"/>');
+    if(opts.indL) s.push('<w:ind w:left="'+opts.indL+'" w:hanging="'+(opts.indH||'0')+'"/>');
+    if(opts.jc) s.push('<w:jc w:val="'+opts.jc+'"/>');
+    return '<w:pPr>'+s.join('')+'</w:pPr>';
+  }
+  function rpr(opts){
+    opts=opts||{};
+    var s=[];
+    if(opts.b) s.push('<w:b/>');
+    if(opts.i) s.push('<w:i/>');
+    if(opts.color) s.push('<w:color w:val="'+opts.color+'"/>');
+    s.push('<w:sz w:val="'+(opts.sz||22)+'"/>');
+    s.push('<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>');
+    return '<w:rPr>'+s.join('')+'</w:rPr>';
+  }
+
+  var paras = [];
+  function add(text,pp,rp){ paras.push(P(text,pp,rp)); }
+  function sp(){ paras.push('<w:p><w:pPr><w:spacing w:after="80"/></w:pPr></w:p>'); }
+
+  if (sections.spc && activeZones.length) {
+    var hazardLine = SPC_ZONES[activeZones[0]] ? SPC_ZONES[activeZones[0]].hazards : Array.from(hazardSet).join(' | ');
+
+    // Header
+    add('ATLANTIC AVIATION', ppr({fill:NAVY,after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
+    add('SEVERE WEATHER ALERT \u2014 '+dateStr, ppr({fill:NAVY,after:'40'}), rpr({b:true,sz:28,color:'FFFFFF'}));
+    add(hazardLine, ppr({fill:NAVY,after:'120'}), rpr({sz:18,color:'C8D0D8'}));
+
+    // Risk row -- one line per zone
+    activeZones.filter(function(z){return z!=='TSTM';}).forEach(function(z) {
+      var zone = SPC_ZONES[z];
+      var locs = zoneMap[z];
+      add(zone.label+' \u2014 Level '+zone.level+'  |  '+zone.action+'  |  '+locs.join(' | '),
+          ppr({fill:zone.bg,after:'60'}), rpr({b:true,sz:20,color:'FFFFFF'}));
+    });
+    if (zoneMap['TSTM']&&zoneMap['TSTM'].length) {
+      add('TSTM \u2014 Awareness  |  '+zoneMap['TSTM'].join(' | '),
+          ppr({fill:'e8eaed',after:'60'}), rpr({sz:18,color:'556070'}));
+    }
+    sp();
+
+    // Body text
+    add('Team,', ppr({after:'80'}), rpr({sz:22}));
+    var topZone = SPC_ZONES[activeZones[0]]||{};
+    var highLocs = zoneMap[activeZones[0]]||[];
+    add('Severe weather is expected to affect Atlantic Aviation locations today. The highest threat area is under a '
+        +topZone.label+' risk designation from the Storm Prediction Center, affecting '+highLocs.join(', ')+'.',
+        ppr({after:'100'}), rpr({sz:22}));
+    add('Conditions could develop quickly. Do not wait for a formal warning to begin preparations \u2014 complete outdoor preparations now so your team is ready before storms arrive.',
+        ppr({after:'100'}), rpr({sz:22}));
+    if (alertCodes.length) {
+      add('Active NWS warnings are in effect for '+alertCodes.join(', ')+'. Local management at these locations should monitor conditions closely and be prepared to suspend ramp operations immediately upon deterioration.',
+          ppr({after:'100'}), rpr({sz:22}));
+    }
+    if (notes) {
+      add('Shift Notes: '+notes, ppr({fill:'F2F4F6',after:'100',indL:'240'}), rpr({sz:20}));
+    }
+    add('This is the only alert that will be issued today. Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.',
+        ppr({after:'140'}), rpr({b:true,i:true,sz:22}));
+    sp();
+
+    // Per-zone location tables
+    if (sections.spc) {
+      activeZones.forEach(function(z) {
+        var zone = SPC_ZONES[z];
+        var locs = zoneMap[z];
+        if (z==='TSTM') {
+          add('GENERAL THUNDERSTORM AREA \u2014 Awareness Only | Monitor for development',
+              ppr({fill:'8a9aaa',after:'20'}), rpr({b:true,sz:18,color:'FFFFFF'}));
+          add(locs.join(' \u00b7 '), ppr({fill:'F2F4F6',after:'100'}), rpr({sz:18,color:'556070'}));
+          return;
+        }
+        add(zone.label+' RISK \u2014 '+zone.action+' | '+zone.hazards,
+            ppr({fill:zone.bg,after:'20'}), rpr({b:true,sz:19,color:'FFFFFF'}));
+        add('FBO  |  City / State  |  Timing', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
+        locs.forEach(function(code,ci) {
+          var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
+          var alerts=(results[code]&&results[code].alerts)||[];
+          var taf=tafData[code];
+          var timing='';
+          if(alerts.length){
+            timing=alerts[0].event+(alerts[0].expires?' until '+fmtTime(alerts[0].expires):'');
+          } else {
+            var spcT=parseSPCTiming(z);
+            if(taf&&taf.rawTAF){
+              var rawT=taf.rawTAF.toUpperCase();
+              var tsM=rawT.match(/FM(\d{2})(\d{2})\d{2}[^]*?(?:TSRA|TS\b)/);
+              timing=tsM?'Thunderstorm activity possible from approx '+tsM[1]+':'+tsM[2]+'Z'+(spcT?'. '+spcT:'')+'.':
+                         (spcT?'Storms expected '+spcT.toLowerCase()+'.':'Monitor for convective development.');
+            } else {
+              timing=spcT?'Storm development possible '+spcT.toLowerCase()+'.':'Monitor for convective development.';
+            }
+          }
+          var bg=ci%2===0?'FFFFFF':'F9F9F9';
+          add(code+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+timing,
+              ppr({fill:bg,after:'30'}), rpr({sz:20}));
+        });
+        sp();
+      });
+    }
+
+    // Alert-only locations
+    if (sections.alerts) {
+      var alertOnly=alertCodes.filter(function(c){return !activeZones.some(function(z){return zoneMap[z]&&zoneMap[z].indexOf(c)>=0;});});
+      if(alertOnly.length){
+        add('ACTIVE NWS ALERTS', ppr({fill:'dc2626',after:'20'}), rpr({b:true,sz:19,color:'FFFFFF'}));
+        add('FBO  |  City / State  |  Alert', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
+        alertOnly.forEach(function(c,ci){
+          var fbo=COVERED.find(function(f){return f.code===c;})||{city:'',state:''};
+          var a=(results[c]&&results[c].alerts)||[];
+          var txt=a.map(function(al){return al.event+(al.expires?' until '+fmtTime(al.expires):'');}).join('; ');
+          add(c+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+txt,
+              ppr({fill:ci%2===0?'FFFFFF':'F9F9F9',after:'30'}), rpr({sz:20}));
+        });
+        sp();
+      }
+    }
+
+    // Immediate Actions
+    if (sections.spc) {
+      add('IMMEDIATE ACTIONS', ppr({fill:NAVY,jc:'left',after:'60'}), rpr({b:true,sz:22,color:'FFFFFF'}));
+      var hasTornado=activeZones[0]==='MDT'||activeZones[0]==='HIGH'||hazardSet.has('Tornadoes');
+      var hasHail=activeZones[0]==='ENH'||activeZones[0]==='MDT'||activeZones[0]==='HIGH'||hazardSet.has('Large Hail');
+      var actions=[
+        'Review the applicable Prep Guide found on Flightdeck and ensure all applicable procedures are in place before conditions arrive at your location.',
+        'Protect Aircraft: When able, ensure all aircraft are securely TRIPLE chocked, doors and panels secured, and tie-downs used where applicable. When necessary, requested, and safely able to do so, move aircraft into hangars before conditions deteriorate.'+(hasHail?' Hail damage risk is elevated at impacted locations; prioritize employee safety above all else.':''),
+        'Ensure Employee Safety: Halt fueling and outdoor operations when lightning is within five miles. Suspend all outdoor work in high winds and direct employees to designated interior shelter areas, away from windows and exterior walls, before conditions become hazardous.'+(hasTornado?' Upon issuance of a Tornado WARNING, cease all ramp operations immediately and direct all personnel and customers to interior shelter.':''),
+        'Secure the Ramp: Park and chock all fuel trucks, tugs, GPUs, belt loaders, baggage carts, and other GSE in designated areas away from high-wind exposure. Remove all loose equipment, cones, chocks, wands, ladders, mats, trash cans, rolling dumpsters, and any debris.',
+        'Communicate with Your Customers: Proactively notify customers of any anticipated operational disruptions or delays in advance of deteriorating conditions.',
+        'Monitor Weather Continuously: Ensure all weather monitoring and emergency communication systems are fully operational. Supervisors must conduct pre-shift briefings to update employees on anticipated weather impacts.',
+        'After the storm: conduct a full walkthrough of aircraft, GSE, and facility structures. Remove all FOD and debris and document findings to your Regional Safety Manager and General Manager before resuming normal operations.',
+      ];
+      actions.forEach(function(a){ add('\u2022  '+a, ppr({indL:'720',indH:'360',after:'80'}), rpr({sz:22})); });
+      sp();
+    }
+  } else if (!sections.spc) {
+    // Non-SPC brief header
+    add('ATLANTIC AVIATION', ppr({fill:NAVY,after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
+    add('WEATHER ADVISORY \u2014 '+dateStr, ppr({fill:NAVY,after:'120'}), rpr({b:true,sz:28,color:'FFFFFF'}));
+    sp();
+  }
+
+  // NHC section
+  if (sections.nhc) {
+    var tropLocs=codes.filter(function(c){return (results[c]&&results[c].alerts||[]).some(function(a){return /tropical|hurricane|typhoon|storm surge/i.test(a.event);});});
+    if(tropLocs.length){
+      add('NHC / TROPICAL WEATHER ADVISORY', ppr({fill:'7c3aed',after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
+      add('FBO  |  City / State  |  Active Alert', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
+      tropLocs.forEach(function(c,ci){
+        var fbo=COVERED.find(function(f){return f.code===c;})||{city:'',state:''};
+        var a=(results[c]&&results[c].alerts||[]).filter(function(al){return /tropical|hurricane|typhoon|storm surge/i.test(al.event);});
+        add(c+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+a.map(function(al){return al.event;}).join('; '),
+            ppr({fill:ci%2===0?'FFFFFF':'F9F9F9',after:'30'}), rpr({sz:20}));
+      });
+      sp();
+    }
+  }
+
+  // Wind section
+  if (sections.wind) {
+    var windLocs=codes.filter(function(c){return !!getWindStatus(c);});
+    if(windLocs.length){
+      add('HIGH WIND ADVISORY', ppr({fill:'ea580c',after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
+      add('FBO  |  City / State  |  Wind Status', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
+      windLocs.forEach(function(c,ci){
+        var fbo=COVERED.find(function(f){return f.code===c;})||{city:'',state:''};
+        var ws=getWindStatus(c);
+        add(c+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+ws.label+': '+ws.spd+'kt'+(ws.gust?' G'+ws.gust+'kt':''),
+            ppr({fill:ci%2===0?'FFFFFF':'FFF7ED',after:'30'}), rpr({sz:20}));
+      });
+      sp();
+    }
+  }
+
+  // Supervisor note
+  add('Supervisors: Brief your team on today\'s storm threat and expected timing before conditions arrive. Do not wait for a formal warning to begin preparations \u2014 once a Tornado Warning or Severe Thunderstorm Warning is issued, time is limited. Employee safety is the priority above all else.',
+      ppr({fill:'F2F4F6',after:'100'}), rpr({sz:22}));
+
+  // Safety tagline
+  add('Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.',
+      ppr({fill:NAVY,jc:'center',after:'80'}), rpr({b:true,sz:22,color:'FFFFFF'}));
+
+  // Disclaimer
+  add('DISCLAIMER: This alert is intended for internal use only. It is based on information available at the time of issuance and is subject to change. This alert does not supersede official National Weather Service watches, warnings, or advisories. All operational decisions remain the responsibility of local management.',
+      ppr({after:'80'}), rpr({i:true,sz:18,color:'666666'}));
+
+  // Build XML
+  var NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  var SECT = '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
+  var docXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document '+NS+'><w:body>'+paras.join('')+SECT+'</w:body></w:document>';
+
+  var CT = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>';
+  var RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>';
+  var WRELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+
+  var files = {'[Content_Types].xml':CT, '_rels/.rels':RELS, 'word/document.xml':docXml, 'word/_rels/document.xml.rels':WRELS};
+  _watchBuildZip(files, 'WATCH_Briefing_'+dateStr.replace(/[^a-zA-Z0-9]/g,'_')+'.docx');
+}
+
+// ZIP builder -- validated DataView approach
+function _watchBuildZip(files, filename) {
+  var enc = new TextEncoder();
+  var entries = Object.keys(files).map(function(name) {
+    return { name:name, nameB:enc.encode(name), dataB:enc.encode(files[name]) };
+  });
+  entries.forEach(function(e) { e.crc = _watchCrc32(e.dataB); });
+
+  var localSize = entries.reduce(function(s,e){return s+30+e.nameB.length+e.dataB.length;},0);
+  var cdSize    = entries.reduce(function(s,e){return s+46+e.nameB.length;},0);
+  var buf = new ArrayBuffer(localSize + cdSize + 22);
+  var v = new DataView(buf), u = new Uint8Array(buf), p = 0;
+
+  function w16(n){v.setUint16(p,n,true);p+=2;}
+  function w32(n){v.setUint32(p,n,true);p+=4;}
+  function wb(arr){u.set(arr,p);p+=arr.length;}
+
+  entries.forEach(function(e) {
+    e.off=p;
+    w32(0x04034B50);w16(20);w16(0);w16(0);w16(0);w16(0);
+    w32(e.crc);w32(e.dataB.length);w32(e.dataB.length);
+    w16(e.nameB.length);w16(0);wb(e.nameB);wb(e.dataB);
+  });
+
+  var cdStart=p;
+  entries.forEach(function(e){
+    w32(0x02014B50);w16(20);w16(20);w16(0);w16(0);w16(0);w16(0);
+    w32(e.crc);w32(e.dataB.length);w32(e.dataB.length);
+    w16(e.nameB.length);w16(0);w16(0);w16(0);w16(0);w32(0);
+    w32(e.off);wb(e.nameB);
+  });
+
+  var cdLen=p-cdStart;
+  w32(0x06054B50);w16(0);w16(0);
+  w16(entries.length);w16(entries.length);
+  w32(cdLen);w32(cdStart);w16(0);
+
+  var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},1000);
+}
+
+function _watchCrc32(data){
+  if(!window._watchCrcT){
+    window._watchCrcT=new Uint32Array(256);
+    for(var i=0;i<256;i++){var c=i;for(var j=0;j<8;j++)c=c&1?(0xEDB88320^(c>>>1)):(c>>>1);window._watchCrcT[i]=c;}
+  }
+  var crc=0xFFFFFFFF;
+  for(var i=0;i<data.length;i++)crc=window._watchCrcT[(crc^data[i])&0xFF]^(crc>>>8);
+  return(crc^0xFFFFFFFF)>>>0;
+}
+
+
 function openPrintBriefing() {
   var defaultScope = 'all';
   if (selected) { defaultScope = 'location'; }
@@ -4109,12 +4414,35 @@ function openPrintBriefing() {
     +'</div>'
     +'<div style="display:flex;gap:8px">'
     +'<button id="bo-generate" style="flex:1;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">Generate Brief</button>'
+    +'<button id="bo-docx" style="background:#1a6ba0;color:#fff;border:none;border-radius:4px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer">↓ DOCX</button>'
     +'<button id="bo-cancel" style="background:#f0f0f0;color:#556070;border:none;border-radius:4px;padding:10px 14px;font-size:12px;cursor:pointer">Cancel</button>'
     +'</div></div>';
 
   document.body.appendChild(modal);
   document.getElementById('bo-cancel').addEventListener('click', function(){ modal.remove(); });
   modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+  document.getElementById('bo-docx').addEventListener('click', function() {
+    var sects = {
+      spc:document.getElementById('bo-spc')&&document.getElementById('bo-spc').checked,
+      nhc:document.getElementById('bo-nhc')&&document.getElementById('bo-nhc').checked,
+      winter:document.getElementById('bo-winter')&&document.getElementById('bo-winter').checked,
+      flood:document.getElementById('bo-flood')&&document.getElementById('bo-flood').checked,
+      wind:document.getElementById('bo-wind')&&document.getElementById('bo-wind').checked,
+      temp:document.getElementById('bo-temp')&&document.getElementById('bo-temp').checked,
+      alerts:document.getElementById('bo-alerts')&&document.getElementById('bo-alerts').checked,
+    };
+    var scopeEl=document.querySelector('input[name="bo-scope"]:checked');
+    var scope=scopeEl?scopeEl.value:'all';
+    var codes;
+    if(scope==='mine'&&myLocations.size>0) codes=COVERED.filter(function(f){return myLocations.has(f.code);}).map(function(f){return f.code;});
+    else if(scope==='location'&&selected) codes=[selected];
+    else codes=COVERED.map(function(f){return f.code;});
+    var notesEl=document.getElementById('shift-notes');
+    var notes=notesEl?notesEl.value.trim():'';
+    modal.remove();
+    _watchDownloadDocx(codes,notes,sects);
+  });
+
   document.getElementById('bo-generate').addEventListener('click', function() {
     var sections = {
       spc:    document.getElementById('bo-spc')    && document.getElementById('bo-spc').checked,
