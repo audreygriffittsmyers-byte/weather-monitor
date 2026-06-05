@@ -370,6 +370,32 @@ export default {
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
+
+    if (type === 'notam') {
+      const icao = url.searchParams.get('icao');
+      if (!icao) return new Response(JSON.stringify([]), { headers: GEOJSON });
+      try {
+        const res = await fetch(
+          `https://external-api.faa.gov/notamapi/v1/notams?icaoLocation=${icao.toUpperCase()}&pageSize=50`,
+          { headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+            cf: { cacheTtl: 300, cacheEverything: true } }
+        );
+        if (!res.ok) return new Response(JSON.stringify([]), { headers: GEOJSON });
+        const data = await res.json();
+        const notams = (data.items || []).map(n => ({
+          notamID:      n.coreNOTAMData?.notam?.id || '',
+          type:         n.coreNOTAMData?.notam?.type || '',
+          icaoMessage:  n.coreNOTAMData?.notamTranslation?.[0]?.simpleText || '',
+          traditionalMessage: n.coreNOTAMData?.notam?.icaoMessage || '',
+          keyword:      n.coreNOTAMData?.notam?.keyword || '',
+          effectiveStart: n.coreNOTAMData?.notam?.effectiveStart || '',
+          effectiveEnd:   n.coreNOTAMData?.notam?.effectiveEnd || '',
+          classification: n.coreNOTAMData?.notam?.classification || '',
+        }));
+        return new Response(JSON.stringify(notams), { headers: GEOJSON });
+      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+    }
+
     return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), { status: 400, headers: GEOJSON });
   }
 };
