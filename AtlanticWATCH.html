@@ -17,6 +17,7 @@
 <link rel="apple-touch-icon" sizes="512x512" href="/weather-monitor/icon-512.png"/>
 <title>Atlantic Aviation — WATCH</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   @keyframes spin  { to { transform: rotate(360deg); } }
@@ -4292,6 +4293,261 @@ function parseSPCTiming(zoneLabel) {
 }
 
 
+// ── DOCX Export ───────────────────────────────────────────────────────────────
+function _buildDocxFromHTML(htmlContent, dateStr) {
+  // Parse the briefing HTML into a docx structure using docx.js
+  // docx.js is loaded via CDN as window.docx
+  if (!window.docx) { alert('DOCX library not loaded. Check your connection.'); return; }
+  var D = window.docx;
+  var NAVY = '0E2841', BLUE = '1a6ba0', WHITE = 'FFFFFF', LGRAY = 'F2F4F6', MGRAY = 'C8D0D8';
+
+  function br(c) { c = c||MGRAY; var s={style:D.BorderStyle.SINGLE,size:1,color:c}; return {top:s,bottom:s,left:s,right:s}; }
+  function nbr() { var s={style:D.BorderStyle.NONE,size:0,color:WHITE}; return {top:s,bottom:s,left:s,right:s}; }
+  function sp() { return new D.Paragraph({spacing:{after:0},children:[new D.TextRun('')]}); }
+
+  // Parse HTML sections from briefing content
+  var tmp = document.createElement('div');
+  tmp.innerHTML = htmlContent;
+
+  var paragraphs = [];
+
+  // ── Header ───────────────────────────────────────────────────────────────
+  var headerTd = tmp.querySelector('td[style*="background:#0E2841"]') ||
+                 tmp.querySelector('td[style*="background: #0E2841"]');
+  if (headerTd) {
+    var divs = headerTd.querySelectorAll('div');
+    var title = divs[0] ? divs[0].textContent.trim() : 'ATLANTIC AVIATION';
+    var subject = divs[1] ? divs[1].textContent.trim() : 'SEVERE WEATHER ALERT';
+    var hazards = divs[2] ? divs[2].textContent.trim() : '';
+    paragraphs.push(new D.Table({
+      width: {size:9360, type:D.WidthType.DXA},
+      columnWidths: [9360],
+      rows: [new D.TableRow({children:[new D.TableCell({
+        borders: nbr(),
+        shading: {fill:NAVY, type:D.ShadingType.CLEAR},
+        margins: {top:120,bottom:120,left:180,right:180},
+        children: [
+          new D.Paragraph({spacing:{after:40},children:[new D.TextRun({text:title,size:22,bold:true,color:WHITE,font:'Arial'})]}),
+          new D.Paragraph({spacing:{after:40},children:[new D.TextRun({text:subject,size:28,bold:true,color:WHITE,font:'Arial'})]}),
+          hazards ? new D.Paragraph({spacing:{after:0},children:[new D.TextRun({text:hazards,size:18,color:'C8D0D8',font:'Arial'})]}) : sp(),
+        ]
+      })]})]}));
+    paragraphs.push(sp());
+  }
+
+  // ── Risk summary row ─────────────────────────────────────────────────────
+  var riskRow = tmp.querySelector('table[style*="border-spacing:2px"]') ||
+                tmp.querySelector('table[style*="border-spacing: 2px"]');
+  if (riskRow) {
+    var cells = riskRow.querySelectorAll('td');
+    var riskCells = [];
+    cells.forEach(function(td) {
+      var bgMatch = td.getAttribute('style').match(/background:([#a-fA-F0-9]+)/);
+      var bg = bgMatch ? bgMatch[1].replace('#','') : LGRAY;
+      var divs = td.querySelectorAll('div');
+      var label = divs[0] ? divs[0].textContent.trim() : '';
+      var action = divs[1] ? divs[1].textContent.trim() : '';
+      var locs = divs[2] ? divs[2].textContent.trim() : '';
+      var colW = Math.floor(9360 / cells.length);
+      riskCells.push(new D.TableCell({
+        borders: nbr(),
+        shading: {fill:bg, type:D.ShadingType.CLEAR},
+        margins: {top:80,bottom:80,left:120,right:120},
+        width: {size:colW, type:D.WidthType.DXA},
+        children: [
+          new D.Paragraph({spacing:{after:30},children:[new D.TextRun({text:label,size:20,bold:true,color:WHITE,font:'Arial'})]}),
+          new D.Paragraph({spacing:{after:30},children:[new D.TextRun({text:action,size:18,color:'e8e8e8',italics:true,font:'Arial'})]}),
+          new D.Paragraph({spacing:{after:0},children:[new D.TextRun({text:locs,size:18,color:WHITE,font:'Arial'})]}),
+        ]
+      }));
+    });
+    if (riskCells.length) {
+      paragraphs.push(new D.Table({
+        width:{size:9360,type:D.WidthType.DXA},
+        columnWidths: riskCells.map(function(){ return Math.floor(9360/riskCells.length); }),
+        rows: [new D.TableRow({children:riskCells})]
+      }));
+      paragraphs.push(sp());
+    }
+  }
+
+  // ── Body paragraphs ───────────────────────────────────────────────────────
+  var bodyPs = tmp.querySelectorAll('p');
+  bodyPs.forEach(function(p) {
+    var txt = p.textContent.trim();
+    if (!txt) return;
+    var isBold = p.style.fontWeight === '700' || p.style.fontStyle === 'italic';
+    paragraphs.push(new D.Paragraph({spacing:{after:120},children:[new D.TextRun({
+      text:txt, size:22, font:'Arial', bold:isBold, italics:p.style.fontStyle==='italic'
+    })]}));
+  });
+
+  // ── Shift notes ───────────────────────────────────────────────────────────
+  var notesEl = tmp.querySelector('[style*="border-left:4px solid #0E2841"]') ||
+                tmp.querySelector('[style*="border-left: 4px solid"]');
+  if (notesEl) {
+    var notesText = notesEl.textContent.trim();
+    if (notesText) {
+      paragraphs.push(new D.Table({
+        width:{size:9360,type:D.WidthType.DXA}, columnWidths:[9360],
+        rows:[new D.TableRow({children:[new D.TableCell({
+          borders: {top:{style:D.BorderStyle.NONE,size:0,color:WHITE},bottom:{style:D.BorderStyle.NONE,size:0,color:WHITE},
+                    right:{style:D.BorderStyle.NONE,size:0,color:WHITE},left:{style:D.BorderStyle.SINGLE,size:12,color:NAVY}},
+          shading:{fill:LGRAY,type:D.ShadingType.CLEAR},
+          margins:{top:80,bottom:80,left:160,right:80},
+          children:[new D.Paragraph({children:[new D.TextRun({text:notesText,size:20,font:'Arial'})]})]
+        })]})]}));
+      paragraphs.push(sp());
+    }
+  }
+
+  // ── Zone tables ───────────────────────────────────────────────────────────
+  var tables = tmp.querySelectorAll('table');
+  tables.forEach(function(tbl) {
+    var firstTd = tbl.querySelector('td[colspan="3"]') || tbl.querySelector('td[colspan]');
+    if (!firstTd) return; // skip header and risk tables
+    var bgMatch = firstTd.getAttribute('style') && firstTd.getAttribute('style').match(/background:([#a-fA-F0-9]+)/);
+    if (!bgMatch) return;
+    var hdrBg = bgMatch[1].replace('#','');
+    var hdrText = firstTd.textContent.trim();
+    var rows = tbl.querySelectorAll('tr');
+    var docRows = [];
+
+    // Header row
+    docRows.push(new D.TableRow({children:[new D.TableCell({
+      borders: br(hdrBg), shading:{fill:hdrBg,type:D.ShadingType.CLEAR},
+      columnSpan:3, margins:{top:60,bottom:60,left:120,right:120},
+      children:[new D.Paragraph({children:[new D.TextRun({text:hdrText,size:20,bold:true,color:WHITE,font:'Arial'})]})]
+    })]}));
+
+    // Data rows
+    rows.forEach(function(tr, ri) {
+      if (ri === 0) return; // skip header td row
+      var tds = tr.querySelectorAll('td,th');
+      if (tds.length < 2) return;
+      var isColHeader = tds[0].tagName === 'TH';
+      var cells = Array.from(tds).map(function(td, ci) {
+        var txt = td.textContent.trim();
+        var widths = [1200, 2160, 6000];
+        return new D.TableCell({
+          borders: br(MGRAY),
+          shading:{fill: isColHeader ? LGRAY : (ri%2===0?'FFFFFF':'F9F9F9'), type:D.ShadingType.CLEAR},
+          margins:{top:60,bottom:60,left:100,right:100},
+          width:{size:widths[ci]||2000,type:D.WidthType.DXA},
+          children:[new D.Paragraph({children:[new D.TextRun({text:txt,size:20,bold:isColHeader,font:'Arial'})]})]
+        });
+      });
+      docRows.push(new D.TableRow({children:cells}));
+    });
+
+    if (docRows.length > 1) {
+      paragraphs.push(new D.Table({
+        width:{size:9360,type:D.WidthType.DXA},
+        columnWidths:[1200,2160,6000],
+        rows:docRows
+      }));
+      paragraphs.push(sp());
+    }
+  });
+
+  // ── Immediate Actions ─────────────────────────────────────────────────────
+  var immEl = tmp.querySelector('[style*="IMMEDIATE ACTIONS"]') ||
+              Array.from(tmp.querySelectorAll('div')).find(function(d){return d.textContent.includes('IMMEDIATE ACTIONS');});
+  if (immEl) {
+    var parentDiv = immEl.closest ? immEl.closest('div[style*="margin-bottom"]') : immEl.parentElement;
+    if (parentDiv) {
+      paragraphs.push(new D.Table({
+        width:{size:9360,type:D.WidthType.DXA}, columnWidths:[9360],
+        rows:[new D.TableRow({children:[new D.TableCell({
+          borders:nbr(), shading:{fill:NAVY,type:D.ShadingType.CLEAR},
+          margins:{top:80,bottom:80,left:120,right:120},
+          children:[new D.Paragraph({children:[new D.TextRun({text:'IMMEDIATE ACTIONS',size:22,bold:true,color:WHITE,font:'Arial',characterSpacing:40})]})]
+        })]})]
+      }));
+      var lis = parentDiv.querySelectorAll('li');
+      lis.forEach(function(li) {
+        paragraphs.push(new D.Paragraph({
+          spacing:{after:80},
+          numbering:{reference:'bullets',level:0},
+          children:[new D.TextRun({text:li.textContent.trim(),size:22,font:'Arial'})]
+        }));
+      });
+      paragraphs.push(sp());
+    }
+  }
+
+  // ── Supervisor note ───────────────────────────────────────────────────────
+  var svEl = Array.from(tmp.querySelectorAll('div')).find(function(d){
+    return d.textContent.trim().startsWith('Supervisors:');
+  });
+  if (svEl) {
+    paragraphs.push(new D.Table({
+      width:{size:9360,type:D.WidthType.DXA}, columnWidths:[9360],
+      rows:[new D.TableRow({children:[new D.TableCell({
+        borders:br(MGRAY), margins:{top:80,bottom:80,left:120,right:120},
+        children:[new D.Paragraph({children:[
+          new D.TextRun({text:'Supervisors: ',size:22,bold:true,font:'Arial'}),
+          new D.TextRun({text:svEl.textContent.replace('Supervisors:','').trim(),size:22,font:'Arial'})
+        ]})]
+      })]})]
+    }));
+    paragraphs.push(sp());
+  }
+
+  // ── Safety tagline ────────────────────────────────────────────────────────
+  var safetyEl = Array.from(tmp.querySelectorAll('div')).find(function(d){
+    return d.textContent.includes('Safety is Paramount');
+  });
+  if (safetyEl) {
+    paragraphs.push(new D.Table({
+      width:{size:9360,type:D.WidthType.DXA}, columnWidths:[9360],
+      rows:[new D.TableRow({children:[new D.TableCell({
+        borders:nbr(), shading:{fill:NAVY,type:D.ShadingType.CLEAR},
+        margins:{top:80,bottom:80,left:120,right:120},
+        children:[new D.Paragraph({alignment:D.AlignmentType.CENTER,children:[
+          new D.TextRun({text:safetyEl.textContent.trim(),size:22,bold:true,color:WHITE,font:'Arial'})
+        ]})]
+      })]})]
+    }));
+    paragraphs.push(sp());
+  }
+
+  // ── Disclaimer ────────────────────────────────────────────────────────────
+  var discEl = tmp.querySelector('p[style*="font-style:italic"]') ||
+               tmp.querySelector('p[style*="italic"]');
+  if (discEl) {
+    paragraphs.push(new D.Paragraph({spacing:{after:80},children:[
+      new D.TextRun({text:discEl.textContent.trim(),size:18,italics:true,color:'666666',font:'Arial'})
+    ]}));
+  }
+
+  // ── Build document ────────────────────────────────────────────────────────
+  var doc = new D.Document({
+    numbering:{config:[
+      {reference:'bullets',levels:[{level:0,format:D.LevelFormat.BULLET,text:'\u2022',
+        alignment:D.AlignmentType.LEFT,style:{paragraph:{indent:{left:720,hanging:360}}}}]}
+    ]},
+    sections:[{
+      properties:{page:{size:{width:12240,height:15840},margin:{top:1080,right:1080,bottom:1080,left:1080}}},
+      children: paragraphs
+    }]
+  });
+
+  D.Packer.toBlob(doc).then(function(blob) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'WATCH_Briefing_' + dateStr.replace(/[^a-zA-Z0-9]/g,'_') + '.docx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }).catch(function(e) {
+    alert('Error generating DOCX: ' + e.message);
+  });
+}
+
+
 function _doPrint(codes, notes, sections) {
   sections = sections || {spc:true,nhc:true,winter:true,flood:true,wind:true,temp:true,alerts:true};
   var now = new Date();
@@ -4365,10 +4621,23 @@ function _doPrint(codes, notes, sections) {
     + '@media print{.noprint{display:none!important}body{padding:10px}}</style></head><body>';
   var toolbar = '<div class="noprint" style="background:#0E2841;color:#fff;padding:8px 16px;margin:-20px -20px 16px;display:flex;justify-content:space-between;align-items:center">'
     + '<span style="font-size:12px;font-weight:700">WATCH Briefing</span>'
+    + '<div style="display:flex;gap:8px">'
+    + '<button onclick="window.downloadBriefDocx()" style="background:#1a6ba0;color:#fff;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">&#8681; Download DOCX</button>'
     + '<button onclick="window.print()" style="background:#fff;color:#0E2841;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">Print / Save PDF</button>'
-    + '</div>';
+    + '</div></div>';
   win.document.write(head + toolbar + html + '</body></html>');
   win.document.close();
+  // Expose download function to the briefing window
+  win.downloadBriefDocx = function() {
+    var body = win.document.body;
+    // Remove toolbar before parsing
+    var noprint = body.querySelector('.noprint');
+    var toolbarHtml = noprint ? noprint.outerHTML : '';
+    if (noprint) noprint.remove();
+    var content = body.innerHTML;
+    if (toolbarHtml && noprint) body.insertAdjacentHTML('afterbegin', toolbarHtml);
+    _buildDocxFromHTML(content, dateStr);
+  };
 }
 
 function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES, sections) {
