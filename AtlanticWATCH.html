@@ -4419,6 +4419,19 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     +'<strong>Shift Notes:</strong> '+notes+'</div>';
   }
 
+  // ── 3b. SPC map image ────────────────────────────────────────────────────
+  if (sections.spc && activeZones.length) {
+    var today = new Date().toISOString().split('T')[0];
+    html += '<div style="margin-bottom:12px">'
+      +'<img src="https://www.spc.noaa.gov/products/outlook/day1otlk.gif" '
+      +'style="width:100%;max-width:680px;display:block" '
+      +'alt="SPC Day 1 Categorical Outlook" '
+      +'onerror="this.style.display=\'none\'">'  
+      +'<div style="font-size:9px;color:#556070;font-style:italic;margin-top:3px">'
+      +'Source: NOAA/NWS Storm Prediction Center, Norman, Oklahoma \u2014 SPC Day 1 Categorical Outlook</div>'
+      +'</div>';
+  }
+
   // ── 4. Per-zone location tables ───────────────────────────────────────────
   if (sections.spc) activeZones.forEach(function(z) {
     var zone = SPC_ZONES[z];
