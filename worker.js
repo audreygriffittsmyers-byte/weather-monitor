@@ -180,30 +180,8 @@ export default {
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
-    if (type === 'earthquake') {
-      const start = new Date(Date.now() - 24*60*60*1000).toISOString();
-      try {
-        const res = await fetch(`https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${start}&minmagnitude=3.0&orderby=magnitude`,
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
-    }
 
-    if (type === 'volcano') {
-      try {
-        const res = await fetch('https://volcanoes.usgs.gov/vhp/api/alert?format=json',
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
-    }
 
-    if (type === 'spaceweather') {
-      try {
-        const res = await fetch('https://services.swpc.noaa.gov/products/alerts.json',
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
-    }
 
     if (type === 'wildfirepoly') {
       try {
@@ -317,84 +295,11 @@ export default {
       }
     }
 
-    if (type === 'brief') {
-      const body = await request.json().catch(() => ({}));
-      const apiKey = env.ANTHROPIC_API_KEY;
-      if (!apiKey) return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not set' }), { status: 500, headers: GEOJSON });
-      try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: body.messages || [] }),
-        });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: GEOJSON }); }
-    }
-
-    if (type === 'notify') {
-      return new Response(JSON.stringify({ ok: true }), { headers: GEOJSON });
-    }
-
-    if (type === 'tfr') {
-      try {
-        const res = await fetch('https://tfr.faa.gov/tfr2/list.html',
-          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
-        const html = await res.text();
-        const tfrs = [];
-        const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
-        for (const row of rows) {
-          const cells = [];
-          const cr = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-          let m;
-          while ((m = cr.exec(row)) !== null) {
-            cells.push(m[1].replace(/<[^>]+>/g,'').trim());
-          }
-          if (cells.length >= 5 && cells[1] && cells[1].includes('/')) {
-            tfrs.push({ notam_id:cells[1], facility:cells[2], state:cells[3], type:cells[4], description:(cells[5]||'').substring(0,200) });
-          }
-        }
-        return new Response(JSON.stringify(tfrs), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
-    }
-
-    if (type === 'pirep') {
-      const bbox = url.searchParams.get('bbox');
-      if (!bbox) return new Response(JSON.stringify([]), { headers: GEOJSON });
-      try {
-        const res = await fetch(
-          `https://aviationweather.gov/api/data/pirep?bbox=${encodeURIComponent(bbox)}&format=json&age=3`,
-          { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } }
-        );
-        if (!res.ok) return new Response(JSON.stringify([]), { headers: GEOJSON });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
-    }
 
 
-    if (type === 'notam') {
-      const icao = url.searchParams.get('icao');
-      if (!icao) return new Response(JSON.stringify([]), { headers: GEOJSON });
-      try {
-        const res = await fetch(
-          `https://external-api.faa.gov/notamapi/v1/notams?icaoLocation=${icao.toUpperCase()}&pageSize=50`,
-          { headers: { 'User-Agent': UA, 'Accept': 'application/json' },
-            cf: { cacheTtl: 300, cacheEverything: true } }
-        );
-        if (!res.ok) return new Response(JSON.stringify([]), { headers: GEOJSON });
-        const data = await res.json();
-        const notams = (data.items || []).map(n => ({
-          notamID:      n.coreNOTAMData?.notam?.id || '',
-          type:         n.coreNOTAMData?.notam?.type || '',
-          icaoMessage:  n.coreNOTAMData?.notamTranslation?.[0]?.simpleText || '',
-          traditionalMessage: n.coreNOTAMData?.notam?.icaoMessage || '',
-          keyword:      n.coreNOTAMData?.notam?.keyword || '',
-          effectiveStart: n.coreNOTAMData?.notam?.effectiveStart || '',
-          effectiveEnd:   n.coreNOTAMData?.notam?.effectiveEnd || '',
-          classification: n.coreNOTAMData?.notam?.classification || '',
-        }));
-        return new Response(JSON.stringify(notams), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
-    }
+
+
+
 
     return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), { status: 400, headers: GEOJSON });
   }
