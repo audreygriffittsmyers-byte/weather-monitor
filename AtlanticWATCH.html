@@ -4251,99 +4251,6 @@ function buildForwardLook(code) {
   return html;
 }
 
-// ── SPC Text Timing Parser ────────────────────────────────────────────────────
-// Extracts timing language from spcText[1] for a given risk zone.
-// Returns a concise timing string like "afternoon through evening" or null.
-function parseSPCTiming(zoneLabel) {
-  var raw = spcText && spcText[1];
-  if (!raw || typeof raw !== 'string') return null;
-
-  // Normalize
-  var txt = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-  // Find the section for this zone label
-  // SPC text uses headers like: ...SLIGHT RISK... or ...MARGINAL RISK...
-  var labelMap = {
-    'HIGH':  ['HIGH RISK', 'HIGH'],
-    'MDT':   ['MODERATE RISK', 'MODERATE'],
-    'ENH':   ['ENHANCED RISK', 'ENHANCED'],
-    'SLGT':  ['SLIGHT RISK', 'SLIGHT'],
-    'MRGL':  ['MARGINAL RISK', 'MARGINAL'],
-    'TSTM':  ['GENERAL THUNDERSTORM', 'TSTM'],
-  };
-  var labels = labelMap[zoneLabel] || [];
-  var sectionText = null;
-
-  for (var li = 0; li < labels.length; li++) {
-    var lbl = labels[li];
-    // Find section header pattern: ...LABEL... or === LABEL ===
-    var secIdx = txt.toUpperCase().indexOf('...' + lbl + '...');
-    if (secIdx < 0) secIdx = txt.toUpperCase().indexOf(lbl + ' RISK');
-    if (secIdx < 0) continue;
-    // Get text from this section to the next section or end
-    var nextSec = txt.toUpperCase().indexOf('...', secIdx + lbl.length + 6);
-    if (nextSec < 0) nextSec = txt.length;
-    sectionText = txt.substring(secIdx, nextSec);
-    break;
-  }
-
-  // If no section found, use full text (sometimes SPC doesn't separate by zone)
-  if (!sectionText) sectionText = txt;
-
-  // Extract timing phrases using priority order
-  var timingPatterns = [
-    // Full day-range phrases (best)
-    /afternoon[s]?\s+(?:and|through|into)\s+(?:the\s+)?(?:late\s+)?evening/i,
-    /afternoon[s]?\s+(?:and|through|into)\s+(?:the\s+)?overnight/i,
-    /morning[s]?\s+(?:and|through|into)\s+(?:the\s+)?afternoon/i,
-    /late\s+afternoon\s+(?:and|through|into)\s+(?:the\s+)?(?:early\s+)?evening/i,
-    /early\s+afternoon\s+(?:and|through|into)\s+(?:the\s+)?evening/i,
-    // Single period
-    /(?:during\s+(?:the\s+)?)(?:early\s+)?afternoon\s+hours?/i,
-    /(?:during\s+(?:the\s+)?)(?:late\s+)?afternoon/i,
-    /(?:during\s+(?:the\s+)?)(?:early\s+)?evening\s+hours?/i,
-    /(?:during\s+(?:the\s+)?)(?:late\s+)?evening/i,
-    /(?:during\s+(?:the\s+)?)(?:early\s+)?morning\s+hours?/i,
-    /(?:during\s+(?:the\s+)?)overnight/i,
-    // Fallback periods
-    /afternoon[s]?/i,
-    /evening[s]?/i,
-    /overnight/i,
-    /morning[s]?/i,
-  ];
-
-  // Also look for diminishing language
-  var diminishPatterns = [
-    /(?:diminish|decrease|taper|weaken|end)\w*\s+(?:after|by|before)\s+\w+/i,
-    /(?:diminish|decrease|taper|weaken)\w*\s+\w+\s+(?:the\s+)?\w+/i,
-  ];
-
-  var timing = null;
-  for (var i = 0; i < timingPatterns.length; i++) {
-    var m = sectionText.match(timingPatterns[i]);
-    if (m) { timing = m[0].trim(); break; }
-  }
-
-  if (!timing) return null;
-
-  // Capitalize first letter
-  timing = timing.charAt(0).toUpperCase() + timing.slice(1);
-
-  // Check for diminishing language to append
-  for (var j = 0; j < diminishPatterns.length; j++) {
-    var dm = sectionText.match(diminishPatterns[j]);
-    if (dm && dm[0].toLowerCase() !== timing.toLowerCase()) {
-      var dmStr = dm[0].trim();
-      dmStr = dmStr.charAt(0).toUpperCase() + dmStr.slice(1);
-      timing = timing + '. ' + dmStr + '.';
-      break;
-    }
-  }
-
-  return timing;
-}
-
-
 function _doPrint(codes, notes, sections) {
   sections = sections || {spc:true,nhc:true,winter:true,flood:true,wind:true,temp:true,alerts:true};
   var now = new Date();
@@ -4550,31 +4457,15 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
       // Build timing from TAF + alerts
       var timing = '';
       var taf = tafData[code];
-      // 1. Active NWS alert -- most specific
       if (alerts.length) {
         timing = alerts[0].event + (alerts[0].expires ? ' until '+fmtTime(alerts[0].expires) : '');
-      // 2. TAF thunderstorm group -- gives hour-level precision
       } else if (taf && taf.rawTAF) {
-        var rawTaf = taf.rawTAF.toUpperCase();
-        var tsMatch = rawTaf.match(/FM(\d{2})(\d{2})\d{2}[^]*?(?:TSRA|TS\b)/);
-        if (tsMatch) {
-          timing = 'Thunderstorm activity possible from approx ' + tsMatch[1] + ':' + tsMatch[2] + 'Z.';
-          // Append SPC zone timing if available
-          var spcTiming = parseSPCTiming(z);
-          if (spcTiming) timing += ' ' + spcTiming + '.';
-        } else {
-          // 3. SPC text timing -- zone-level
-          var spcTiming = parseSPCTiming(z);
-          timing = spcTiming
-            ? 'Storm development expected ' + spcTiming.toLowerCase() + '.'
-            : 'Monitor for afternoon and evening convective development.';
-        }
+        var raw = taf.rawTAF.toUpperCase();
+        var tsMatch = raw.match(/FM(\d{2})(\d{2})\d{2}[^]*?(?:TSRA|TS\b)/);
+        if (tsMatch) timing = 'Thunderstorm activity possible from approx '+tsMatch[1]+':'+tsMatch[2]+'Z.';
+        else timing = 'Monitor for afternoon and evening convective development.';
       } else {
-        // 4. SPC text timing only
-        var spcTiming = parseSPCTiming(z);
-        timing = spcTiming
-          ? 'Storm development possible ' + spcTiming.toLowerCase() + '.'
-          : 'Monitor for convective development. Consult local NWS office for timing.';
+        timing = 'Monitor for convective development this period.';
       }
       var bg = locs.indexOf(code) % 2 === 0 ? '#fff' : '#f9f9f9';
       html += '<tr style="background:'+bg+'">'
@@ -6137,7 +6028,7 @@ function updatePickerFooter() {
   if (summary) summary.textContent = n === 0 ? 'Showing all ' + COVERED.length + ' locations' : 'Showing ' + n + ' of ' + COVERED.length + ' locations';
 }
 
-
+</script>
 
 
 <!-- In-app alert banner -->
