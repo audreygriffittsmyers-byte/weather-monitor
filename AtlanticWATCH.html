@@ -4294,7 +4294,7 @@ function parseSPCTiming(zoneLabel) {
 
 
 // ── DOCX Export ───────────────────────────────────────────────────────────────
-function _buildDocxFromHTML(htmlContent, dateStr) {
+window._buildDocxFromHTML = function _buildDocxFromHTML(htmlContent, dateStr) {
   // Parse the briefing HTML into a docx structure using docx.js
   // docx.js is loaded via CDN as window.docx
   if (!window.docx) { alert('DOCX library not loaded. Check your connection.'); return; }
@@ -4628,15 +4628,23 @@ function _doPrint(codes, notes, sections) {
   win.document.write(head + toolbar + html + '</body></html>');
   win.document.close();
   // Expose download function to the briefing window
+  // downloadBriefDocx runs in parent context where docx.js CDN is loaded
   win.downloadBriefDocx = function() {
     var body = win.document.body;
-    // Remove toolbar before parsing
     var noprint = body.querySelector('.noprint');
-    var toolbarHtml = noprint ? noprint.outerHTML : '';
-    if (noprint) noprint.remove();
+    if (noprint) noprint.style.display = 'none';
     var content = body.innerHTML;
-    if (toolbarHtml && noprint) body.insertAdjacentHTML('afterbegin', toolbarHtml);
-    _buildDocxFromHTML(content, dateStr);
+    if (noprint) noprint.style.display = '';
+    // Call parent window's function where docx.js is loaded
+    if (window.opener && window.opener._buildDocxFromHTML) {
+      window.opener._buildDocxFromHTML(content, dateStr);
+    } else {
+      // Fallback: inject docx.js into popup then call
+      var s = win.document.createElement('script');
+      s.src = 'https://unpkg.com/docx@8.5.0/build/index.js';
+      s.onload = function() { win._buildDocxFromHTML(content, dateStr); };
+      win.document.head.appendChild(s);
+    }
   };
 }
 
