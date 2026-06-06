@@ -4633,6 +4633,173 @@ function parseSPCTiming(zoneLabel) {
 }
 
 
+// ── 24-Hour Forecast Hazard Scanner ──────────────────────────────────────────
+// Reads hourlyData[code] (pre-loaded when location was viewed) and returns
+// a summary of forecast hazards for the next 24 hours.
+function _getForecastHazards(code) {
+  var periods = hourlyData[code];
+  if (!periods || !periods.length) return null;
+  var next24 = periods.slice(0, 24);
+  var now = new Date();
+
+  var windEvents = [];   // {time, speed, dir, forecast}
+  var heatPeaks  = [];   // {time, temp}
+  var coldPeaks  = [];   // {time, temp}
+  var precipEvents = []; // {time, pct, forecast}
+  var tsEvents   = [];   // {time, forecast}
+
+  next24.forEach(function(p) {
+    var t = new Date(p.startTime);
+    if (t < now) return;
+    var hr = t.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:p.startTime.includes('Z')?'UTC':undefined});
+
+    // Wind -- parse "15 mph" or "10 to 20 mph" -- take highest number
+    var wspd = 0;
+    if (p.windSpeed) {
+      var nums = p.windSpeed.match(/\d+/g);
+      if (nums) wspd = Math.max.apply(null, nums.map(Number));
+    }
+    if (wspd >= 30) windEvents.push({time:hr, speed:wspd, dir:p.windDirection||'', forecast:p.shortForecast||''});
+
+    // Temperature
+    var temp = p.temperature;
+    if (temp != null) {
+      if (temp >= 95) heatPeaks.push({time:hr, temp:temp});
+      if (temp <= 15) coldPeaks.push({time:hr, temp:temp});
+    }
+
+    // Precip
+    var precip = p.probabilityOfPrecipitation && p.probabilityOfPrecipitation.value;
+    if (precip >= 50) precipEvents.push({time:hr, pct:precip, forecast:p.shortForecast||''});
+
+    // Thunderstorms
+    if (/thunder|tstm/i.test(p.shortForecast||'')) tsEvents.push({time:hr, forecast:p.shortForecast||''});
+  });
+
+  return { windEvents:windEvents, heatPeaks:heatPeaks, coldPeaks:coldPeaks, precipEvents:precipEvents, tsEvents:tsEvents };
+}
+
+function _buildForecastSection(codes) {
+  var NAVY = '#0E2841';
+
+  // Aggregate hazard locations
+  var windLocs=[], heatLocs=[], coldLocs=[], noData=[];
+  var singleMode = codes.length === 1;
+
+  codes.forEach(function(code) {
+    var fbo = COVERED.find(function(f){return f.code===code;}) || {code:code,city:'',state:''};
+    var h = _getForecastHazards(code);
+    if (!h) { noData.push(code); return; }
+    if (h.windEvents.length)  windLocs.push({code:code, fbo:fbo, hazards:h});
+    if (h.heatPeaks.length)   heatLocs.push({code:code, fbo:fbo, hazards:h});
+    if (h.coldPeaks.length)   coldLocs.push({code:code, fbo:fbo, hazards:h});
+  });
+
+  var hasAny = windLocs.length || heatLocs.length || coldLocs.length;
+  if (!hasAny && !singleMode) return '';
+
+  var html = '<div style="margin-bottom:16px">'
+    + '<div style="background:'+NAVY+';color:#fff;font-weight:700;font-size:11px;padding:6px 10px;letter-spacing:.04em">24-HOUR FORECAST HAZARDS</div>'
+    + '<div style="border:1px solid #ddd;border-top:none;padding:10px 14px;font-size:11px">';
+
+  if (!hasAny && singleMode) {
+    var h = _getForecastHazards(codes[0]);
+    if (!h) {
+      html += '<div style="color:#8a9aaa;font-style:italic">Hourly forecast data not available for this location. Open in Live Monitor and allow data to load, then regenerate the briefing.</div>';
+    } else {
+      html += '<div style="color:#16a34a">No forecast wind, heat, or cold hazards in the next 24 hours.</div>';
+    }
+  }
+
+  // Wind hazard table
+  if (windLocs.length) {
+    html += '<div style="font-weight:700;color:#ea580c;margin-bottom:4px;margin-top:4px">\uD83D\uDCA8 Forecast Wind Advisory Threshold (>= 30 mph)</div>';
+    html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">'
+      + '<tr><th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">FBO</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">City / State</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">Peak Wind / Time</th></tr>';
+    windLocs.forEach(function(loc, i) {
+      var bg = i%2===0?'#fff':'#f9f9f9';
+      var peak = loc.hazards.windEvents.reduce(function(a,b){return b.speed>a.speed?b:a;});
+      html += '<tr><td style="padding:4px 6px;font-weight:700;background:'+bg+'">'+loc.code+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+loc.fbo.city+(loc.fbo.state?', '+loc.fbo.state:'')+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+peak.speed+' mph '+peak.dir+' at '+peak.time+'</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  // Heat hazard table
+  if (heatLocs.length) {
+    html += '<div style="font-weight:700;color:#dc2626;margin-bottom:4px;margin-top:4px">\u2600\uFE0F Forecast Extreme Heat (>= 95\u00B0F)</div>';
+    html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">'
+      + '<tr><th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">FBO</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">City / State</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">Peak Temp / Time</th></tr>';
+    heatLocs.forEach(function(loc, i) {
+      var bg = i%2===0?'#fff':'#f9f9f9';
+      var peak = loc.hazards.heatPeaks.reduce(function(a,b){return b.temp>a.temp?b:a;});
+      html += '<tr><td style="padding:4px 6px;font-weight:700;background:'+bg+'">'+loc.code+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+loc.fbo.city+(loc.fbo.state?', '+loc.fbo.state:'')+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+peak.temp+'\u00B0F at '+peak.time+'</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  // Cold hazard table
+  if (coldLocs.length) {
+    html += '<div style="font-weight:700;color:#2563eb;margin-bottom:4px;margin-top:4px">\uD83E\uDDCA Forecast Extreme Cold (<= 15\u00B0F)</div>';
+    html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">'
+      + '<tr><th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">FBO</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">City / State</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">Low Temp / Time</th></tr>';
+    coldLocs.forEach(function(loc, i) {
+      var bg = i%2===0?'#fff':'#f9f9f9';
+      var peak = loc.hazards.coldPeaks.reduce(function(a,b){return b.temp<a.temp?b:a;});
+      html += '<tr><td style="padding:4px 6px;font-weight:700;background:'+bg+'">'+loc.code+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+loc.fbo.city+(loc.fbo.state?', '+loc.fbo.state:'')+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+peak.temp+'\u00B0F at '+peak.time+'</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  // Single-location timeline -- thunderstorms, precip, wind by hour
+  if (singleMode) {
+    var h = _getForecastHazards(codes[0]);
+    if (h) {
+      var fbo = COVERED.find(function(f){return f.code===codes[0];}) || {};
+      var timelineItems = [];
+      h.tsEvents.forEach(function(e)   { timelineItems.push({time:e.time, icon:'\u26A1', text:e.forecast,            color:'#ea580c'}); });
+      h.precipEvents.forEach(function(e){ timelineItems.push({time:e.time, icon:'\uD83C\uDF27', text:e.pct+'% precip: '+e.forecast, color:'#2563eb'}); });
+      h.windEvents.forEach(function(e)  { timelineItems.push({time:e.time, icon:'\uD83D\uDCA8', text:e.speed+' mph '+e.dir,         color:'#ea580c'}); });
+      h.heatPeaks.forEach(function(e)   { timelineItems.push({time:e.time, icon:'\u2600\uFE0F', text:e.temp+'\u00B0F heat',          color:'#dc2626'}); });
+      h.coldPeaks.forEach(function(e)   { timelineItems.push({time:e.time, icon:'\uD83E\uDDCA', text:e.temp+'\u00B0F cold',          color:'#2563eb'}); });
+
+      if (timelineItems.length) {
+        html += '<div style="font-weight:700;color:#0E2841;margin-bottom:6px;margin-top:4px">24-Hour Event Timeline</div>';
+        html += '<table style="width:100%;border-collapse:collapse;margin-bottom:6px">';
+        timelineItems.forEach(function(item, i) {
+          var bg = i%2===0?'#fff':'#f9f9f9';
+          html += '<tr>'
+            + '<td style="padding:4px 8px;width:80px;font-size:10px;color:#556070;background:'+bg+'">'+item.time+'</td>'
+            + '<td style="padding:4px 6px;width:20px;background:'+bg+'">'+item.icon+'</td>'
+            + '<td style="padding:4px 8px;font-size:10px;font-weight:700;color:'+item.color+';background:'+bg+'">'+item.text+'</td></tr>';
+        });
+        html += '</table>';
+      } else {
+        html += '<div style="color:#16a34a;margin-top:4px">No significant weather events in the 24-hour timeline.</div>';
+      }
+    }
+  }
+
+  if (noData.length && noData.length <= 10) {
+    html += '<div style="font-size:9px;color:#8a9aaa;margin-top:6px;font-style:italic">Hourly data not yet loaded for: '+noData.join(', ')+'. View these locations in Live Monitor to load forecast data.</div>';
+  }
+
+  html += '</div></div>';
+  return html;
+}
+
+
 function _doPrint(codes, notes, sections) {
   sections = sections || {spc:true,nhc:true,winter:true,flood:true,wind:true,temp:true,alerts:true};
   var now = new Date();
@@ -4909,6 +5076,9 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     +'<ul style="margin:0;padding-left:18px">';
   actions.forEach(function(a) { html += '<li style="margin-bottom:5px">'+a+'</li>'; });
   html += '</ul></div></div>';
+
+  // ── 5b. 24-hour forecast hazards
+  html += _buildForecastSection(codes);
 
   // ── 6. Supervisor note ────────────────────────────────────────────────────
   } // end sections.spc immediate actions
