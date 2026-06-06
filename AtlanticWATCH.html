@@ -681,9 +681,29 @@ function alertDistanceMiles(feature, lat, lon) {
   return minDist === Infinity ? null : minDist;
 }
 
+// Point-in-polygon for NWS alert geometry
+function pointInAlertPoly(lat, lon, ring) {
+  var inside = false;
+  for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    var xi = ring[i][0], yi = ring[i][1]; // [lon, lat]
+    var xj = ring[j][0], yj = ring[j][1];
+    if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi))
+      inside = !inside;
+  }
+  return inside;
+}
+function alertContainsPoint(feature, lat, lon) {
+  var geom = feature.geometry;
+  if (!geom || !geom.coordinates) return false;
+  var rings = geom.type === 'Polygon' ? [geom.coordinates[0]]
+            : geom.type === 'MultiPolygon' ? geom.coordinates.map(function(p){ return p[0]; })
+            : [];
+  return rings.some(function(ring) { return pointInAlertPoly(lat, lon, ring); });
+}
+
 // State-level alert cache: state -> { ts, features }
 const stateAlertCache = {};
-const STATE_CACHE_MS = 90 * 1000; // 90 seconds
+const STATE_CACHE_MS = 60 * 1000; // 60 seconds -- reduced for active severe wx
 
 async function fetchStateAlerts(state) {
   const cached = stateAlertCache[state];
@@ -718,10 +738,14 @@ async function fetchAlerts(code) {
     const p = f.properties;
     if (!p?.event) return false;
 
-    // Check geometry proximity
+    // Check if point is INSIDE the alert polygon (most accurate)
     if (f.geometry) {
+      if (alertContainsPoint(f, lat, lon)) return true;
+      // Also catch locations near (within 25 miles) the polygon edge
+      const event = p.event || '';
+      const edgeMiles = /Watch/.test(event) ? 25 : /Warning/.test(event) ? 15 : PROXIMITY_MILES;
       const dist = alertDistanceMiles(f, lat, lon);
-      if (dist !== null && dist <= PROXIMITY_MILES) return true;
+      if (dist !== null && dist <= edgeMiles) return true;
     }
 
     // Fallback: no geometry -- check if issuing NWS office is within service range of FBO
@@ -795,6 +819,8 @@ async function loadFBO(code) {
 async function doScanAll() {
   if (scanning) { stopScan = true; return; }
   stopScan = false; scanning = true;
+  // Clear state alert cache so manual Scan All always gets fresh data
+  Object.keys(stateAlertCache).forEach(function(k){ delete stateAlertCache[k]; });
   const fbos = COVERED;
   scanD = 0; scanT = fbos.length;
   updateScanBtn();
