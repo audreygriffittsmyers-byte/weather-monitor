@@ -4839,15 +4839,25 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
       // Build timing from TAF + alerts
       var timing = '';
       var taf = tafData[code];
+      var spcT = (typeof parseSPCTiming === 'function') ? parseSPCTiming(z) : null;
       if (alerts.length) {
         timing = alerts[0].event + (alerts[0].expires ? ' until '+fmtTime(alerts[0].expires) : '');
       } else if (taf && taf.rawTAF) {
         var raw = taf.rawTAF.toUpperCase();
         var tsMatch = raw.match(/FM(\d{2})(\d{2})\d{2}[^]*?(?:TSRA|TS\b)/);
-        if (tsMatch) timing = 'Thunderstorm activity possible from approx '+tsMatch[1]+':'+tsMatch[2]+'Z.';
-        else timing = 'Monitor for afternoon and evening convective development.';
+        if (tsMatch) {
+          timing = 'Thunderstorm activity possible from approx '+tsMatch[1]+':'+tsMatch[2]+'Z';
+          if (spcT) timing += '. ' + spcT + '.';
+          else timing += '.';
+        } else if (spcT) {
+          timing = 'Storms expected ' + spcT.toLowerCase() + '.';
+        } else {
+          timing = 'Monitor for afternoon and evening convective development.';
+        }
+      } else if (spcT) {
+        timing = 'Storm development possible ' + spcT.toLowerCase() + '.';
       } else {
-        timing = 'Monitor for convective development this period.';
+        timing = 'Monitor for convective development. Consult local NWS office for timing.';
       }
       var bg = locs.indexOf(code) % 2 === 0 ? '#fff' : '#f9f9f9';
       html += '<tr style="background:'+bg+'">'
