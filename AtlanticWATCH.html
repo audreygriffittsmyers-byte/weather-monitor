@@ -998,6 +998,8 @@ function makeSidebarItem(fbo) {
   var ltng=getLightningStatus(fbo.code);
   var windSt=getWindStatus(fbo.code);
   var windBolt=windSt?`<span title="${windSt.label}" style="font-size:11px;margin-left:3px">💨</span>`:""
+;  var _fire=fireData[fbo.code];
+  var fireSideIcon=_fire?`<span title="Fire Wx: ${_fire.label}" style="font-size:11px;margin-left:3px;background:${_fire.color};color:#fff;border-radius:2px;padding:0 3px">🔥</span>`:""
 ;
   var _obs=obsData[fbo.code];
   var heatIcon=(_obs&&_obs.tempF>=95)?`<span title="Extreme Heat: ${_obs.tempF}°F" style="font-size:11px;margin-left:3px">☀️</span>`:""
@@ -1009,7 +1011,7 @@ function makeSidebarItem(fbo) {
   div.innerHTML = `
     <span class="fbo-code" style="color:${textColor}">${fbo.code}</span>
     <span class="fbo-loc">${fbo.city}, ${fbo.state}</span>
-    <div class="fbo-badge-wrap" style="display:flex;align-items:center">${badgeHTML}${spcDot}${ltngBolt}${windBolt}${heatIcon}${coldIcon}</div>
+    <div class="fbo-badge-wrap" style="display:flex;align-items:center">${badgeHTML}${spcDot}${ltngBolt}${windBolt}${heatIcon}${coldIcon}${fireSideIcon}</div>
   `;
   div.addEventListener('click', () => selectFBO(fbo.code));
   return div;
@@ -1450,6 +1452,12 @@ function renderDetail() {
     +'<div><div style="font-size:12px;font-weight:700;color:'+_ws.color+'">'+_ws.label+'</div>'
     +'<div style="font-size:11px;color:#334155;margin-top:3px">'+_ws.msg+'</div></div></div></div>';
   content += renderLightningCard(selected);
+  var _detFire=fireData[selected];
+  if(_detFire)content+='<div style="background:#fff7ed;border:1.5px solid '+_detFire.color+';border-radius:6px;padding:10px 14px;margin-bottom:12px">'
+    +'<span style="font-size:11px;font-weight:700;color:'+_detFire.color+'">🔥 FIRE WEATHER: '+_detFire.label+'</span>'
+    +'<div style="font-size:10px;color:#556070;margin-top:3px">This location is within a '
+    +(_detFire.label==='EXTR'?'Critical to Extreme':_detFire.label==='CRIT'?'Critical':_detFire.label==='ELEV'?'Elevated':_detFire.label)
+    +' Fire Weather outlook area per SPC.</div></div>';
   content += renderGSPCard(selected);
   if (obs) content += renderDeiceCard(obs);
   if (obs) content += renderStressCard(obs);
@@ -1686,6 +1694,7 @@ function switchTab(tab) {
 
 // ── SPC ───────────────────────────────────────────────────────────────────────
 const spcData    = { 1:{}, 2:{}, 3:{} };
+const fireData   = {};
 const spcText    = { 1:null, 2:null, 3:null };
 let spcSelected  = null;
 let spcDay       = 1;
@@ -2469,6 +2478,9 @@ const NWS_POLY_STYLE = {
   MODERATE: { color:'#ca8a04', fillColor:'#ca8a04', fillOpacity:0.18, weight:1.5, dashArray:'6,4' },
   LOW:      { color:'#16a34a', fillColor:'#16a3a4', fillOpacity:0.12, weight:1, dashArray:'4,4' },
 };
+const FIRE_MARKER_COLOR = {
+  EXTR:'#7c3aed', CRIT:'#dc2626', ELEV:'#ea580c',
+};
 const SPC_MARKER_COLOR = {
   HIGH:'#EC30F0', MDT:'#EA3232', ENH:'#E97132',
   SLGT:'#FFC000', MRGL:'#196B24', TSTM:'#00b4b4',
@@ -2502,6 +2514,7 @@ async function fetchFirePolygons() {
     const r = await fetchWithTimeout(`${PROXY}?type=firepoly&day=1`);
     firePolygons = r.ok ? await r.json() : { features:[] };
     console.log('Fire poly:', firePolygons?.features?.length, 'features');
+    updateFireData();
   } catch(e) { console.warn('Fire poly failed:', e.message); firePolygons = {features:[]}; }
   return firePolygons;
 }
@@ -2756,14 +2769,15 @@ function toggleNWSPolygons(on)  { showNWSPolys  = on; drawNWSPolygons(); }
 
 // ── Markers ───────────────────────────────────────────────────────────────────
 function getMarkerColors(code) {
-  const spc = spcData[1][code];
-  const nws = results[code];
-  const spcColor = (spc?.st==='ok' && spc.label && SPC_MARKER_COLOR[spc.label]) ? SPC_MARKER_COLOR[spc.label] : null;
-  const nwsColor = (nws?.alerts?.length>0) ? (NWS_MARKER_COLOR[nws.alerts[0].bucket]||NWS_MARKER_COLOR.NONE) : null;
-  if (mapLayer==='spc') return { left:spcColor||'#334155', right:spcColor||'#334155' };
-  if (mapLayer==='nws') return { left:nwsColor||'#334155', right:nwsColor||'#334155' };
-  if (spcColor && nwsColor && spcColor!==nwsColor) return { left:spcColor, right:nwsColor };
-  return { left:spcColor||nwsColor||'#334155', right:spcColor||nwsColor||'#334155' };
+  const spc=spcData[1][code],nws=results[code],fire=fireData[code];
+  const spcColor=(spc?.st==='ok'&&spc.label&&SPC_MARKER_COLOR[spc.label])?SPC_MARKER_COLOR[spc.label]:null;
+  const nwsColor=(nws?.alerts?.length>0)?(NWS_MARKER_COLOR[nws.alerts[0].bucket]||NWS_MARKER_COLOR.NONE):null;
+  const fireColor=fire?fire.color:null;
+  if(mapLayer==='spc') return {left:spcColor||'#334155',right:spcColor||'#334155'};
+  if(mapLayer==='nws') return {left:nwsColor||'#334155',right:nwsColor||'#334155'};
+  const primary=nwsColor||fireColor||spcColor||'#334155';
+  const secondary=(nwsColor&&fireColor&&nwsColor!==fireColor)?fireColor:(nwsColor&&spcColor&&nwsColor!==spcColor)?spcColor:(fireColor&&spcColor&&fireColor!==spcColor)?spcColor:primary;
+  return {left:primary,right:secondary};
 }
 
 function makeMarkerIcon(code, hasAlert) {
@@ -2785,6 +2799,35 @@ function makeMarkerIcon(code, hasAlert) {
   return L.divIcon({html:svg, className:'', iconSize:[36,44], iconAnchor:[18,44], popupAnchor:[0,-44]});
 }
 
+
+function pointInFirePoly(lat, lon, ring) {
+  var inside=false;
+  for(var i=0,j=ring.length-1;i<ring.length;j=i++){
+    var xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+    if(((yi>lat)!==(yj>lat))&&(lon<(xj-xi)*(lat-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+function getFireRiskForLocation(lat,lon){
+  if(!firePolygons||!firePolygons.features) return null;
+  var order={EXTR:3,CRIT:2,ELEV:1},best=null;
+  firePolygons.features.forEach(function(f){
+    var p=f.properties||{},raw=(p.LABEL||p.label||p.Fire_Wx_Cat||'').toUpperCase();
+    var lbl=raw.includes('EXTREME')?'EXTR':raw.includes('CRITICAL')?'CRIT':raw.includes('ELEV')?'ELEV':null;
+    if(!lbl||(best&&(order[lbl]||0)<=(order[best]||0))) return;
+    var geom=f.geometry; if(!geom) return;
+    var rings=geom.type==='Polygon'?[geom.coordinates[0]]:geom.type==='MultiPolygon'?geom.coordinates.map(function(c){return c[0];}):[];
+    rings.forEach(function(ring){if(pointInFirePoly(lon,lat,ring)) best=lbl;});
+  });
+  return best?{label:best,color:FIRE_MARKER_COLOR[best]}:null;
+}
+function updateFireData(){
+  COVERED.forEach(function(fbo){
+    var c=COORDS[fbo.code]; if(!c) return;
+    fireData[fbo.code]=getFireRiskForLocation(c[0],c[1]);
+  });
+  renderMapMarkers();
+}
 
 function renderMapMarkers() {
   if (!leafletMap) return;
@@ -2823,6 +2866,8 @@ function renderMapMarkers() {
     const alertBadge = nwsCount > 0
       ? '<span style="background:' + NWS_MARKER_COLOR[topAlert.bucket] + ';color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px">&#x26A0; ' + nwsCount + ' NWS Alert' + (nwsCount>1?'s':'') + '</span>'
       : '<span style="background:#e8e8e8;color:#556070;font-size:9px;padding:2px 7px;border-radius:3px">No NWS Alerts</span>';
+    const fireRisk=fireData[fbo.code];
+    const fireBadge=fireRisk?'<span style="background:'+fireRisk.color+';color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px">🔥 Fire Wx: '+fireRisk.label+'</span>':''
 
     let probLine = '';
     if (spcR?.torn || spcR?.hail || spcR?.wind) {
@@ -2851,7 +2896,7 @@ function renderMapMarkers() {
       + condLine
       + '<div style="display:flex;gap:5px;margin:6px 0;flex-wrap:wrap">'
       + '<span style="background:' + spcBg + ';color:' + spcTxt + ';font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px">SPC: ' + spcLabel + '</span>'
-      + alertBadge + '</div>'
+      + alertBadge + fireBadge + '</div>'
       + probLine
       + alertBlock
       + '<div style="border-top:1px solid #e8e8e8;margin-top:8px;padding-top:8px">'
