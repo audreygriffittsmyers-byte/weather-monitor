@@ -4474,6 +4474,44 @@ async function _prefetchHourly(codes, btn) {
 }
 
 
+// ── Startup hourly pre-fetch ──────────────────────────────────────────────────
+// After initial scan completes, load hourly for affected locations first,
+// then quietly background-load remaining locations in small batches.
+async function _startupHourlyLoad() {
+  // Phase 1: immediately fetch impacted locations (SPC risk, NWS alerts, wind, heat, cold)
+  var priority = COVERED.filter(function(f) {
+    var spc = spcData[1][f.code];
+    var hasSPC = spc && spc.st === 'ok' && spc.label && spc.label !== 'No Risk';
+    var hasAlert = results[f.code] && results[f.code].alerts && results[f.code].alerts.length > 0;
+    var obs = obsData[f.code];
+    var hasTemp = obs && (obs.tempF >= 90 || obs.tempF <= 20);
+    var hasWind = !!(getWindStatus(f.code) || getTAFWindForecast(f.code, 6));
+    return hasSPC || hasAlert || hasTemp || hasWind;
+  }).map(function(f){ return f.code; });
+
+  // Phase 2: everything else
+  var rest = COVERED.filter(function(f){
+    return priority.indexOf(f.code) === -1;
+  }).map(function(f){ return f.code; });
+
+  // Fetch priority locations immediately (batch 6)
+  var BATCH = 6;
+  for (var i = 0; i < priority.length; i += BATCH) {
+    await Promise.all(priority.slice(i, i+BATCH).map(function(c){
+      return fetch7Day(c).catch(function(){});
+    }));
+  }
+
+  // Fetch rest in background with longer delay between batches to avoid rate limits
+  for (var i = 0; i < rest.length; i += BATCH) {
+    await Promise.all(rest.slice(i, i+BATCH).map(function(c){
+      return fetch7Day(c).catch(function(){});
+    }));
+    await new Promise(function(r){ setTimeout(r, 2000); });
+  }
+}
+
+
 function openPrintBriefing() {
   var defaultScope = 'all';
   if (selected) { defaultScope = 'location'; }
@@ -6375,6 +6413,8 @@ setTimeout(() => {
   doScanAll();
   // Auto load SPC Day 1
   fetchSPCText(1);
+  // Background-load hourly forecasts -- priority locations first after scan settles
+  setTimeout(function(){ _startupHourlyLoad(); }, 8000);
   scanSPC();
   fetchTropicalOutlook();
 }, 500);
