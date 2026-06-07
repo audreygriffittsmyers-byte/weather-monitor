@@ -502,7 +502,10 @@ const COVERED = FBO_LIST.filter(f => COORDS[f.code] && US_STATES.has(f.state));
 .forEach(function(f){ if (COORDS[f.code] && !COVERED.find(function(c){return c.code===f.code;})) COVERED.push(f); });
 
 // ── Severity ──────────────────────────────────────────────────────────────────
-function getBucket(event = '') {
+function getBucket(event, description) {
+  description = description || '';
+  var isPDS = /PARTICULARLY DANGEROUS SITUATION|\bPDS\b/.test(description.toUpperCase());
+  if (isPDS && /Tornado Watch/.test(event)) return 'EXTREME';
   if (/Tornado Warning|Flash Flood Emergency/.test(event)) return 'EXTREME';
   if (/Tornado Watch|Severe Thunderstorm Warning|Blizzard|Ice Storm Warning|Flash Flood Warning|Winter Storm Warning/.test(event)) return 'SEVERE';
   if (/Severe Thunderstorm Watch|Flash Flood Watch|Winter Storm Watch|High Wind Warning|Excessive Heat Warning|Flood Warning|Hurricane Warning|Tropical Storm Warning/.test(event)) return 'MODERATE';
@@ -783,7 +786,7 @@ async function fetchAlerts(code) {
       onset:     p.onset    ? new Date(p.onset)    : null,
       expires:   p.expires  ? new Date(p.expires)  : null,
       sender:    p.senderName,
-      bucket:    getBucket(p.event),
+      bucket:    getBucket(p.event, p.description),
       distMiles: dist !== null ? Math.round(dist) : null,
       motion:    p.parameters?.eventMotionDescription?.[0] || null,
     };
@@ -6485,7 +6488,8 @@ function checkForNewAlerts(){
     if(wind) parts.push("💨 "+wind.label);
     nws.forEach(function(a){parts.push("⚠ "+a.event);});
 
-    var title=code+" ("+city+") — "+parts.join(" · ");
+    var hasPDS=nws.some(function(a){return/PARTICULARLY DANGEROUS SITUATION|\bPDS\b/.test((a.description||"").toUpperCase());});
+    var title=(hasPDS?"🔴 PDS — ":"")+code+" ("+city+") — "+parts.join(" · ");
 
     // Body: conditions snapshot
     var obs=obsData[code];
@@ -6499,7 +6503,10 @@ function checkForNewAlerts(){
     }
     bodyParts.push("Tap to view");
 
-    var requireAck=!!(lightning||(wind&&wind.level==="protocol")||nws.some(function(a){return/Tornado/.test(a.event);}));
+    var requireAck=!!(lightning||(wind&&wind.level==="protocol")||nws.some(function(a){
+      return /Tornado/.test(a.event)
+        || /PARTICULARLY DANGEROUS SITUATION|\bPDS\b/.test((a.description||"").toUpperCase());
+    }));
     var color=requireAck?"#dc2626":"#ea580c";
 
     showAlertBanner(title,bodyParts.join(" · "),color,requireAck,code);
