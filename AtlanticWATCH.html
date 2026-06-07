@@ -2148,11 +2148,11 @@ function _generateSummaryInner(content, ts, status) {
 
   // SPC CONVECTIVE
   var SZONE_STYLE = {
-    HIGH: {bg:'#7c3aed',tc:'#fff',label:'HIGH RISK'},
-    MDT:  {bg:'#dc2626',tc:'#fff',label:'MODERATE RISK'},
-    ENH:  {bg:'#c05928',tc:'#fff',label:'ENHANCED RISK'},
-    SLGT: {bg:'#c4920a',tc:'#fff',label:'SLIGHT RISK'},
-    MRGL: {bg:'#16a34a',tc:'#fff',label:'MARGINAL RISK'},
+    HIGH: {bg:'#7c3aed',tc:'#fff',label:'HIGH RISK',        hazards:'Major severe weather outbreak. All hazards possible.'},
+    MDT:  {bg:'#dc2626',tc:'#fff',label:'MODERATE RISK',    hazards:'Significant severe weather likely. Large hail, damaging winds, strong tornadoes possible.'},
+    ENH:  {bg:'#c05928',tc:'#fff',label:'ENHANCED RISK',    hazards:'Severe thunderstorms, large hail, damaging winds, tornadoes possible.'},
+    SLGT: {bg:'#c4920a',tc:'#fff',label:'SLIGHT RISK',      hazards:'Large hail, damaging winds, isolated tornado possible.'},
+    MRGL: {bg:'#16a34a',tc:'#fff',label:'MARGINAL RISK',    hazards:'Isolated strong storms, gusty winds, small hail possible.'},
   };
   ['HIGH','MDT','ENH','SLGT','MRGL'].forEach(function(z) {
     var st = SZONE_STYLE[z];
@@ -2174,7 +2174,8 @@ function _generateSummaryInner(content, ts, status) {
     if(maxTorn>0)probs.push('&#127756; '+maxTorn+'%');
     if(maxHail>0)probs.push('&#129354; '+maxHail+'%');
     if(maxWind>0)probs.push('&#128168; '+maxWind+'%');
-    html += hazardCard('&#9928;', st.label, probs.length?'Max probs: '+probs.join(' '):'Monitor for convective development', st.bg, st.tc, rows);
+    var spcSubtitle = st.hazards + (probs.length ? ' | Max probs: '+probs.join(' ') : '');
+    html += hazardCard('&#9928;', st.label, spcSubtitle, st.bg, st.tc, rows);
   });
 
   // TSTM compact
@@ -2225,26 +2226,61 @@ function _generateSummaryInner(content, ts, status) {
     html+=hazardCard('&#9888;',nwsSt[b].title,'',nwsSt[b].bg,nwsSt[b].tc,nwsBkt[b]);
   });
 
-  // EXTREME TEMP
+  // EXTREME TEMP -- current METAR + 24-hour forecast scan
   var hRows=[],cRows=[];
+  var hAdded=new Set(),cAdded=new Set();
   fboList.forEach(function(f){
-    var obs=obsData[f.code]; if(!obs) return;
-    var st=getRampStressStatus(obs);
-    if(st&&st.label.indexOf('HEAT')!==-1){
-      hRows.push({code:f.code,city:f.city,state:f.state,detail:st.label,
-        detail2:obs.tempF+'&#176;F'+(obs.heatIndex&&obs.heatIndex!==obs.tempF?' &#183; HI '+obs.heatIndex+'&#176;F':'')});
-    } else if(!st&&obs.tempF>=95){
-      hRows.push({code:f.code,city:f.city,state:f.state,detail:obs.tempF+'&#176;F',detail2:'Above heat threshold'});
+    var obs=obsData[f.code];
+    // Current conditions first
+    if(obs){
+      var st=getRampStressStatus(obs);
+      if(st&&st.label.indexOf('HEAT')!==-1){
+        hRows.push({code:f.code,city:f.city,state:f.state,detail:st.label+' (now)',
+          detail2:obs.tempF+'&#176;F'+(obs.heatIndex&&obs.heatIndex!==obs.tempF?' &#183; HI '+obs.heatIndex+'&#176;F':'')});
+        hAdded.add(f.code);
+      } else if(!st&&obs.tempF>=95){
+        hRows.push({code:f.code,city:f.city,state:f.state,detail:obs.tempF+'&#176;F (now)',detail2:'At or above heat threshold'});
+        hAdded.add(f.code);
+      }
+      if(st&&st.label.indexOf('COLD')!==-1){
+        cRows.push({code:f.code,city:f.city,state:f.state,detail:st.label+' (now)',
+          detail2:obs.tempF+'&#176;F'+(obs.windChill&&obs.windChill!==obs.tempF?' &#183; WC '+obs.windChill+'&#176;F':'')});
+        cAdded.add(f.code);
+      } else if(!st&&obs.tempF<=15){
+        cRows.push({code:f.code,city:f.city,state:f.state,detail:obs.tempF+'&#176;F (now)',detail2:'At or below cold threshold'});
+        cAdded.add(f.code);
+      }
     }
-    if(st&&st.label.indexOf('COLD')!==-1){
-      cRows.push({code:f.code,city:f.city,state:f.state,detail:st.label,
-        detail2:obs.tempF+'&#176;F'+(obs.windChill&&obs.windChill!==obs.tempF?' &#183; WC '+obs.windChill+'&#176;F':'')});
-    } else if(!st&&obs.tempF<=15){
-      cRows.push({code:f.code,city:f.city,state:f.state,detail:obs.tempF+'&#176;F',detail2:'Below cold threshold'});
+    // 24-hour forecast scan
+    var hourly=hourlyData[f.code]; if(!hourly||!hourly.length) return;
+    var maxHeat=null,maxHeatTime=null,minCold=null,minColdTime=null;
+    hourly.slice(0,24).forEach(function(p){
+      var t=p.temperature; if(t==null) return;
+      if(t>=95){
+        if(maxHeat===null||t>maxHeat){maxHeat=t;maxHeatTime=new Date(p.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});}
+      }
+      if(t<=15){
+        if(minCold===null||t<minCold){minCold=t;minColdTime=new Date(p.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});}
+      }
+    });
+    if(maxHeat!==null&&!hAdded.has(f.code)){
+      hRows.push({code:f.code,city:f.city,state:f.state,
+        detail:'Forecast high '+maxHeat+'&#176;F',
+        detail2:'Peak at '+maxHeatTime+' (24h forecast)'});
+      hAdded.add(f.code);
+    }
+    if(minCold!==null&&!cAdded.has(f.code)){
+      cRows.push({code:f.code,city:f.city,state:f.state,
+        detail:'Forecast low '+minCold+'&#176;F',
+        detail2:'Low at '+minColdTime+' (24h forecast)'});
+      cAdded.add(f.code);
     }
   });
-  if(hRows.length) html+=hazardCard('&#9728;&#65039;','EXTREME HEAT','Ramp personnel heat stress conditions','#dc2626','#fff',hRows);
-  if(cRows.length) html+=hazardCard('&#129354;','EXTREME COLD','Ramp personnel cold stress conditions','#1e40af','#fff',cRows);
+  // Sort current before forecast
+  hRows.sort(function(a,b){return a.detail.includes('now')?-1:b.detail.includes('now')?1:0;});
+  cRows.sort(function(a,b){return a.detail.includes('now')?-1:b.detail.includes('now')?1:0;});
+  if(hRows.length) html+=hazardCard('&#9728;&#65039;','EXTREME HEAT','Current conditions and 24-hour forecast','#dc2626','#fff',hRows);
+  if(cRows.length) html+=hazardCard('&#129354;','EXTREME COLD','Current conditions and 24-hour forecast','#1e40af','#fff',cRows);
 
   // DE-ICE
   var dRows=[];
