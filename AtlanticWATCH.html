@@ -1022,7 +1022,7 @@ function makeSidebarItem(fbo) {
     : '';
 
   var ltng=getLightningStatus(fbo.code);
-  var windSt=getWindStatus(fbo.code);
+  var windSt=getWindStatus(fbo.code)||(getTAFWindForecast(fbo.code,6));
   var windBolt=windSt?`<span title="${windSt.label}" style="font-size:11px;margin-left:3px">💨</span>`:""
 ;
   var _obs=obsData[fbo.code];
@@ -2202,8 +2202,12 @@ function _generateSummaryInner(content, ts, status) {
   // HIGH WIND
   var wRows=[];
   fboList.forEach(function(f){
-    var w=getWindStatus(f.code); if(!w) return;
-    wRows.push({code:f.code,city:f.city,state:f.state,detail:w.label,detail2:w.spd+'kt sustained'+(w.gust?' &#183; G'+w.gust+'kt':'')});
+    var w=getWindStatus(f.code)||getTAFWindForecast(f.code,6);
+    if(!w) return;
+    var isFc=!!w.forecastHrs;
+    wRows.push({code:f.code,city:f.city,state:f.state,
+      detail:w.label,
+      detail2:w.spd+'kt'+(w.gust?' G'+w.gust+'kt':'')+(isFc?' — forecast in ~'+w.forecastHrs+'h':' — current')});
   });
   wRows.sort(function(a,b){return a.detail.includes('PROTOCOL')?-1:b.detail.includes('PROTOCOL')?1:0;});
   if(wRows.length) html+=hazardCard('&#128168;','HIGH WIND','Wind advisory and protocol conditions','#ea580c','#fff',wRows);
@@ -5561,6 +5565,57 @@ function renderStressCard(obs) {
 
 // ── Lightning / Thunderstorm Advisory ──────────────────────────────────────────────────
 
+function getTAFWindForecast(code, windowHrs) {
+  windowHrs = windowHrs || 6;
+  var taf = tafData[code];
+  if (!taf || !taf.rawTAF) return null;
+  var raw = taf.rawTAF.toUpperCase();
+  var nowUtc = new Date();
+  function tafMinsFromNow(ddhhmm) {
+    var dd=parseInt(ddhhmm.substring(0,2)),hh=parseInt(ddhhmm.substring(2,4)),mm=parseInt(ddhhmm.substring(4,6));
+    var dayDiff=dd-nowUtc.getUTCDate(); if(dayDiff<-15) dayDiff+=30;
+    return dayDiff*1440+(hh*60+mm)-(nowUtc.getUTCHours()*60+nowUtc.getUTCMinutes());
+  }
+  var WIND_RE=/(?:\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT\b/;
+  var best=null;
+  var fmRe=/FM(\d{6})([^]*?)(?=FM\d{6}|BECMG|$)/g,fm;
+  while((fm=fmRe.exec(raw))!==null){
+    var mins=tafMinsFromNow(fm[1]);
+    if(mins<0||mins>windowHrs*60) continue;
+    var wm=fm[2].match(WIND_RE); if(!wm) continue;
+    var spd=parseInt(wm[1]),gust=wm[2]?parseInt(wm[2]):0;
+    var hrs=Math.round(mins/60),hl=hrs<=0?'within 1h':'in ~'+hrs+'h';
+    var d=spd+'kt'+(gust?' G'+gust+'kt':'');
+    if((spd>=WIND_PROTOCOL_SPD||gust>=WIND_PROTOCOL_GST)&&(!best||best.level!=='protocol'))
+      best={level:'protocol',color:'#dc2626',bg:'#fff0f0',icon:'\uD83D\uDCA8',
+        label:'HIGH WIND \u2014 PROTOCOL (FORECAST)',
+        msg:'TAF forecast '+d+' '+hl+'. Begin preparations now.',spd:spd,gust:gust,forecastHrs:hrs};
+    else if((spd>=WIND_ADVISORY_SPD||gust>=WIND_ADVISORY_GST)&&!best)
+      best={level:'advisory',color:'#ea580c',bg:'#fff7ed',icon:'\uD83D\uDCA8',
+        label:'HIGH WIND \u2014 ADVISORY (FORECAST)',
+        msg:'TAF forecast '+d+' '+hl+'. Alert ramp crew.',spd:spd,gust:gust,forecastHrs:hrs};
+  }
+  var tpRe=/(?:TEMPO|PROB\d{2})\s+(\d{4})\/(\d{4})\s([^]*?)(?=(?:TEMPO|PROB\d{2}|FM\d{6}|BECMG|$))/g,tp;
+  while((tp=tpRe.exec(raw))!==null){
+    var mins=tafMinsFromNow(tp[1]+'00');
+    if(mins<0||mins>windowHrs*60) continue;
+    var wm=tp[3].match(WIND_RE); if(!wm) continue;
+    var spd=parseInt(wm[1]),gust=wm[2]?parseInt(wm[2]):0;
+    var hrs=Math.max(0,Math.round(mins/60)),hl=hrs<=0?'within 1h':'in ~'+hrs+'h';
+    var d=spd+'kt'+(gust?' G'+gust+'kt':'');
+    if((spd>=WIND_PROTOCOL_SPD||gust>=WIND_PROTOCOL_GST)&&(!best||best.level!=='protocol'))
+      best={level:'protocol',color:'#dc2626',bg:'#fff0f0',icon:'\uD83D\uDCA8',
+        label:'HIGH WIND \u2014 PROTOCOL (FORECAST)',
+        msg:'TAF TEMPO '+d+' '+hl+'. Begin preparations now.',spd:spd,gust:gust,forecastHrs:hrs};
+    else if((spd>=WIND_ADVISORY_SPD||gust>=WIND_ADVISORY_GST)&&!best)
+      best={level:'advisory',color:'#ea580c',bg:'#fff7ed',icon:'\uD83D\uDCA8',
+        label:'HIGH WIND \u2014 ADVISORY (FORECAST)',
+        msg:'TAF TEMPO '+d+' '+hl+'. Alert ramp crew.',spd:spd,gust:gust,forecastHrs:hrs};
+  }
+  return best;
+}
+
+
 var WIND_ADVISORY_SPD=30,WIND_ADVISORY_GST=35,WIND_PROTOCOL_SPD=35,WIND_PROTOCOL_GST=40;
 function getWindStatus(code){
   var obs=obsData[code];if(!obs)return null;
@@ -6408,9 +6463,10 @@ function checkForNewAlerts(){
     var lt=getLightningStatus(code);
     if(lt&&lt.level==="active") lightning=lt;
 
-    // Wind protocol/advisory
+    // Wind -- current METAR first, then TAF forecast if no current alert
     var w=getWindStatus(code);
     if(w) wind=w;
+    if(!wind){ var wf=getTAFWindForecast(code,6); if(wf) wind=wf; }
 
     if(!nws.length&&!lightning&&!wind) return;
 
