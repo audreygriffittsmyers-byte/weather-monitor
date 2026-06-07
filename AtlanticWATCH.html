@@ -5153,27 +5153,43 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
       var alertEvt = alerts.length ? alerts[0].event : '';
       // Build timing from TAF + alerts
       var timing = '';
+      var timingParts = [];
       var taf = tafData[code];
       var spcT = (typeof parseSPCTiming === 'function') ? parseSPCTiming(z) : null;
+      // Thunderstorm timing
       if (alerts.length) {
-        timing = alerts[0].event + (alerts[0].expires ? ' until '+fmtTime(alerts[0].expires) : '');
+        timingParts.push(alerts[0].event + (alerts[0].expires ? ' until '+fmtTime(alerts[0].expires) : ''));
       } else if (taf && taf.rawTAF) {
         var raw = taf.rawTAF.toUpperCase();
         var tsMatch = raw.match(/FM(\d{2})(\d{2})\d{2}[^]*?(?:TSRA|TS\b)/);
         if (tsMatch) {
-          timing = 'Thunderstorm activity possible from approx '+tsMatch[1]+':'+tsMatch[2]+'Z';
-          if (spcT) timing += '. ' + spcT + '.';
-          else timing += '.';
+          var tsPart = 'Thunderstorms possible from approx '+tsMatch[1]+':'+tsMatch[2]+'Z';
+          if (spcT) tsPart += ' ('+spcT+')';
+          timingParts.push(tsPart);
         } else if (spcT) {
-          timing = 'Storms expected ' + spcT.toLowerCase() + '.';
+          timingParts.push('Storms expected '+spcT.toLowerCase()+'.');
         } else {
-          timing = 'Monitor for afternoon and evening convective development.';
+          timingParts.push('Monitor for convective development.');
         }
       } else if (spcT) {
-        timing = 'Storm development possible ' + spcT.toLowerCase() + '.';
+        timingParts.push('Storm development possible '+spcT.toLowerCase()+'.');
       } else {
-        timing = 'Monitor for convective development. Consult local NWS office for timing.';
+        timingParts.push('Monitor for convective development.');
       }
+      // TAF forecast wind timing -- append if advisory/protocol threshold in next 6h
+      var tafWind = (typeof getTAFWindForecast === 'function') ? getTAFWindForecast(code, 6) : null;
+      if (tafWind) {
+        var windLine = tafWind.spd+'kt'+(tafWind.gust?' G'+tafWind.gust+'kt':'');
+        var windLevel = tafWind.level === 'protocol' ? 'Protocol' : 'Advisory';
+        var windHrs = tafWind.forecastHrs <= 0 ? 'within 1h' : 'in ~'+tafWind.forecastHrs+'h';
+        timingParts.push('Wind '+windLevel+': '+windLine+' forecast '+windHrs+'.');
+      }
+      // Current wind if at threshold now
+      var curWind = (typeof getWindStatus === 'function') ? getWindStatus(code) : null;
+      if (curWind && !tafWind) {
+        timingParts.push('Wind '+( curWind.level==='protocol'?'Protocol':'Advisory')+' active now: '+curWind.spd+'kt'+(curWind.gust?' G'+curWind.gust+'kt':'')+'. ');
+      }
+      timing = timingParts.join(' ');
       var bg = locs.indexOf(code) % 2 === 0 ? '#fff' : '#f9f9f9';
       html += '<tr style="background:'+bg+'">'
     +'<td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'
