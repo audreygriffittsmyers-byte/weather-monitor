@@ -4402,6 +4402,18 @@ function _watchCrc32(data){
 }
 
 
+async function _prefetchHourly(codes, btn) {
+  var missing = codes.filter(function(c){ return !hourlyData[c] || !hourlyData[c].length; });
+  if (!missing.length) return;
+  var BATCH = 8;
+  for (var i = 0; i < missing.length; i += BATCH) {
+    var batch = missing.slice(i, i + BATCH);
+    if (btn) btn.textContent = 'Loading forecasts... ' + Math.min(i+BATCH, missing.length) + '/' + missing.length;
+    await Promise.all(batch.map(function(c){ return fetch7Day(c).catch(function(){}); }));
+  }
+}
+
+
 function openPrintBriefing() {
   var defaultScope = 'all';
   if (selected) { defaultScope = 'location'; }
@@ -4474,12 +4486,18 @@ function openPrintBriefing() {
     else codes=COVERED.map(function(f){return f.code;});
     var notesEl=document.getElementById('shift-notes');
     var notes=notesEl?notesEl.value.trim():'';
-    modal.remove();
-    try {
-      _watchDownloadDocx(codes,notes,sects);
-    } catch(e) {
-      alert('DOCX error: ' + e.message + '\n\n' + e.stack);
-    }
+    var _docxBtn = document.getElementById('bo-docx');
+    var _docxOrig = _docxBtn ? _docxBtn.textContent : '';
+    if (_docxBtn) { _docxBtn.disabled = true; _docxBtn.textContent = 'Loading...'; }
+    _prefetchHourly(codes, _docxBtn).then(function() {
+      if (_docxBtn) { _docxBtn.disabled = false; _docxBtn.textContent = _docxOrig; }
+      modal.remove();
+      try {
+        _watchDownloadDocx(codes,notes,sects);
+      } catch(e) {
+        alert('DOCX error: ' + e.message + '\n\n' + e.stack);
+      }
+    });
   });
 
   document.getElementById('bo-generate').addEventListener('click', function() {
@@ -4500,8 +4518,14 @@ function openPrintBriefing() {
     else codes = COVERED.map(function(f){ return f.code; });
     var notesEl = document.getElementById('shift-notes');
     var notes = notesEl ? notesEl.value.trim() : '';
-    modal.remove();
-    _doPrint(codes, notes, sections);
+    var _genBtn = document.getElementById('bo-generate');
+    var _genOrig = _genBtn ? _genBtn.textContent : '';
+    if (_genBtn) { _genBtn.disabled = true; _genBtn.textContent = 'Loading...'; }
+    _prefetchHourly(codes, _genBtn).then(function() {
+      if (_genBtn) { _genBtn.disabled = false; _genBtn.textContent = _genOrig; }
+      modal.remove();
+      _doPrint(codes, notes, sections);
+    });
   });
 }
 
