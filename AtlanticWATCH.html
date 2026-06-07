@@ -824,6 +824,7 @@ async function doScanAll() {
   stopScan = false; scanning = true;
   // Clear state alert cache so manual Scan All always gets fresh data
   Object.keys(stateAlertCache).forEach(function(k){ delete stateAlertCache[k]; });
+  windShiftNotified.clear();
   const fbos = COVERED;
   scanD = 0; scanT = fbos.length;
   updateScanBtn();
@@ -2963,6 +2964,8 @@ function fitMapBounds() {
 
 // ── Current Observations ──────────────────────────────────────────────────────
 const obsData = {};  // code -> { tempF, windKts, windMph, windDir, windGustKts, windGustMph, dewpointF, tempC, visib, condition, flightCat, rawOb, icao }
+const prevObsData      = {};  // previous METAR snapshot for wind shift detection
+const windShiftNotified = new Set(); // code|fromDir|toDir keys already fired
 
 // Map FBO codes to ICAO identifiers
 // US mainland: prepend K. Hawaii: PH prefix. Alaska: PA/PF/PO prefix. Non-US: direct ICAO.
@@ -3063,7 +3066,29 @@ async function fetchObs(code) {
     // aviationweather.gov returns array
     const m = Array.isArray(d) ? d[0] : d;
     if (!m) return;
-    obsData[code] = _parseMetarObj(m, icao);
+    var prev = prevObsData[code];
+    var next = _parseMetarObj(m, icao);
+    obsData[code] = next;
+    if (prev && next && prev.windDir != null && next.windDir != null
+        && (next.windKts||0) >= 10 && (prev.windKts||0) >= 10) {
+      var diff = Math.abs(next.windDir - prev.windDir);
+      if (diff > 180) diff = 360 - diff;
+      if (diff >= 45) {
+        var shiftKey = code+'|'+Math.round(prev.windDir)+'|'+Math.round(next.windDir);
+        if (!windShiftNotified.has(shiftKey)) {
+          windShiftNotified.add(shiftKey);
+          var fDir = (typeof decodeWindDir==='function') ? decodeWindDir(prev.windDir) : prev.windDir+'°';
+          var tDir = (typeof decodeWindDir==='function') ? decodeWindDir(next.windDir) : next.windDir+'°';
+          var fbo2 = COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
+          showAlertBanner(
+            '?? Wind Shift — '+code+' ('+fbo2.city+')',
+            fDir+' → '+tDir+' ('+diff.toFixed(0)+'°) · Now '+next.windKts+'kt · Possible outflow boundary or frontal passage',
+            '#7c3aed', false, code
+          );
+        }
+      }
+    }
+    prevObsData[code] = next;
   } catch(e) {}
 }
 
