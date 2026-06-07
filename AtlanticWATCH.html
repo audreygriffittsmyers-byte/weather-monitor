@@ -289,7 +289,7 @@
         <div style="background:#0E2841;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:10">
           <div>
             <div style="font-size:13px;font-weight:700;color:#ffffff;letter-spacing:.04em">ATLANTIC AVIATION — WATCH — OPERATIONAL WEATHER SUMMARY</div>
-            <div id="summary-timestamp" style="font-size:10px;color:#7a9ab8;margin-top:2px"></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><div id="summary-timestamp" style="font-size:10px;color:#7a9ab8"></div><select id="summary-scope" onchange="generateSummary()" style="background:#1a3a5c;color:#7a9ab8;border:1px solid #2a5a8c;border-radius:3px;font-size:10px;padding:1px 6px;cursor:pointer"><option value="all">All Locations</option><option value="mine">My Stations</option></select></div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="summary-status" style="font-size:10px;color:#7a9ab8"></span>
@@ -2096,209 +2096,201 @@ function generateSummary() {
 }
 
 function _generateSummaryInner(content, ts, status) {
-  const now = new Date();
-  ts.textContent = `Generated ${now.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'})}`;
+  var now = new Date();
+  ts.textContent = 'Updated ' + now.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 
-  const spcLoaded = COVERED.some(f => spcData[1][f.code]?.st === 'ok');
-  const alertsLoaded = COVERED.some(f => results[f.code]?.st === 'ok');
+  var scopeEl = document.getElementById('summary-scope');
+  var useMyStations = scopeEl && scopeEl.value === 'mine' && myLocations.size > 0;
+  var fboList = useMyStations ? COVERED.filter(function(f){ return myLocations.has(f.code); }) : COVERED;
 
-  if (!spcLoaded && !alertsLoaded) {
-    content.innerHTML = '<div style="padding:30px;text-align:center;color:#8a9aaa"><div style="font-size:24px;margin-bottom:10px">📋</div><div style="font-size:13px;margin-bottom:6px">No data loaded yet</div><div style="font-size:11px">Run <b>Scan All</b> on the Live Monitor tab, then return here.</div></div>';
+  var spcLoaded   = fboList.some(function(f){ return spcData[1][f.code]&&spcData[1][f.code].st==='ok'; });
+  var alertLoaded = fboList.some(function(f){ return results[f.code]&&results[f.code].st==='ok'; });
+
+  if (!spcLoaded && !alertLoaded) {
+    content.innerHTML = '<div style="padding:30px;text-align:center;color:#8a9aaa"><div style="font-size:24px;margin-bottom:10px">&#x1F4CB;</div><div style="font-size:13px;margin-bottom:6px">No data loaded yet</div><div style="font-size:11px">Run <b>Scan All</b> then return here.</div></div>';
     status.textContent = 'No data';
     return;
   }
 
-  let html = '';
-  html += getTropicalOutlookSection();
+  var html = '';
+  var impacted = new Set();
 
-  // ── SECTION 1: SPC Convective Outlook ──────────────────────────────────────
-  const spcZones = { Moderate:[], Enhanced:[], Slight:[], Marginal:[] };
-  COVERED.forEach(f => {
-    const z = getLocationZone(f.code);
-    if (z) spcZones[z].push(f.code);
-  });
-  const activeSPCZones = ZONE_ORDER.filter(z => spcZones[z].length > 0);
-
-  if (activeSPCZones.length > 0) {
-    // SPC outlook text + AI briefing button
-    const spcTxtContent = spcText[1];
-    if (spcTxtContent && spcTxtContent !== 'loading') {
-      const cleaned = spcTxtContent.replace(/\r\n/g,'\n').replace(/^[ \t]+/gm,'');
-      const sumMatch = cleaned.match(/\.\.\.SUMMARY\.\.\.([\s\S]*?)(?:\.\.\.[A-Z]|\n&&|\n\$\$)/i);
-      const validMatch = cleaned.match(/Valid\s+([\dZ\s\-]+)/i);
-      const fullText = cleaned.replace(/<[^>]+>/g,'').trim().substring(0, 3000);
-      const zoneList = activeSPCZones.map(z => z + ': ' + spcZones[z].join(', ')).join(' | ');
-      if (sumMatch || validMatch) {
-        html += '<div style="background:#f2f5f8;border-left:3px solid #0E2841;padding:10px 14px;margin-bottom:16px;border-radius:0 4px 4px 0">'
-          + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;flex-wrap:wrap;gap:6px">'
-          + '<div style="font-size:9px;font-weight:700;color:#0E2841;text-transform:uppercase;letter-spacing:.08em">SPC Day 1 Outlook' + (validMatch ? ' · Valid ' + validMatch[1].trim() : '') + '</div>'
-          + '<button onclick="generateAIBriefing()" id="ai-brief-btn" style="background:#0E2841;color:#fff;border:none;border-radius:3px;padding:3px 10px;font-size:9px;font-weight:700;cursor:pointer">✨ Generate Plain-Language Briefing</button>'
-          + '</div>'
-          + '<div style="font-size:11px;color:#1a2a3a;line-height:1.65">' + (sumMatch ? sumMatch[1].trim().replace(/\n+/g,' ').replace(/\s{2,}/g,' ').substring(0,800) : '') + '</div>'
-          + '<div id="ai-briefing-box" data-text="' + encodeURIComponent(fullText) + '" data-zones="' + encodeURIComponent(zoneList) + '" style="display:none;margin-top:10px;padding:10px 12px;background:#ffffff;border:1px solid #c8d0d8;border-radius:4px;font-size:11px;color:#1a2a3a;line-height:1.75"></div>'
-          + '</div>';
-      }
-    }
-
-    activeSPCZones.forEach(zone => {
-      const codes = spcZones[zone];
-      const bg = ZONE_COLORS[zone];
-      const tc = ZONE_TEXT[zone];
-      const action = ZONE_ACTIONS[zone];
-
-      // Max probs across zone
-      let maxTorn = 0, maxHail = 0, maxWind = 0;
-      codes.forEach(code => {
-        const r = spcData[1][code];
-        if (r?.st === 'ok') {
-          if (r.torn) { const v = parseInt(r.torn)||0; if (v > maxTorn) maxTorn = v; }
-          if (r.hail) { const v = parseInt(r.hail)||0; if (v > maxHail) maxHail = v; }
-          if (r.wind) { const v = parseInt(r.wind)||0; if (v > maxWind) maxWind = v; }
-        }
-      });
-
-      // SPC valid period from outlook text
-      let spcValidStr = '';
-      const spcTxtRaw = spcText[1];
-      if (spcTxtRaw && spcTxtRaw !== 'loading') {
-        const vMatch = spcTxtRaw.replace(/\r\n/g,'\n').match(/Valid\s+(\d{6}Z)\s*[-–]\s*(\d{6}Z)/i);
-        if (vMatch) {
-          // Parse DDHHMM Z format
-          const parseZ = str => {
-            const dd = parseInt(str.substring(0,2));
-            const hh = parseInt(str.substring(2,4));
-            const mm = parseInt(str.substring(4,6));
-            const now = new Date();
-            const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dd, hh, mm));
-            return d;
-          };
-          try {
-            const start = parseZ(vMatch[1]);
-            const end   = parseZ(vMatch[2]);
-            spcValidStr = 'Valid ' + fmtTime(start) + ' – ' + fmtTime(end);
-          } catch(e) {}
-        }
-      }
-
-      // Hazard description from SPC text
-      const hazards = getSummaryHazards(zone);
-
-      // Prob badges
-      const probParts = [];
-      if (maxTorn > 0) probParts.push('🌪 Tornado ' + maxTorn + '%');
-      if (maxHail > 0) probParts.push('🧊 Hail ' + maxHail + '%');
-      if (maxWind > 0) probParts.push('💨 Wind ' + maxWind + '%');
-
-      // Current conditions per location in zone
-      const condParts = [];
-      codes.forEach(code => {
-        try {
-          const obs = obsData[code];
-          if (obs?.tempF != null && obs?.windKts != null) {
-            condParts.push(code + ' ' + obs.tempF + '°F ' + windDirArrow(obs.windDir) + obs.windKts + 'kts' + (obs.windGustKts ? ' G'+obs.windGustKts : '') + ' ' + windDirLabel(obs.windDir));
-          }
-        } catch(e) {}
-      });
-
-      const codeChips = codes.map(c => '<span style="background:rgba(0,0,0,0.18);color:'+tc+';font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:monospace">'+c+'</span>').join('');
-
-      html += '<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;overflow:hidden;margin-bottom:12px">'
-        + '<div style="background:'+bg+';padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">'
-        + '<div><span style="font-size:13px;font-weight:700;color:'+tc+';text-transform:uppercase;letter-spacing:.06em">'+zone+' Risk</span>'
-        + '<span style="font-size:11px;color:'+tc+';opacity:.85;margin-left:8px">— '+action+'</span></div>'
-        + '<div style="display:flex;gap:5px;flex-wrap:wrap">'+codeChips+'</div></div>'
-        + '<div style="padding:12px 16px">'
-        + (hazards ? '<div style="font-size:12px;color:#1a2a3a;margin-bottom:8px;line-height:1.5">'+hazards+'</div>' : '')
-        + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px">'
-        + (spcValidStr ? '<span style="font-size:11px;color:#0E2841;font-weight:600">⏱ '+spcValidStr+'</span>' : '')
-        + probParts.map(p => '<span style="font-size:11px;color:#556070">'+p+'</span>').join('')
-        + '</div>'
-        + (condParts.length > 0 ? '<div style="font-size:10px;color:#556070;border-top:1px solid #e8e8e8;padding-top:8px">Current conditions: '+condParts.join(' · ')+'</div>' : '')
-        + '</div></div>';
-    });
-  } else if (spcLoaded) {
-    html += '<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
-      + '<div style="font-size:11px;color:#556070">✓ No SPC convective risk zones at any Atlantic Aviation location today.</div></div>';
-  } else {
-    html += '<div style="background:#fff8e1;border:1px solid #fcd34d;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
-      + '<div style="font-size:11px;color:#92400e">⚠ SPC outlook not loaded. Go to the SPC Outlook tab and click Load All, then return here.</div></div>';
-  }
-
-  // ── SECTION 2: NWS Alerts by FBO ──────────────────────────────────────────
-  const alertedFBOs = COVERED.filter(f => results[f.code]?.alerts?.length > 0)
-    .sort((a,b) => {
-      const ba = results[a.code].alerts[0].bucket;
-      const bb = results[b.code].alerts[0].bucket;
-      return (ORD[ba]||4) - (ORD[bb]||4) || a.code.localeCompare(b.code);
-    });
-
-  if (alertedFBOs.length > 0) {
-    html += '<div style="background:#0E2841;padding:8px 16px;border-radius:6px 6px 0 0;margin-top:4px">'
-      + '<span style="font-size:10px;font-weight:700;color:#ffffff;text-transform:uppercase;letter-spacing:.08em">Active NWS Alerts — '+alertedFBOs.length+' Location'+(alertedFBOs.length!==1?'s':'')+'</span>'
-      + '</div>'
-      + '<div style="background:#ffffff;border:1px solid #c8d0d8;border-top:none;border-radius:0 0 6px 6px;margin-bottom:12px">';
-
-    alertedFBOs.forEach((fbo, idx) => {
-      const alerts = results[fbo.code].alerts;
-      const topAlert = alerts[0];
-      const bkg = SBADGE[topAlert.bucket] || '#334155';
-      const obs = obsData[fbo.code];
-      let condStr = '';
-      try {
-        if (obs?.tempF != null) condStr = obs.tempF+'°F';
-        if (obs?.windKts != null) condStr += (condStr?' ':'') + windDirArrow(obs.windDir)+obs.windKts+'kts'+(obs.windGustKts?' G'+obs.windGustKts:'');
-        if (obs?.flightCat) condStr += ' ['+obs.flightCat+']';
-      } catch(e) {}
-
-      const border = idx > 0 ? 'border-top:1px solid #e8e8e8;' : '';
-      html += '<div style="padding:10px 16px;'+border+'">'
-        + '<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:6px">'
+  function hazardCard(icon, title, subtitle, bgColor, textColor, rows) {
+    if (!rows.length) return '';
+    rows.forEach(function(r){ impacted.add(r.code); });
+    var chips = rows.map(function(r){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 14px;border-top:1px solid #e8e8e8">'
         + '<div style="display:flex;align-items:center;gap:8px">'
-        + '<span style="font-family:monospace;font-size:12px;font-weight:700;color:#0E2841">'+fbo.code+'</span>'
-        + '<span style="font-size:11px;color:#556070">'+fbo.city+', '+fbo.state+'</span>'
-        + (condStr ? '<span style="font-size:10px;color:#8a9aaa">'+condStr+'</span>' : '')
+        + '<span style="font-family:monospace;font-size:12px;font-weight:700;color:#0E2841;min-width:40px">' + r.code + '</span>'
+        + '<span style="font-size:11px;color:#556070">' + r.city + (r.state?', '+r.state:'') + '</span>'
         + '</div>'
-        + '<div style="display:flex;gap:4px;flex-wrap:wrap">'
-        + alerts.slice(0,3).map(a => '<span style="background:'+SBADGE[a.bucket]+';color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px">'+a.event+'</span>').join('')
-        + (alerts.length > 3 ? '<span style="font-size:9px;color:#8a9aaa;padding:2px 4px">+' + (alerts.length-3) + ' more</span>' : '')
-        + '</div></div>'
-        + (topAlert.expires ? '<div style="font-size:10px;color:#8a9aaa;margin-top:4px">Top alert expires: <b>'+fmtTime(topAlert.expires)+'</b></div>' : '')
-        + '</div>';
+        + '<div style="text-align:right">'
+        + (r.detail ? '<div style="font-size:11px;font-weight:600;color:#1a2a3a">' + r.detail + '</div>' : '')
+        + (r.detail2 ? '<div style="font-size:10px;color:#8a9aaa">' + r.detail2 + '</div>' : '')
+        + '</div></div>';
+    }).join('');
+    return '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;overflow:hidden;margin-bottom:12px">'
+      + '<div style="background:' + bgColor + ';padding:10px 14px;display:flex;align-items:center;justify-content:space-between">'
+      + '<div style="display:flex;align-items:center;gap:8px">'
+      + '<span style="font-size:16px">' + icon + '</span>'
+      + '<div>'
+      + '<div style="font-size:12px;font-weight:700;color:' + textColor + ';letter-spacing:.04em">' + title + '</div>'
+      + (subtitle ? '<div style="font-size:10px;color:' + textColor + ';opacity:.8;margin-top:1px">' + subtitle + '</div>' : '')
+      + '</div></div>'
+      + '<span style="background:rgba(0,0,0,0.2);color:' + textColor + ';font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">'
+      + rows.length + ' location' + (rows.length!==1?'s':'') + '</span>'
+      + '</div>' + chips + '</div>';
+  }
+
+  // TROPICAL
+  var tropSection = getTropicalOutlookSection();
+  if (tropSection) html += tropSection;
+
+  // SPC CONVECTIVE
+  var SZONE_STYLE = {
+    HIGH: {bg:'#7c3aed',tc:'#fff',label:'HIGH RISK'},
+    MDT:  {bg:'#dc2626',tc:'#fff',label:'MODERATE RISK'},
+    ENH:  {bg:'#c05928',tc:'#fff',label:'ENHANCED RISK'},
+    SLGT: {bg:'#c4920a',tc:'#fff',label:'SLIGHT RISK'},
+    MRGL: {bg:'#16a34a',tc:'#fff',label:'MARGINAL RISK'},
+  };
+  ['HIGH','MDT','ENH','SLGT','MRGL'].forEach(function(z) {
+    var st = SZONE_STYLE[z];
+    var maxTorn=0,maxHail=0,maxWind=0;
+    var rows = [];
+    fboList.forEach(function(f) {
+      var s = spcData[1][f.code];
+      if (!s||s.st!=='ok'||s.label!==z) return;
+      if (s.torn) maxTorn=Math.max(maxTorn,parseInt(s.torn)||0);
+      if (s.hail) maxHail=Math.max(maxHail,parseInt(s.hail)||0);
+      if (s.wind) maxWind=Math.max(maxWind,parseInt(s.wind)||0);
+      var obs=obsData[f.code];
+      var cond=obs?(obs.tempF+'&#176;F '+windDirArrow(obs.windDir)+(obs.windKts||'--')+'kt'+(obs.windGustKts?' G'+obs.windGustKts:'')):'';
+      var timing=(typeof parseSPCTiming==='function')?parseSPCTiming(z):null;
+      rows.push({code:f.code,city:f.city,state:f.state,detail:cond,detail2:timing||''});
     });
+    if (!rows.length) return;
+    var probs=[];
+    if(maxTorn>0)probs.push('&#127756; '+maxTorn+'%');
+    if(maxHail>0)probs.push('&#129354; '+maxHail+'%');
+    if(maxWind>0)probs.push('&#128168; '+maxWind+'%');
+    html += hazardCard('&#9928;', st.label, probs.length?'Max probs: '+probs.join(' '):'Monitor for convective development', st.bg, st.tc, rows);
+  });
 
-    html += '</div>';
+  // TSTM compact
+  var tstmList=fboList.filter(function(f){var s=spcData[1][f.code];return s&&s.st==='ok'&&s.label==='TSTM';});
+  if(tstmList.length){
+    html+='<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:12px">'
+      +'<div style="font-size:10px;font-weight:700;color:#8a9aaa;margin-bottom:6px">GENERAL THUNDERSTORM AREA &#8212; Awareness Only</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:4px">'
+      +tstmList.map(function(f){return '<span style="background:#f0f4f7;color:#556070;font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;font-family:monospace">'+f.code+'</span>';}).join('')
+      +'</div></div>';
   }
 
-  // ── SECTION 3: All clear locations (compact) ───────────────────────────────
-  const clearFBOs = COVERED.filter(f =>
-    results[f.code]?.st === 'ok' &&
-    !results[f.code]?.alerts?.length &&
-    !getLocationZone(f.code)
-  );
-  if (clearFBOs.length > 0 && (activeSPCZones.length > 0 || alertedFBOs.length > 0)) {
-    html += '<div style="background:#ffffff;border:1px solid #c8d0d8;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
-      + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">✓ No Active Hazards ('+clearFBOs.length+' locations)</div>'
-      + '<div style="display:flex;flex-wrap:wrap;gap:4px">'
-      + clearFBOs.map(f => '<span style="background:#E8E8E8;color:#556070;font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;font-family:monospace">'+f.code+'</span>').join('')
-      + '</div></div>';
+  // LIGHTNING
+  var ltRows=[];
+  fboList.forEach(function(f){
+    var lt=getLightningStatus(f.code); if(!lt) return;
+    var obs=obsData[f.code];
+    ltRows.push({code:f.code,city:f.city,state:f.state,detail:lt.label,
+      detail2:obs?(obs.tempF+'&#176;F &#183; '+windDirArrow(obs.windDir)+(obs.windKts||'--')+'kt'):''}); 
+  });
+  ltRows.sort(function(a,b){return a.detail.includes('PROTOCOL')?-1:b.detail.includes('PROTOCOL')?1:0;});
+  if(ltRows.length) html+=hazardCard('&#9889;','LIGHTNING STATUS','Active lightning and convective conditions','#1a2a3a','#fff',ltRows);
+
+  // HIGH WIND
+  var wRows=[];
+  fboList.forEach(function(f){
+    var w=getWindStatus(f.code); if(!w) return;
+    wRows.push({code:f.code,city:f.city,state:f.state,detail:w.label,detail2:w.spd+'kt sustained'+(w.gust?' &#183; G'+w.gust+'kt':'')});
+  });
+  wRows.sort(function(a,b){return a.detail.includes('PROTOCOL')?-1:b.detail.includes('PROTOCOL')?1:0;});
+  if(wRows.length) html+=hazardCard('&#128168;','HIGH WIND','Wind advisory and protocol conditions','#ea580c','#fff',wRows);
+
+  // NWS ALERTS
+  var nwsBkt={EXTREME:[],SEVERE:[],MODERATE:[],LOW:[]};
+  fboList.forEach(function(f){
+    var r=results[f.code]; if(!r||!r.alerts||!r.alerts.length) return;
+    var top=r.alerts[0],obs=obsData[f.code];
+    var cond=obs?(obs.tempF+'&#176;F '+windDirArrow(obs.windDir)+(obs.windKts||'--')+'kt'+(obs.windGustKts?' G'+obs.windGustKts:'')):'';
+    var bkt=(top.bucket||'LOW').toUpperCase();
+    if(!nwsBkt[bkt]) nwsBkt[bkt]=[];
+    nwsBkt[bkt].push({code:f.code,city:f.city,state:f.state,detail:top.event,
+      detail2:(top.expires?'Exp '+fmtTime(top.expires):'')+(r.alerts.length>1?' +'+( r.alerts.length-1)+' more':'')});
+  });
+  var nwsSt={EXTREME:{bg:'#991b1b',tc:'#fff',title:'EXTREME NWS ALERTS'},SEVERE:{bg:'#9a3412',tc:'#fff',title:'SEVERE NWS ALERTS'},
+    MODERATE:{bg:'#854d0e',tc:'#fff',title:'MODERATE NWS ALERTS'},LOW:{bg:'#14532d',tc:'#fff',title:'ADVISORY / STATEMENT'}};
+  ['EXTREME','SEVERE','MODERATE','LOW'].forEach(function(b){
+    if(!nwsBkt[b]||!nwsBkt[b].length) return;
+    html+=hazardCard('&#9888;',nwsSt[b].title,'',nwsSt[b].bg,nwsSt[b].tc,nwsBkt[b]);
+  });
+
+  // EXTREME TEMP
+  var hRows=[],cRows=[];
+  fboList.forEach(function(f){
+    var obs=obsData[f.code]; if(!obs) return;
+    var st=getRampStressStatus(obs);
+    if(st&&st.label.indexOf('HEAT')!==-1){
+      hRows.push({code:f.code,city:f.city,state:f.state,detail:st.label,
+        detail2:obs.tempF+'&#176;F'+(obs.heatIndex&&obs.heatIndex!==obs.tempF?' &#183; HI '+obs.heatIndex+'&#176;F':'')});
+    } else if(!st&&obs.tempF>=95){
+      hRows.push({code:f.code,city:f.city,state:f.state,detail:obs.tempF+'&#176;F',detail2:'Above heat threshold'});
+    }
+    if(st&&st.label.indexOf('COLD')!==-1){
+      cRows.push({code:f.code,city:f.city,state:f.state,detail:st.label,
+        detail2:obs.tempF+'&#176;F'+(obs.windChill&&obs.windChill!==obs.tempF?' &#183; WC '+obs.windChill+'&#176;F':'')});
+    } else if(!st&&obs.tempF<=15){
+      cRows.push({code:f.code,city:f.city,state:f.state,detail:obs.tempF+'&#176;F',detail2:'Below cold threshold'});
+    }
+  });
+  if(hRows.length) html+=hazardCard('&#9728;&#65039;','EXTREME HEAT','Ramp personnel heat stress conditions','#dc2626','#fff',hRows);
+  if(cRows.length) html+=hazardCard('&#129354;','EXTREME COLD','Ramp personnel cold stress conditions','#1e40af','#fff',cRows);
+
+  // DE-ICE
+  var dRows=[];
+  fboList.forEach(function(f){
+    var obs=obsData[f.code]; if(!obs) return;
+    var d=getDeiceStatus(obs); if(!d) return;
+    dRows.push({code:f.code,city:f.city,state:f.state,detail:d.label,
+      detail2:obs.tempF+'&#176;F'+(obs.condition?' &#183; '+obs.condition:'')});
+  });
+  if(dRows.length){
+    var dOrd={'FREEZING PRECIP':0,'DE-ICE REQUIRED':1,'DE-ICE LIKELY':2,'FROST RISK':3,'COLD OPS':4};
+    dRows.sort(function(a,b){return(dOrd[a.detail]||5)-(dOrd[b.detail]||5);});
+    html+=hazardCard('&#10052;&#65039;','DE-ICE / FROST CONDITIONS','Cold weather aircraft operations','#0891b2','#fff',dRows);
   }
 
-  // Total impacted count for header
-  const totalImpacted = new Set([
-    ...activeSPCZones.flatMap(z => spcZones[z]),
-    ...alertedFBOs.map(f => f.code)
-  ]).size;
-  status.textContent = totalImpacted > 0 ? totalImpacted+' location'+(totalImpacted!==1?'s':'')+' impacted' : 'All clear';
+  // NAS
+  var nRows=[];
+  fboList.forEach(function(f){
+    var progs=getNASForCode(f.code); if(!progs.length) return;
+    var top=progs[0];
+    var lbl=top.type==='GS'?'Ground Stop':top.type==='GDP'?'Ground Delay'+(top.avg?' (avg '+top.avg+'min)':''):'AFP';
+    nRows.push({code:f.code,city:f.city,state:f.state,detail:lbl,detail2:top.reason||''});
+  });
+  if(nRows.length) html+=hazardCard('&#9992;&#65039;','FAA NAS PROGRAMS','Active ground stops, delays, and AFPs','#0E2841','#fff',nRows);
 
-  if (!html) {
-    html = '<div style="padding:20px;text-align:center;color:#8a9aaa;font-size:12px">No active hazards detected. Run Scan All to refresh.</div>';
+  // ALL CLEAR
+  var clearList=fboList.filter(function(f){
+    return results[f.code]&&results[f.code].st==='ok'&&!impacted.has(f.code)
+      &&!getLightningStatus(f.code)&&!getWindStatus(f.code)&&!getDeiceStatus(obsData[f.code]);
+  });
+  if(clearList.length&&impacted.size>0){
+    html+='<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:12px">'
+      +'<div style="font-size:9px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">&#10003; No Active Hazards &#8212; '+clearList.length+' Locations</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:4px">'
+      +clearList.map(function(f){return '<span style="background:#f0fdf4;color:#16a34a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;font-family:monospace">'+f.code+'</span>';}).join('')
+      +'</div></div>';
   }
 
-  html += '<div style="font-size:10px;color:#8a9aaa;text-align:center;padding:8px 0;border-top:1px solid #c8d0d8;margin-top:4px">'
-    + 'Data: NOAA/NWS · SPC · WPC · For official alerts visit weather.gov · Auto-refreshes every 5 minutes</div>';
+  html+='<div style="font-size:10px;color:#8a9aaa;text-align:center;padding:8px 0;border-top:1px solid #c8d0d8;margin-top:4px">'
+    +'NOAA/NWS &#183; SPC &#183; WPC &#183; For official alerts visit weather.gov &#183; Auto-refreshes every 5 minutes</div>';
 
+  status.textContent = impacted.size>0 ? impacted.size+' location'+(impacted.size!==1?'s':'')+' with active hazards' : 'All clear';
+  if(!html.trim()) html='<div style="padding:20px;text-align:center;color:#8a9aaa;font-size:12px">No active hazards. Run Scan All to refresh.</div>';
   content.innerHTML = html;
 } // end _generateSummaryInner
+
 
 
 // ── AI Plain-Language Briefing ────────────────────────────────────────────────
