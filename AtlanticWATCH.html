@@ -301,7 +301,29 @@
           <div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Shift Notes</div>
           <textarea id="shift-notes" placeholder="Enter shift notes, handoff comments, or operational context..." style="width:100%;min-height:60px;border:1px solid #c8d0d8;border-radius:4px;padding:8px;font-size:11px;color:#1a2a3a;resize:vertical;font-family:Arial,sans-serif;box-sizing:border-box" oninput="localStorage.setItem('watch_shift_notes',this.value)"></textarea>
         </div>
-        <!-- Summary content -->
+        <!-- Shift Handoff Log -->
+        <div style="padding:0 20px 10px 20px;background:#f8f9fa;border-bottom:1px solid #e8e8e8">
+          <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:6px 0" onclick="toggleHandoffLog()">
+            <div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em">&#128203; Shift Handoff Log</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span id="handoff-count" style="font-size:10px;color:#8a9aaa"></span>
+              <span id="handoff-toggle-icon" style="font-size:11px;color:#8a9aaa">&#9660;</span>
+            </div>
+          </div>
+          <div id="handoff-log-panel" style="display:none">
+            <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+              <select id="handoff-hours" onchange="renderHandoffLog()" style="background:#fff;border:1px solid #c8d0d8;border-radius:3px;font-size:10px;padding:2px 6px">
+                <option value="12">Last 12 hours</option>
+                <option value="24">Last 24 hours</option>
+                <option value="48">Last 48 hours</option>
+              </select>
+              <button onclick="printHandoffLog()" style="background:#0E2841;color:#fff;border:none;border-radius:3px;font-size:10px;padding:2px 10px;cursor:pointer">&#128438; Print</button>
+              <button onclick="clearHandoffLog()" style="background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:3px;font-size:10px;padding:2px 10px;cursor:pointer">Clear Log</button>
+            </div>
+            <div id="handoff-log-content" style="max-height:300px;overflow-y:auto"></div>
+          </div>
+        </div>
+<!-- Summary content -->
         <div id="summary-content" style="padding:20px;max-width:860px">
           <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 0;color:#8a9aaa">
             <div style="font-size:32px;margin-bottom:10px">📋</div>
@@ -4509,6 +4531,128 @@ async function _startupHourlyLoad() {
     }));
     await new Promise(function(r){ setTimeout(r, 2000); });
   }
+}
+
+
+// ── Shift Handoff Log ─────────────────────────────────────────────────────────
+function toggleHandoffLog() {
+  var panel = document.getElementById('handoff-log-panel');
+  var icon  = document.getElementById('handoff-toggle-icon');
+  if (!panel) return;
+  var open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  if (icon) icon.innerHTML = open ? '&#9660;' : '&#9650;';
+  if (!open) renderHandoffLog();
+}
+
+function renderHandoffLog() {
+  var content = document.getElementById('handoff-log-content');
+  var countEl = document.getElementById('handoff-count');
+  if (!content) return;
+
+  var hoursEl = document.getElementById('handoff-hours');
+  var hrs = hoursEl ? parseInt(hoursEl.value) : 12;
+  var cutoff = Date.now() - hrs * 3600000;
+
+  var log = loadAckLog().filter(function(e){ return e.ts >= cutoff; });
+
+  if (countEl) countEl.textContent = log.length + ' event' + (log.length !== 1 ? 's' : '');
+
+  if (!log.length) {
+    content.innerHTML = '<div style="color:#8a9aaa;font-size:11px;padding:8px 0;font-style:italic">No acknowledged alerts in this time window.</div>';
+    return;
+  }
+
+  // Sort newest first
+  log.sort(function(a,b){ return b.ts - a.ts; });
+
+  var rows = log.map(function(e, i) {
+    var dt = new Date(e.ts);
+    var timeStr = dt.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true});
+    var fbo = COVERED.find(function(f){ return f.code === e.code; }) || {city:'', state:''};
+    var alerts = (e.alerts||[]).join(', ') || '--';
+    var wind = e.windKts ? (e.windKts + 'kt' + (e.windDir != null ? ' ' + windDirArrow(e.windDir) : '')) : '--';
+    var bg = i % 2 === 0 ? '#fff' : '#f9f9f9';
+    var ltngBadge = e.lightning
+      ? '<span style="background:#1a2a3a;color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;margin-left:4px">' + e.lightning + '</span>'
+      : '';
+    var noteBadge = e.note
+      ? '<div style="font-size:9px;color:#556070;font-style:italic;margin-top:2px">Note: ' + e.note + '</div>'
+      : '';
+    return '<div style="padding:6px 10px;background:' + bg + ';border-top:1px solid #e8e8e8">'
+      + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">'
+      + '<div>'
+      + '<span style="font-family:monospace;font-size:11px;font-weight:700;color:#0E2841">' + e.code + '</span>'
+      + '<span style="font-size:10px;color:#556070;margin-left:6px">' + fbo.city + (fbo.state ? ', ' + fbo.state : '') + '</span>'
+      + ltngBadge
+      + '</div>'
+      + '<div style="font-size:9px;color:#8a9aaa;white-space:nowrap">' + timeStr + '</div>'
+      + '</div>'
+      + '<div style="font-size:10px;color:#334155;margin-top:2px">'
+      + '<span style="margin-right:10px">Alerts: ' + alerts + '</span>'
+      + '<span style="margin-right:10px">Wind: ' + wind + '</span>'
+      + '<span>Temp: ' + (e.tempF != null ? e.tempF + '\u00b0F' : '--') + '</span>'
+      + '<span style="margin-left:10px;color:#8a9aaa">Device: ' + (e.device||'?') + '</span>'
+      + '</div>'
+      + noteBadge
+      + '</div>';
+  }).join('');
+
+  content.innerHTML = rows;
+}
+
+function clearHandoffLog() {
+  if (!confirm('Clear the shift handoff log? This cannot be undone.')) return;
+  try { localStorage.removeItem(ACK_KEY); } catch(e) {}
+  renderHandoffLog();
+}
+
+function printHandoffLog() {
+  var hoursEl = document.getElementById('handoff-hours');
+  var hrs = hoursEl ? parseInt(hoursEl.value) : 12;
+  var cutoff = Date.now() - hrs * 3600000;
+  var log = loadAckLog().filter(function(e){ return e.ts >= cutoff; });
+  log.sort(function(a,b){ return b.ts - a.ts; });
+
+  var now = new Date().toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+  var notesEl = document.getElementById('shift-notes');
+  var notes = notesEl ? notesEl.value.trim() : '';
+
+  var rows = log.map(function(e) {
+    var dt = new Date(e.ts);
+    var t = dt.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true});
+    var fbo = COVERED.find(function(f){ return f.code === e.code; }) || {city:'', state:''};
+    var alerts = (e.alerts||[]).join(', ') || '--';
+    var wind = e.windKts ? e.windKts + 'kt' : '--';
+    return '<tr><td>' + t + '</td><td><b>' + e.code + '</b> ' + fbo.city + '</td>'
+      + '<td>' + alerts + '</td>'
+      + '<td>' + (e.lightning||'--') + '</td>'
+      + '<td>' + wind + '</td>'
+      + '<td>' + (e.tempF != null ? e.tempF + '\u00b0F' : '--') + '</td>'
+      + '<td>' + (e.device||'?') + '</td>'
+      + '<td>' + (e.note||'') + '</td></tr>';
+  }).join('');
+
+  var w = window.open('', '_blank', 'width=900,height=700');
+  w.document.write('<!DOCTYPE html><html><head><title>WATCH Shift Handoff Log</title>'
+    + '<style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px}'
+    + 'h2{color:#0E2841;margin-bottom:4px}h4{color:#556070;font-weight:normal;margin:0 0 12px}'
+    + '.notes{background:#f8f9fa;border:1px solid #c8d0d8;padding:8px 12px;margin-bottom:14px;font-size:11px;white-space:pre-wrap}'
+    + 'table{width:100%;border-collapse:collapse}'
+    + 'th{background:#0E2841;color:#fff;padding:5px 8px;text-align:left;font-size:10px}'
+    + 'td{padding:5px 8px;border-bottom:1px solid #e8e8e8;vertical-align:top}'
+    + 'tr:nth-child(even)td{background:#f9f9f9}'
+    + '.footer{margin-top:16px;font-size:9px;color:#8a9aaa;border-top:1px solid #c8d0d8;padding-top:6px}'
+    + '</style></head><body>'
+    + '<h2>Atlantic Aviation \u2014 WATCH</h2>'
+    + '<h4>Shift Handoff Log \u2014 Last ' + hrs + ' hours \u2014 Generated ' + now + '</h4>'
+    + (notes ? '<div class="notes"><b>Shift Notes:</b>\n' + notes + '</div>' : '')
+    + '<table><thead><tr><th>Time</th><th>Location</th><th>Alerts</th><th>Lightning</th><th>Wind</th><th>Temp</th><th>Device</th><th>Note</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table>'
+    + '<div class="footer">WATCH \u2014 Atlantic Aviation \u2014 Internal Use Only \u2014 Does not supersede official NWS products</div>'
+    + '</body></html>');
+  w.document.close();
+  w.print();
 }
 
 
