@@ -5421,8 +5421,14 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   if (sections.nhc) html += _buildNHCSection(codes);
   if (sections.winter) html += _buildNWSHazardSection(codes,'winter',/winter|snow|ice|blizzard|freeze|frost/i,'❄ WINTER STORM','#1e40af','#EFF6FF','Winter weather hazards expected. Ice accumulation, heavy snow, and hazardous travel conditions possible.',_getWinterActions());
   if (sections.flood) html += _buildNWSHazardSection(codes,'flood',/flood/i,'🌊 FLOOD / FLASH FLOOD','#065f46','#ECFDF5','Flooding or flash flooding possible at or near impacted locations.',_getFloodActions());
-  if (sections.wind) { var _wl=codes.filter(function(c){return !!getWindStatus(c);}); if(_wl.length) html+=_buildWindSection(_wl); }
-  if (sections.temp) html += _buildTempSection(codes);
+  if (sections.wind) { var _wl=codes.filter(function(c){return !!(getWindStatus(c)||getTAFWindForecast(c,6));}); if(_wl.length) { html+=_buildWindSection(_wl); html+=_getActionHTML('wind'); } }
+  if (sections.temp) {
+    var _ht=codes.filter(function(c){var o=obsData[c];return o&&o.tempF>=95;});
+    var _ct=codes.filter(function(c){var o=obsData[c];return o&&o.tempF<=15;});
+    html += _buildTempSection(codes);
+    if(_ht.length) html += _getActionHTML('heat');
+    if(_ct.length) html += _getActionHTML('cold');
+  }
 
   // Alert-only locations table
   if (sections.alerts) {
@@ -5445,6 +5451,10 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     html += '</table>';
   }
   } // end sections.alerts
+
+  // ── 4b. Thunderstorm/SPC Action Items
+  if (sections.spc && activeZones.filter(function(z){return z!=='TSTM';}).length)
+    html += _getActionHTML('thunderstorm');
 
   // ── 5. Immediate Actions ──────────────────────────────────────────────────
   var topRisk = activeZones[0] || 'MRGL';
