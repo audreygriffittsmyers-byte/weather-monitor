@@ -4403,7 +4403,7 @@ function _watchDownloadDocx(codes, notes, sections) {
   }
 
   // Supervisor note
-  add('Supervisors: Brief your team on today\'s storm threat and expected timing before conditions arrive. Do not wait for a formal warning to begin preparations \u2014 once a Tornado Warning or Severe Thunderstorm Warning is issued, time is limited. Employee safety is the priority above all else.',
+  add('Supervisors: Brief your team on all active hazards covered in this alert before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and heat safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.',
       ppr({fill:'F2F4F6',after:'100'}), rpr({sz:22}));
 
   // Safety tagline
@@ -5419,8 +5419,10 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
 
   // Extra sections
   if (sections.nhc) html += _buildNHCSection(codes);
-  if (sections.winter) html += _buildNWSHazardSection(codes,'winter',/winter|snow|ice|blizzard|freeze|frost/i,'❄ WINTER STORM','#1e40af','#EFF6FF','Winter weather hazards expected. Ice accumulation, heavy snow, and hazardous travel conditions possible.',_getWinterActions());
-  if (sections.flood) html += _buildNWSHazardSection(codes,'flood',/flood/i,'🌊 FLOOD / FLASH FLOOD','#065f46','#ECFDF5','Flooding or flash flooding possible at or near impacted locations.',_getFloodActions());
+  if (sections.winter) html += _buildNWSHazardSection(codes,'winter',/winter|snow|ice|blizzard|freeze|frost/i,'❄ WINTER STORM','#1e40af','#EFF6FF','Winter weather hazards expected. Ice accumulation, heavy snow, and hazardous travel conditions possible.');
+  if (sections.winter) html += _getActionHTML('winter');
+  if (sections.flood) html += _buildNWSHazardSection(codes,'flood',/flood/i,'🌊 FLOOD / FLASH FLOOD','#065f46','#ECFDF5','Flooding or flash flooding possible at or near impacted locations.');
+  if (sections.flood) html += _getActionHTML('flood');
   if (sections.wind) { var _wl=codes.filter(function(c){return !!(getWindStatus(c)||getTAFWindForecast(c,6));}); if(_wl.length) { html+=_buildWindSection(_wl); html+=_getActionHTML('wind'); } }
   if (sections.temp) {
     var _ht=codes.filter(function(c){var o=obsData[c];return o&&o.tempF>=95;});
@@ -5665,13 +5667,9 @@ function _buildTempSection(codes) {
   return html;
 }
 
-function _getWinterActions() {
-  return ['Review the applicable Winter Weather Prep Guide found on Flightdeck and ensure all applicable procedures are in place before conditions arrive.','Protect Aircraft: Move aircraft into hangars where possible. Ensure all aircraft are TRIPLE chocked and tie-downs applied. Do not move aircraft with ice accumulation without proper de-icing.','Ensure Employee Safety: Treat all walkways, ramp surfaces, and stairs with de-icer per facility procedures. Suspend outdoor operations when surface conditions become hazardous. Ensure employees have appropriate cold weather PPE.','Secure the Ramp: Park and secure all GSE. Treat fuel truck steps and walkways. Monitor for ice accumulation on vehicle surfaces before use.','Communicate with Your Customers: Notify customers of anticipated de-icing requirements, delays, and potential ground stops. Coordinate de-icing fluid availability in advance.','Monitor Weather Continuously: Track precipitation type transitions. Conditions can change rapidly -- ensure supervisors are briefed on updated forecasts throughout the shift.','After the storm: Clear all snow and ice from ramp surfaces, walkways, and aircraft parking areas before resuming normal operations.'];
-}
 
-function _getFloodActions() {
-  return ['Review the applicable Prep Guide found on Flightdeck for flood and severe weather procedures.','Protect Aircraft: Move aircraft away from low-lying or flood-prone ramp sections where possible.','Ensure Employee Safety: Do not allow employees to walk through standing water of unknown depth. Suspend outdoor operations if flooding reaches the ramp surface. Identify and communicate alternate egress routes if primary routes become flooded.','Protect Facilities: Move valuable equipment and supplies to elevated areas. Monitor floor drains and sump pump operation. Sandbag facility entry points if flooding is imminent.','Communicate with Your Customers: Notify customers of potential impacts to facility access and operations.','Monitor Weather Continuously: Flash flooding can develop rapidly. Maintain contact with local emergency management and airport authority for closure or evacuation guidance.'];
-}
+
+
 
 
 
