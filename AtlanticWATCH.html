@@ -2197,9 +2197,9 @@ function _generateSummaryInner(content, ts, status) {
     });
     if (!rows.length) return;
     var probs=[];
-    if(maxTorn>0)probs.push('&#127756; '+maxTorn+'%');
-    if(maxHail>0)probs.push('&#129354; '+maxHail+'%');
-    if(maxWind>0)probs.push('&#128168; '+maxWind+'%');
+    if(maxTorn>0)probs.push('<span style="font-size:9px;font-weight:700">TOR</span> '+maxTorn+'%');
+    if(maxHail>0)probs.push('<span style="font-size:9px;font-weight:700">HAIL</span> '+maxHail+'%');
+    if(maxWind>0)probs.push('<span style="font-size:9px;font-weight:700">WIND</span> '+maxWind+'%');
     var spcSubtitle = st.hazards + (probs.length ? ' | Max probs: '+probs.join(' ') : '');
     html += hazardCard('&#9928;', st.label, spcSubtitle, st.bg, st.tc, rows);
   });
