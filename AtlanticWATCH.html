@@ -5607,7 +5607,7 @@ function _buildNHCSection(codes) {
   return html;
 }
 
-function _buildNWSHazardSection(codes, type, pattern, title, color, bg, bodyText, actions) {
+function _buildNWSHazardSection(codes, type, pattern, title, color, bg, bodyText) {
   var locs = codes.filter(function(c){ return (results[c]&&results[c].alerts||[]).some(function(a){ return pattern.test(a.event); }); });
   if (!locs.length) return '';
   var html = '<div style="background:'+color+';color:#fff;padding:12px 16px;margin-bottom:0">'
@@ -5621,9 +5621,6 @@ function _buildNWSHazardSection(codes, type, pattern, title, color, bg, bodyText
     html += '<tr style="background:'+(locs.indexOf(code)%2===0?'#fff':'#f9f9f9')+'"><td style="border:1px solid #ddd;font-weight:700">'+code+'</td><td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td><td style="border:1px solid #ddd">'+alerts.map(function(a){return a.event+(a.expires?' until '+fmtTime(a.expires):'');}).join('; ')+'</td></tr>';
   });
   html += '</table>';
-  html += '<div style="margin-bottom:16px"><div style="background:'+color+';color:#fff;font-weight:700;font-size:11px;padding:6px 10px">IMMEDIATE ACTIONS</div><div style="border:1px solid #ddd;border-top:none;padding:10px 14px"><ul style="margin:0;padding-left:18px">';
-  actions.forEach(function(a){ html += '<li style="margin-bottom:5px">'+a+'</li>'; });
-  html += '</ul></div></div>';
   return html;
 }
 
