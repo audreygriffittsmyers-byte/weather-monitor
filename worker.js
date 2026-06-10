@@ -108,7 +108,7 @@ export default {
 
     if (type === 'wpcpoly') {
       try {
-        const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_precip_hazards/MapServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
+        const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
@@ -116,7 +116,7 @@ export default {
 
     if (type === 'winterpoly') {
       try {
-        const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_precip_hazards/MapServer/1/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
+        const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer/1/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
