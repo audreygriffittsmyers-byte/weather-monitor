@@ -3542,24 +3542,34 @@ function toggleNHC(on) {
 }
 
 // ── Tropical Outlook Text ─────────────────────────────────────────────────────
-let tropicalOutlookText = null;
+let tropicalOutlookText   = null;
+let tropicalOutlookTextEP = null;
+let tropicalOutlookTextCP = null;
 
 async function fetchTropicalOutlook() {
   try {
-    const r = await fetch(`${PROXY}?type=tropicaloutlook`);
-    if (!r.ok) return;
-    tropicalOutlookText = await r.text();
-  } catch(e) {}
-  try {
-    const rd = await fetch(`${PROXY}?type=nhcdisturbances`);
-    if (rd.ok) { const arr = await rd.json(); nhcDisturbances = Array.isArray(arr) ? arr : []; }
+    const [rat, rep, rcp, rdist] = await Promise.all([
+      fetch(`${PROXY}?type=tropicaloutlook&basin=at`),
+      fetch(`${PROXY}?type=tropicaloutlook&basin=ep`),
+      fetch(`${PROXY}?type=tropicaloutlook&basin=cp`),
+      fetch(`${PROXY}?type=nhcdisturbances`),
+    ]);
+    if (rat.ok) tropicalOutlookText   = await rat.text();
+    if (rep.ok) tropicalOutlookTextEP = await rep.text();
+    if (rcp.ok) tropicalOutlookTextCP = await rcp.text();
+    if (rdist.ok) { const arr = await rdist.json(); nhcDisturbances = Array.isArray(arr) ? arr : []; }
   } catch(e) {}
 }
 
 function getTropicalOutlookSection() {
-  if (!tropicalOutlookText) return '';
-  if (!/percent|developing|tropical/i.test(tropicalOutlookText)) return '';
-  const text = tropicalOutlookText.replace(/\r\n/g, '\n').trim().substring(0, 2000);
+  var _twEP = (typeof tropicalOutlookTextEP !== 'undefined') ? tropicalOutlookTextEP : null;
+  var _twCP = (typeof tropicalOutlookTextCP !== 'undefined') ? tropicalOutlookTextCP : null;
+  var hasAny = (tropicalOutlookText && /percent|developing|tropical/i.test(tropicalOutlookText))
+    || (_twEP && /percent|developing|tropical/i.test(_twEP))
+    || (_twCP && /percent|developing|tropical/i.test(_twCP))
+    || (nhcDisturbances && nhcDisturbances.length > 0);
+  if (!hasAny) return '';
+  const text = tropicalOutlookText ? tropicalOutlookText.replace(/\r\n/g, '\n').trim().substring(0, 1500) : '';
   return '<div style="background:#fff;border:1px solid #1e3a5f;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
     + '<div style="font-size:9px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">🌀 NHC Tropical Weather Outlook</div>'
     + (nhcDisturbances.length ? nhcDisturbances.map(function(d){
@@ -3575,14 +3585,14 @@ function getTropicalOutlookSection() {
       }).join('')+'<div style="height:6px"></div>' : '')
     + (text ? '<div style="font-size:10px;font-weight:700;color:#1e3a5f;margin-bottom:3px">Atlantic</div>'
         + '<div style="font-size:11px;color:#1a2a3a;line-height:1.65;white-space:pre-line;margin-bottom:10px">' + text + '</div>' : '')
-    + (tropicalOutlookTextEP && /percent|developing|tropical/i.test(tropicalOutlookTextEP)
+    + (_twEP && /percent|developing|tropical/i.test(_twEP)
       ? '<div style="font-size:10px;font-weight:700;color:#1e3a5f;margin-bottom:3px;margin-top:6px">East Pacific</div>'
         + '<div style="font-size:11px;color:#1a2a3a;line-height:1.65;white-space:pre-line;margin-bottom:10px">'
-        + tropicalOutlookTextEP.replace(/\r\n/g,'\n').trim().substring(0,1500) + '</div>' : '')
-    + (tropicalOutlookTextCP && /percent|developing|tropical/i.test(tropicalOutlookTextCP)
+        + _twEP.replace(/\r\n/g,'\n').trim().substring(0,1500) + '</div>' : '')
+    + (_twCP && /percent|developing|tropical/i.test(_twCP)
       ? '<div style="font-size:10px;font-weight:700;color:#1e3a5f;margin-bottom:3px;margin-top:6px">Central Pacific</div>'
         + '<div style="font-size:11px;color:#1a2a3a;line-height:1.65;white-space:pre-line">' 
-        + tropicalOutlookTextCP.replace(/\r\n/g,'\n').trim().substring(0,1500) + '</div>' : '')
+        + _twCP.replace(/\r\n/g,'\n').trim().substring(0,1500) + '</div>' : '')
     + '</div>';
 }
 
