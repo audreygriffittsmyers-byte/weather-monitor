@@ -2988,6 +2988,7 @@ function fitMapBounds() {
 const obsData = {};  // code -> { tempF, windKts, windMph, windDir, windGustKts, windGustMph, dewpointF, tempC, visib, condition, flightCat, rawOb, icao }
 const prevObsData      = {};  // previous METAR snapshot for wind shift detection
 const windShiftNotified = new Set(); // code|fromDir|toDir keys already fired
+let nhcDisturbances = [];
 
 // Map FBO codes to ICAO identifiers
 // US mainland: prepend K. Hawaii: PH prefix. Alaska: PA/PF/PO prefix. Non-US: direct ICAO.
@@ -3533,14 +3534,28 @@ async function fetchTropicalOutlook() {
     if (!r.ok) return;
     tropicalOutlookText = await r.text();
   } catch(e) {}
+  try {
+    const rd = await fetch(`${PROXY}?type=nhcdisturbances`);
+    if (rd.ok) { const arr = await rd.json(); nhcDisturbances = Array.isArray(arr) ? arr : []; }
+  } catch(e) {}
 }
 
 function getTropicalOutlookSection() {
   if (!tropicalOutlookText) return '';
   if (!/percent|developing|tropical/i.test(tropicalOutlookText)) return '';
-  const text = tropicalOutlookText.replace(/\r\n/g, '\n').trim().substring(0, 500);
+  const text = tropicalOutlookText.replace(/\r\n/g, '\n').trim().substring(0, 2000);
   return '<div style="background:#fff;border:1px solid #1e3a5f;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
     + '<div style="font-size:9px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">🌀 NHC Tropical Weather Outlook</div>'
+    + (nhcDisturbances.length ? nhcDisturbances.map(function(d){
+        var p2=d.FormationChance2day||d['2day']||'<40',p7=d.FormationChance7day||d['7day']||'<40';
+        var col=parseInt(p2)>=60?'#dc2626':parseInt(p2)>=40?'#ea580c':'#ca8a04';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #e8e8e8">'
+          +'<span style="font-size:14px">🌀</span>'
+          +'<div style="flex:1"><div style="font-size:11px;font-weight:700">'+(d.Name||'Disturbance')+'</div>'
+          +'<div style="font-size:10px;color:#556070">'+(d.Location||d.location||'')+'</div></div>'
+          +'<span style="background:'+col+';color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px">'
+          +'2-day: '+p2+'% | 7-day: '+p7+'%</span></div>';
+      }).join('')+'<div style="height:6px"></div>' : '')
     + '<div style="font-size:11px;color:#1a2a3a;line-height:1.65;white-space:pre-line">' + text + '</div>'
     + '</div>';
 }
