@@ -191,6 +191,15 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
+    if (type === 'nhcdisturbances') {
+      try {
+        // NHC graphical TWO disturbances GeoJSON -- invest areas and formation probabilities
+        const res = await fetch('https://www.nhc.noaa.gov/nhc_at.json',
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 600, cacheEverything: true } });
+        return new Response(await res.text(), { headers: CORS });
+      } catch(e) { return new Response('[]', { headers: CORS }); }
+    }
+
     if (type === 'nhc') {
       try {
         const res = await fetch('https://www.nhc.noaa.gov/CurrentStorms.json',
