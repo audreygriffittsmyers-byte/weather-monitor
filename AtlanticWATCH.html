@@ -3515,6 +3515,22 @@ async function drawNHCLayer() {
         }
       }
     }
+    if (nhcDisturbances && nhcDisturbances.length) {
+      nhcDisturbances.forEach(function(d) {
+        if (!d.lat || !d.lon) return;
+        var risk = (d.RISK7DAY || d.RISK2DAY || '').toLowerCase();
+        var color = risk === 'high' ? '#dc2626' : risk === 'medium' ? '#ea580c' : '#ca8a04';
+        var c = L.circle([d.lat, d.lon], {
+          radius: 280000, color: color, fillColor: color,
+          fillOpacity: 0.12, weight: 2, dashArray: '8 5'
+        });
+        var label = '🌀 Atlantic Area ' + (d.AREA||'')
+          + ' · 2-day: ' + (d.PROB2DAY||'0%') + ' ' + (d.RISK2DAY||'')
+          + ' · 7-day: ' + (d.PROB7DAY||'0%') + ' ' + (d.RISK7DAY||'');
+        c.bindTooltip(label, {sticky:true});
+        layers.push(c);
+      });
+    }
     if (layers.length) nhcLayer = L.layerGroup(layers).addTo(leafletMap);
   } catch(e) {}
 }
@@ -3547,8 +3563,9 @@ function getTropicalOutlookSection() {
   return '<div style="background:#fff;border:1px solid #1e3a5f;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
     + '<div style="font-size:9px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">🌀 NHC Tropical Weather Outlook</div>'
     + (nhcDisturbances.length ? nhcDisturbances.map(function(d){
-        var p2=d.FormationChance2day||d['2day']||'<40',p7=d.FormationChance7day||d['7day']||'<40';
-        var col=parseInt(p2)>=60?'#dc2626':parseInt(p2)>=40?'#ea580c':'#ca8a04';
+        var p2=d.PROB2DAY||d.FormationChance2day||'0%',p7=d.PROB7DAY||d.FormationChance7day||'0%';
+        var risk=(d.RISK7DAY||d.RISK2DAY||'low').toLowerCase();
+        var col=risk==='high'?'#dc2626':risk==='medium'?'#ea580c':'#ca8a04';
         return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #e8e8e8">'
           +'<span style="font-size:14px">🌀</span>'
           +'<div style="flex:1"><div style="font-size:11px;font-weight:700">'+(d.Name||'Disturbance')+'</div>'
