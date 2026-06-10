@@ -193,10 +193,48 @@ export default {
 
     if (type === 'nhcdisturbances') {
       try {
-        // NHC graphical TWO disturbances GeoJSON -- invest areas and formation probabilities
-        const res = await fetch('https://www.nhc.noaa.gov/nhc_at.json',
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 600, cacheEverything: true } });
-        return new Response(await res.text(), { headers: CORS });
+        // Fetch all three NHC TWO basin JSON files in parallel
+        const [rat, rep, rcp] = await Promise.all([
+          fetch('https://www.nhc.noaa.gov/nhc_at.json', { headers:{'User-Agent':UA}, cf:{cacheTtl:600,cacheEverything:true} }),
+          fetch('https://www.nhc.noaa.gov/nhc_ep.json', { headers:{'User-Agent':UA}, cf:{cacheTtl:600,cacheEverything:true} }),
+          fetch('https://www.nhc.noaa.gov/nhc_cp.json', { headers:{'User-Agent':UA}, cf:{cacheTtl:600,cacheEverything:true} }),
+        ]);
+        function parseTWO(raw, basinLabel) {
+          try {
+            const data = JSON.parse(raw);
+            const features = data.features || data;
+            if (!Array.isArray(features)) return [];
+            return features.map(f => {
+              const p = f.properties || f;
+              let lat = null, lon = null;
+              const geom = f.geometry;
+              if (geom && geom.coordinates) {
+                const ring = geom.type==='Polygon' ? geom.coordinates[0]
+                  : geom.type==='MultiPolygon' ? geom.coordinates[0][0] : null;
+                if (ring && ring.length) {
+                  lon = ring.reduce((s,c)=>s+c[0],0)/ring.length;
+                  lat = ring.reduce((s,c)=>s+c[1],0)/ring.length;
+                }
+              }
+              return { BASIN:p.BASIN||p.basin||basinLabel, AREA:p.AREA||p.area||'',
+                PROB2DAY:p.PROB2DAY||p.prob2day||'0%', RISK2DAY:p.RISK2DAY||p.risk2day||'Low',
+                PROB7DAY:p.PROB7DAY||p.prob7day||'0%', RISK7DAY:p.RISK7DAY||p.risk7day||'Low',
+                lat: lat!=null ? Math.round(lat*1000)/1000 : null,
+                lon: lon!=null ? Math.round(lon*1000)/1000 : null };
+            }).filter(d => d.lat !== null);
+          } catch(e) { return []; }
+        }
+        const [at, ep, cp] = await Promise.all([
+          rat.ok ? rat.text() : Promise.resolve('[]'),
+          rep.ok ? rep.text() : Promise.resolve('[]'),
+          rcp.ok ? rcp.text() : Promise.resolve('[]'),
+        ]);
+        const all = [
+          ...parseTWO(at, 'Atlantic'),
+          ...parseTWO(ep, 'East Pacific'),
+          ...parseTWO(cp, 'Central Pacific'),
+        ];
+        return new Response(JSON.stringify(all), { headers: CORS });
       } catch(e) { return new Response('[]', { headers: CORS }); }
     }
 
@@ -235,14 +273,16 @@ export default {
 
     if (type === 'tropicaloutlook') {
       try {
-        const res = await fetch('https://www.nhc.noaa.gov/text/MIATWOAT.shtml',
+        const basin = url.searchParams.get('basin') || 'at';
+        const products = { at:'MIATWOAT', ep:'MIATWOEP', cp:'HFOTWOCP' };
+        const prod = products[basin] || 'MIATWOAT';
+        const res = await fetch(`https://www.nhc.noaa.gov/text/${prod}.shtml`,
           { headers: { 'User-Agent': UA } });
         const html = await res.text();
         const match = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
         return new Response(match ? match[1] : '', { headers: TEXT });
       } catch(e) { return new Response('', { headers: TEXT }); }
     }
-
     if (type === 'caribwx') {
       // Caribbean offshore waters forecast -- covers BDA, GCM, SXM, PLS region
       const product = url.searchParams.get('product') || 'MIAOFFNT2';
