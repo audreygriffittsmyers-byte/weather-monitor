@@ -3445,7 +3445,6 @@ function toggleWinterPolygons(on) {
 
 // ── NHC Tropical ──────────────────────────────────────────────────────────────
 let nhcLayer = null;
-let nhcTWOLayer = null;
 let showNHC  = true;
 const NHC_COLORS = { TD:'#a8d5ff', TS:'#fbbf24', HU:'#ef4444', TY:'#ef4444' };
 
@@ -3453,13 +3452,7 @@ const NHC_COLORS = { TD:'#a8d5ff', TS:'#fbbf24', HU:'#ef4444', TY:'#ef4444' };
 
 async function drawNHCLayer() {
   if (nhcLayer) { leafletMap.removeLayer(nhcLayer); nhcLayer = null; }
-  if (nhcTWOLayer) { leafletMap.removeLayer(nhcTWOLayer); nhcTWOLayer = null; }
   if (!showNHC) return;
-  // NHC Graphical TWO image overlay -- Atlantic basin ~5N-50N, 100W-10W
-  nhcTWOLayer = L.imageOverlay(
-    'https://www.nhc.noaa.gov/xgtwo/resize/xgtwo_atl_7d0_w400.png?cb=' + Date.now(),
-    [[5, -100], [50, -10]], { opacity: 0.7, interactive: false, zIndex: 400 }
-  ).addTo(leafletMap);
   try {
     const r = await fetchWithTimeout(`${PROXY}?type=nhc`);
     if (!r.ok) return;
@@ -3545,7 +3538,6 @@ async function drawNHCLayer() {
 function toggleNHC(on) {
   showNHC = on;
   if (nhcLayer) { leafletMap.removeLayer(nhcLayer); nhcLayer = null; }
-  if (nhcTWOLayer) { leafletMap.removeLayer(nhcTWOLayer); nhcTWOLayer = null; }
   if (on && leafletMap) drawNHCLayer();
 }
 
