@@ -2645,10 +2645,10 @@ async function drawSPCPolygons() {
   if (!showSPCPolys) return;
   const data = await fetchSPCPolygons();
   if (!data?.features?.length) return;
-  const sorted = [...data.features].sort((a,b) => (a.properties?.dn||a.properties?.DN||0) - (b.properties?.dn||b.properties?.DN||0));
+  const sorted = [...data.features].sort((a,b) => (b.properties?.dn||b.properties?.DN||0) - (a.properties?.dn||a.properties?.DN||0));
   spcPolyLayer = L.geoJSON({type:'FeatureCollection',features:sorted}, {
     style: f => {
-      const lbl = (f.properties?.label||f.properties?.LABEL||'').toUpperCase();
+      const lbl = (f.properties?.label||f.properties?.LABEL||f.properties?.LABEL2||'').toUpperCase();
       return SPC_POLY_STYLE[lbl] || {color:'#888',fillColor:'#888',fillOpacity:0.06,weight:1};
     },
     onEachFeature: (f,layer) => {
