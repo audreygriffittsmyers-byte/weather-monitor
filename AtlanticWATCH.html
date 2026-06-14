@@ -4941,15 +4941,27 @@ function parseSPCTiming(zoneLabel) {
   var raw = spcText && spcText[1];
   if (!raw || typeof raw !== 'string') return null;
   var txt = raw.replace(/\r\n/g, '\n');
-  var labelMap = {
-    'HIGH':'HIGH RISK', 'MDT':'MODERATE RISK', 'ENH':'ENHANCED RISK',
-    'SLGT':'SLIGHT RISK', 'MRGL':'MARGINAL RISK', 'TSTM':'GENERAL THUNDERSTORM'
+  // Try multiple label formats SPC uses in Day 1 text
+  var labelCandidates = {
+    'HIGH': ['HIGH RISK', 'HIGH'],
+    'MDT':  ['MODERATE RISK', 'MODERATE', 'MDT'],
+    'ENH':  ['ENHANCED RISK', 'ENHANCED', 'ENH'],
+    'SLGT': ['SLIGHT RISK', 'SLIGHT', 'SLGT'],
+    'MRGL': ['MARGINAL RISK', 'MARGINAL', 'MRGL'],
+    'TSTM': ['GENERAL THUNDERSTORM', 'TSTM']
   };
-  var lbl = labelMap[zoneLabel] || '';
-  var secIdx = txt.toUpperCase().indexOf('...' + lbl.toUpperCase() + '...');
-  if (secIdx < 0) secIdx = txt.toUpperCase().indexOf(lbl.toUpperCase());
-  var nextSec = secIdx >= 0 ? txt.toUpperCase().indexOf('...', secIdx + lbl.length + 6) : -1;
-  var sectionText = secIdx >= 0 ? txt.substring(secIdx, nextSec > 0 ? nextSec : txt.length) : txt;
+  var candidates = labelCandidates[zoneLabel] || [zoneLabel];
+  var sectionText = txt; // fallback to full text
+  for (var ci = 0; ci < candidates.length; ci++) {
+    var lbl = candidates[ci];
+    var secIdx = txt.toUpperCase().indexOf('...' + lbl.toUpperCase() + '...');
+    if (secIdx < 0) secIdx = txt.toUpperCase().indexOf(lbl.toUpperCase());
+    if (secIdx >= 0) {
+      var nextSec = txt.toUpperCase().indexOf('...', secIdx + lbl.length + 6);
+      sectionText = txt.substring(secIdx, nextSec > 0 ? nextSec : Math.min(secIdx + 2000, txt.length));
+      break;
+    }
+  }
 
   var patterns = [
     /afternoon[s]?\s+(?:and|through|into)\s+(?:the\s+)?(?:late\s+)?evening/i,
