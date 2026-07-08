@@ -4362,22 +4362,33 @@ function _watchDownloadDocx(codes, notes, sections) {
   }
 
   // NHC section
-  if (sections.nhc) {
-    var tropLocs=codes.filter(function(c){return (results[c]&&results[c].alerts||[]).some(function(a){return /tropical|hurricane|typhoon|storm surge/i.test(a.event);});});
-    if(tropLocs.length){
-      add('NHC / TROPICAL WEATHER ADVISORY', ppr({fill:'7c3aed',after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
-      add('FBO  |  City / State  |  Active Alert', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
-      tropLocs.forEach(function(c,ci){
+  if (sections.temp) {
+    var heatLocs=codes.filter(function(c){var o=obsData[c];return o&&o.tempF>=95;});
+    var coldLocs=codes.filter(function(c){var o=obsData[c];return o&&o.tempF<=15;});
+    if(heatLocs.length){
+      add('EXTREME HEAT ADVISORY', ppr({fill:'dc2626',after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
+      add('FBO  |  City / State  |  Temperature', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
+      heatLocs.forEach(function(c,ci){
         var fbo=COVERED.find(function(f){return f.code===c;})||{city:'',state:''};
-        var a=(results[c]&&results[c].alerts||[]).filter(function(al){return /tropical|hurricane|typhoon|storm surge/i.test(al.event);});
-        add(c+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+a.map(function(al){return al.event;}).join('; '),
-            ppr({fill:ci%2===0?'FFFFFF':'F9F9F9',after:'30'}), rpr({sz:20}));
+        var obs=obsData[c];
+        add(c+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+(obs?obs.tempF+'°F':'--'),
+            ppr({fill:ci%2===0?'FFFFFF':'FEF2F2',after:'30'}), rpr({sz:20}));
+      });
+      sp();
+    }
+    if(coldLocs.length){
+      add('EXTREME COLD ADVISORY', ppr({fill:'1e40af',after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
+      add('FBO  |  City / State  |  Temperature', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
+      coldLocs.forEach(function(c,ci){
+        var fbo=COVERED.find(function(f){return f.code===c;})||{city:'',state:''};
+        var obs=obsData[c];
+        add(c+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+(obs?obs.tempF+'°F':'--'),
+            ppr({fill:ci%2===0?'FFFFFF':'EFF6FF',after:'30'}), rpr({sz:20}));
       });
       sp();
     }
   }
 
-  // Wind section
   if (sections.wind) {
     var windLocs=codes.filter(function(c){return !!getWindStatus(c);});
     if(windLocs.length){
@@ -4394,6 +4405,22 @@ function _watchDownloadDocx(codes, notes, sections) {
   }
 
   // Winter Storm section
+  if (sections.nhc) {
+    var tropLocs=codes.filter(function(c){return (results[c]&&results[c].alerts||[]).some(function(a){return /tropical|hurricane|typhoon|storm surge/i.test(a.event);});});
+    if(tropLocs.length){
+      add('NHC / TROPICAL WEATHER ADVISORY', ppr({fill:'7c3aed',after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
+      add('FBO  |  City / State  |  Active Alert', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
+      tropLocs.forEach(function(c,ci){
+        var fbo=COVERED.find(function(f){return f.code===c;})||{city:'',state:''};
+        var a=(results[c]&&results[c].alerts||[]).filter(function(al){return /tropical|hurricane|typhoon|storm surge/i.test(al.event);});
+        add(c+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+a.map(function(al){return al.event;}).join('; '),
+            ppr({fill:ci%2===0?'FFFFFF':'F9F9F9',after:'30'}), rpr({sz:20}));
+      });
+      sp();
+    }
+  }
+
+  // Wind section
   if (sections.winter) {
     var winterLocs=codes.filter(function(c){return (results[c]&&results[c].alerts||[]).some(function(a){return /winter|snow|ice|blizzard|freeze|frost/i.test(a.event);});});
     if(winterLocs.length){
@@ -4426,33 +4453,6 @@ function _watchDownloadDocx(codes, notes, sections) {
   }
 
   // Extreme temp section
-  if (sections.temp) {
-    var heatLocs=codes.filter(function(c){var o=obsData[c];return o&&o.tempF>=95;});
-    var coldLocs=codes.filter(function(c){var o=obsData[c];return o&&o.tempF<=15;});
-    if(heatLocs.length){
-      add('EXTREME HEAT ADVISORY', ppr({fill:'dc2626',after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
-      add('FBO  |  City / State  |  Temperature', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
-      heatLocs.forEach(function(c,ci){
-        var fbo=COVERED.find(function(f){return f.code===c;})||{city:'',state:''};
-        var obs=obsData[c];
-        add(c+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+(obs?obs.tempF+'°F':'--'),
-            ppr({fill:ci%2===0?'FFFFFF':'FEF2F2',after:'30'}), rpr({sz:20}));
-      });
-      sp();
-    }
-    if(coldLocs.length){
-      add('EXTREME COLD ADVISORY', ppr({fill:'1e40af',after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
-      add('FBO  |  City / State  |  Temperature', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
-      coldLocs.forEach(function(c,ci){
-        var fbo=COVERED.find(function(f){return f.code===c;})||{city:'',state:''};
-        var obs=obsData[c];
-        add(c+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+(obs?obs.tempF+'°F':'--'),
-            ppr({fill:ci%2===0?'FFFFFF':'EFF6FF',after:'30'}), rpr({sz:20}));
-      });
-      sp();
-    }
-  }
-
   // Supervisor note
   add('Supervisors: Brief your team on all active hazards covered in this alert before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and heat safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.',
       ppr({fill:'F2F4F6',after:'100'}), rpr({sz:22}));
