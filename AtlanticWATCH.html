@@ -2168,11 +2168,7 @@ function _generateSummaryInner(content, ts, status) {
       + '</div>' + chips + '</div>';
   }
 
-  // TROPICAL
-  var tropSection = getTropicalOutlookSection();
-  if (tropSection) html += tropSection;
-
-  // SPC CONVECTIVE
+  // SPC CONVECTIVE -- first
   var SZONE_STYLE = {
     HIGH: {bg:'#7c3aed',tc:'#fff',label:'HIGH RISK',        hazards:'Major severe weather outbreak. All hazards possible.'},
     MDT:  {bg:'#dc2626',tc:'#fff',label:'MODERATE RISK',    hazards:'Significant severe weather likely. Large hail, damaging winds, strong tornadoes possible.'},
@@ -2224,37 +2220,6 @@ function _generateSummaryInner(content, ts, status) {
   });
   ltRows.sort(function(a,b){return a.detail.includes('PROTOCOL')?-1:b.detail.includes('PROTOCOL')?1:0;});
   if(ltRows.length) html+=hazardCard('&#9889;','LIGHTNING STATUS','Active lightning and convective conditions','#1a2a3a','#fff',ltRows);
-
-  // HIGH WIND
-  var wRows=[];
-  fboList.forEach(function(f){
-    var w=getWindStatus(f.code)||getTAFWindForecast(f.code,6);
-    if(!w) return;
-    var isFc=!!w.forecastHrs;
-    wRows.push({code:f.code,city:f.city,state:f.state,
-      detail:w.label,
-      detail2:w.spd+'kt'+(w.gust?' G'+w.gust+'kt':'')+(isFc?' — forecast in ~'+w.forecastHrs+'h':' — current')});
-  });
-  wRows.sort(function(a,b){return a.detail.includes('PROTOCOL')?-1:b.detail.includes('PROTOCOL')?1:0;});
-  if(wRows.length) html+=hazardCard('&#128168;','HIGH WIND','Wind advisory and protocol conditions','#ea580c','#fff',wRows);
-
-  // NWS ALERTS
-  var nwsBkt={EXTREME:[],SEVERE:[],MODERATE:[],LOW:[]};
-  fboList.forEach(function(f){
-    var r=results[f.code]; if(!r||!r.alerts||!r.alerts.length) return;
-    var top=r.alerts[0],obs=obsData[f.code];
-    var cond=obs?(obs.tempF+'&#176;F '+windDirArrow(obs.windDir)+(obs.windKts||'--')+'kt'+(obs.windGustKts?' G'+obs.windGustKts:'')):'';
-    var bkt=(top.bucket||'LOW').toUpperCase();
-    if(!nwsBkt[bkt]) nwsBkt[bkt]=[];
-    nwsBkt[bkt].push({code:f.code,city:f.city,state:f.state,detail:top.event,
-      detail2:(top.expires?'Exp '+fmtTime(top.expires):'')+(r.alerts.length>1?' +'+( r.alerts.length-1)+' more':'')});
-  });
-  var nwsSt={EXTREME:{bg:'#991b1b',tc:'#fff',title:'EXTREME NWS ALERTS'},SEVERE:{bg:'#9a3412',tc:'#fff',title:'SEVERE NWS ALERTS'},
-    MODERATE:{bg:'#854d0e',tc:'#fff',title:'MODERATE NWS ALERTS'},LOW:{bg:'#14532d',tc:'#fff',title:'ADVISORY / STATEMENT'}};
-  ['EXTREME','SEVERE','MODERATE','LOW'].forEach(function(b){
-    if(!nwsBkt[b]||!nwsBkt[b].length) return;
-    html+=hazardCard('&#9888;',nwsSt[b].title,'',nwsSt[b].bg,nwsSt[b].tc,nwsBkt[b]);
-  });
 
   // EXTREME TEMP -- current METAR + 24-hour forecast scan
   var hRows=[],cRows=[];
@@ -2311,6 +2276,41 @@ function _generateSummaryInner(content, ts, status) {
   cRows.sort(function(a,b){return a.detail.includes('now')?-1:b.detail.includes('now')?1:0;});
   if(hRows.length) html+=hazardCard('&#9728;&#65039;','EXTREME HEAT','Current conditions and 24-hour forecast','#dc2626','#fff',hRows);
   if(cRows.length) html+=hazardCard('&#129354;','EXTREME COLD','Current conditions and 24-hour forecast','#1e40af','#fff',cRows);
+
+  // HIGH WIND
+  var wRows=[];
+  fboList.forEach(function(f){
+    var w=getWindStatus(f.code)||getTAFWindForecast(f.code,6);
+    if(!w) return;
+    var isFc=!!w.forecastHrs;
+    wRows.push({code:f.code,city:f.city,state:f.state,
+      detail:w.label,
+      detail2:w.spd+'kt'+(w.gust?' G'+w.gust+'kt':'')+(isFc?' — forecast in ~'+w.forecastHrs+'h':' — current')});
+  });
+  wRows.sort(function(a,b){return a.detail.includes('PROTOCOL')?-1:b.detail.includes('PROTOCOL')?1:0;});
+  if(wRows.length) html+=hazardCard('&#128168;','HIGH WIND','Wind advisory and protocol conditions','#ea580c','#fff',wRows);
+
+  // NHC TROPICAL -- before NWS
+  var tropSection = getTropicalOutlookSection();
+  if (tropSection) html += tropSection;
+
+  // NWS ALERTS
+  var nwsBkt={EXTREME:[],SEVERE:[],MODERATE:[],LOW:[]};
+  fboList.forEach(function(f){
+    var r=results[f.code]; if(!r||!r.alerts||!r.alerts.length) return;
+    var top=r.alerts[0],obs=obsData[f.code];
+    var cond=obs?(obs.tempF+'&#176;F '+windDirArrow(obs.windDir)+(obs.windKts||'--')+'kt'+(obs.windGustKts?' G'+obs.windGustKts:'')):'';
+    var bkt=(top.bucket||'LOW').toUpperCase();
+    if(!nwsBkt[bkt]) nwsBkt[bkt]=[];
+    nwsBkt[bkt].push({code:f.code,city:f.city,state:f.state,detail:top.event,
+      detail2:(top.expires?'Exp '+fmtTime(top.expires):'')+(r.alerts.length>1?' +'+( r.alerts.length-1)+' more':'')});
+  });
+  var nwsSt={EXTREME:{bg:'#991b1b',tc:'#fff',title:'EXTREME NWS ALERTS'},SEVERE:{bg:'#9a3412',tc:'#fff',title:'SEVERE NWS ALERTS'},
+    MODERATE:{bg:'#854d0e',tc:'#fff',title:'MODERATE NWS ALERTS'},LOW:{bg:'#14532d',tc:'#fff',title:'ADVISORY / STATEMENT'}};
+  ['EXTREME','SEVERE','MODERATE','LOW'].forEach(function(b){
+    if(!nwsBkt[b]||!nwsBkt[b].length) return;
+    html+=hazardCard('&#9888;',nwsSt[b].title,'',nwsSt[b].bg,nwsSt[b].tc,nwsBkt[b]);
+  });
 
   // DE-ICE
   var dRows=[];
@@ -5480,13 +5480,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
 
   } // end sections.spc
 
-  // Extra sections
-  if (sections.nhc) html += _buildNHCSection(codes);
-  if (sections.winter) html += _buildNWSHazardSection(codes,'winter',/winter|snow|ice|blizzard|freeze|frost/i,'❄ WINTER STORM','#1e40af','#EFF6FF','Winter weather hazards expected. Ice accumulation, heavy snow, and hazardous travel conditions possible.');
-  if (sections.winter) html += _getActionHTML('winter');
-  if (sections.flood) html += _buildNWSHazardSection(codes,'flood',/flood/i,'🌊 FLOOD / FLASH FLOOD','#065f46','#ECFDF5','Flooding or flash flooding possible at or near impacted locations.');
-  if (sections.flood) html += _getActionHTML('flood');
-  if (sections.wind) { var _wl=codes.filter(function(c){return !!(getWindStatus(c)||getTAFWindForecast(c,6));}); if(_wl.length) { html+=_buildWindSection(_wl); html+=_getActionHTML('wind'); } }
+  // Extra sections -- order: Temp, Wind, NHC, NWS alerts, Winter, Flood
   if (sections.temp) {
     var _ht=codes.filter(function(c){var o=obsData[c];return o&&o.tempF>=95;});
     var _ct=codes.filter(function(c){var o=obsData[c];return o&&o.tempF<=15;});
@@ -5494,6 +5488,12 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     if(_ht.length) html += _getActionHTML('heat');
     if(_ct.length) html += _getActionHTML('cold');
   }
+  if (sections.wind) { var _wl=codes.filter(function(c){return !!(getWindStatus(c)||getTAFWindForecast(c,6));}); if(_wl.length) { html+=_buildWindSection(_wl); html+=_getActionHTML('wind'); } }
+  if (sections.nhc) html += _buildNHCSection(codes);
+  if (sections.winter) html += _buildNWSHazardSection(codes,'winter',/winter|snow|ice|blizzard|freeze|frost/i,'❄ WINTER STORM','#1e40af','#EFF6FF','Winter weather hazards expected. Ice accumulation, heavy snow, and hazardous travel conditions possible.');
+  if (sections.winter) html += _getActionHTML('winter');
+  if (sections.flood) html += _buildNWSHazardSection(codes,'flood',/flood/i,'🌊 FLOOD / FLASH FLOOD','#065f46','#ECFDF5','Flooding or flash flooding possible at or near impacted locations.');
+  if (sections.flood) html += _getActionHTML('flood');
 
   // Alert-only locations table
   if (sections.alerts) {
@@ -5539,7 +5539,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   } // end sections.spc immediate actions
 
   html += '<div style="border:1px solid #ddd;padding:10px 14px;margin-bottom:12px;font-size:11px">'
-    +'<strong>Supervisors:</strong> Brief your team on today\'s storm threat and expected timing before conditions arrive. Do not wait for a formal warning to begin preparations \u2014 once a Tornado Warning or Severe Thunderstorm Warning is issued, time is limited. Complete all outdoor preparations now and ensure every employee knows the shelter location and the protocol for suspending ramp operations. Employee safety is the priority above all else.</div>';
+    +'<strong>Supervisors:</strong> Brief your team on all active hazards covered in this alert before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and heat safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.</div>';
 
   // ── 7. Safety tagline ─────────────────────────────────────────────────────
   html += '<div style="background:#0E2841;color:#fff;font-weight:700;font-size:11px;padding:8px 14px;margin-bottom:10px;text-align:center">'
