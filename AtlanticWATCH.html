@@ -4339,20 +4339,21 @@ function _watchDownloadDocx(codes, notes, sections) {
 
     // Immediate Actions
     if (sections.spc) {
-      add('IMMEDIATE ACTIONS', ppr({fill:NAVY,jc:'left',after:'60'}), rpr({b:true,sz:22,color:'FFFFFF'}));
-      var hasTornado=activeZones[0]==='MDT'||activeZones[0]==='HIGH'||hazardSet.has('Tornadoes');
-      var hasHail=activeZones[0]==='ENH'||activeZones[0]==='MDT'||activeZones[0]==='HIGH'||hazardSet.has('Large Hail');
-      var actions=[
-        'Review the applicable Prep Guide found on Flightdeck and ensure all applicable procedures are in place before conditions arrive at your location.',
-        'Protect Aircraft: When able, ensure all aircraft are securely TRIPLE chocked, doors and panels secured, and tie-downs used where applicable. When necessary, requested, and safely able to do so, move aircraft into hangars before conditions deteriorate.'+(hasHail?' Hail damage risk is elevated at impacted locations; prioritize employee safety above all else.':''),
-        'Ensure Employee Safety: Halt fueling and outdoor operations when lightning is within five miles. Suspend all outdoor work in high winds and direct employees to designated interior shelter areas, away from windows and exterior walls, before conditions become hazardous.'+(hasTornado?' Upon issuance of a Tornado WARNING, cease all ramp operations immediately and direct all personnel and customers to interior shelter.':''),
-        'Secure the Ramp: Park and chock all fuel trucks, tugs, GPUs, belt loaders, baggage carts, and other GSE in designated areas away from high-wind exposure. Remove all loose equipment, cones, chocks, wands, ladders, mats, trash cans, rolling dumpsters, and any debris.',
-        'Communicate with Your Customers: Proactively notify customers of any anticipated operational disruptions or delays in advance of deteriorating conditions.',
-        'Monitor Weather Continuously: Ensure all weather monitoring and emergency communication systems are fully operational. Supervisors must conduct pre-shift briefings to update employees on anticipated weather impacts.',
-        'After the storm: conduct a full walkthrough of aircraft, GSE, and facility structures. Remove all FOD and debris and document findings to your Regional Safety Manager and General Manager before resuming normal operations.',
-      ];
-      actions.forEach(function(a){ add('\u2022  '+a, ppr({indL:'720',indH:'360',after:'80'}), rpr({sz:22})); });
-      sp();
+      // Thunderstorm action items (from standardized list)
+    add('IMMEDIATE ACTIONS — SEVERE THUNDERSTORMS, LIGHTNING, LARGE HAIL & TORNADOES',
+      ppr({fill:NAVY,jc:'left',after:'60'}), rpr({b:true,sz:22,color:'FFFFFF'}));
+    var tstmActions=[
+      'Review the Atlantic Aviation Prep Guide as applicable for full checklists and procedures.',
+      'Brief your entire team on current conditions and expected timing before the threat arrives. Do not wait for a formal watch or warning to begin preparations.',
+      'Employee safety takes priority over all operations. Enforce stop-work authority — any employee who feels unsafe has the right and responsibility to stop work.',
+      'Move all personnel indoors immediately when lightning is within 5 miles or conditions are imminent. Stop all outdoor operations. No employee should remain on the ramp, in open structures, in refuelers, or near hangar doors.',
+      'Tornado warnings require immediate movement to designated interior shelters, away from windows and open spaces. Do not return outside until an all-clear is confirmed and ramp conditions have been reassessed.',
+      'Secure all aircraft before conditions arrive. Move to hangars where requested and able. Triple-chock all aircraft remaining on the ramp. If time allows, notify flight crews of any unsecured panels, doors, or hail risk.',
+      'Move all GSE inside or chock, set parking brakes, and orient wheels away from buildings, aircraft, and fuel storage. Lower air stairs to their lowest setting. Open baggage cart curtains fully. Remove or secure all loose ramp items — cones, chocks, wands, ladders, mats, trash cans, and rolling dumpsters.',
+      'Resume operations only after the threat has passed, a full ramp FOD sweep and visual inspection of all aircraft and equipment are completed, and a post-event safety huddle is held with all impacted staff.',
+    ];
+    tstmActions.forEach(function(a,i){ add((i+1)+'. '+a, ppr({indL:'720',indH:'360',after:'80'}), rpr({sz:22})); });
+    sp();
     }
   } else if (!sections.spc) {
     // Non-SPC brief header
