@@ -5518,10 +5518,6 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   }
   } // end sections.alerts
 
-  // ── 4b. Thunderstorm/SPC Action Items
-  if (sections.spc && activeZones.filter(function(z){return z!=='TSTM';}).length)
-    html += _getActionHTML('thunderstorm');
-
   // ── 5. 24-hour forecast hazards
   html += _buildForecastSection(codes);
 
@@ -5643,18 +5639,6 @@ function _buildNHCSection(codes) {
   if (caribWxData && caribWxData.MIAOFFNT2) {
     html += '<div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:4px;padding:10px 14px;margin-bottom:12px;font-size:10px;font-family:monospace;white-space:pre-wrap;max-height:180px;overflow:hidden">'+caribWxData.MIAOFFNT2.substring(0,500)+'...</div>';
   }
-  var tActions = [
-    'Review the applicable Tropical/Hurricane Prep Guide found on Flightdeck and ensure all applicable procedures are in place well before storm arrival.',
-    'Protect Aircraft: Begin moving aircraft to storm-safe hangars or remote storage immediately. All remaining aircraft must be TRIPLE chocked, doors and panels secured, and tie-downs used. Do not wait for final track confirmation.',
-    'Ensure Employee Safety: Establish storm shutdown timelines based on local emergency management guidance. Suspend all outdoor ramp operations when sustained winds reach protocol threshold. Ensure all personnel know shelter-in-place procedures.',
-    'Secure the Ramp: Fully secure all GSE inside hangars or tie-down areas. Remove or secure all loose equipment, signage, and debris. Secure all facility doors and hangar doors.',
-    'Communicate with Your Customers: Proactively notify customers of anticipated closure timelines and operational disruptions. Coordinate aircraft storage and customer logistics in advance.',
-    'Coordinate with Local Authorities: Monitor local emergency management and airport authority communications. Comply with any mandatory evacuation or facility closure orders.',
-    'After the storm: Do not reopen until the facility has been inspected and cleared. Document all damage to aircraft, GSE, and facilities and report to your Regional Safety Manager and General Manager.',
-  ];
-  html += '<div style="margin-bottom:16px"><div style="background:#7c3aed;color:#fff;font-weight:700;font-size:11px;padding:6px 10px">IMMEDIATE ACTIONS — TROPICAL</div><div style="border:1px solid #ddd;border-top:none;padding:10px 14px"><ul style="margin:0;padding-left:18px">';
-  tActions.forEach(function(a){ html += '<li style="margin-bottom:5px">'+a+'</li>'; });
-  html += '</ul></div></div>';
   return html;
 }
 
@@ -5690,9 +5674,6 @@ function _buildWindSection(windLocs) {
   });
   html += '</table>';
   var wA=['Ensure Employee Safety: Suspend all outdoor work in high winds. Direct employees to designated interior areas before conditions become hazardous. Halt aerial lift and ladder operations immediately.','Secure the Ramp: Park and chock all GSE away from high-wind exposure. Remove all loose equipment, cones, and debris. Do not open bi-fold doors if winds exceed manufacturer limits.','Protect Aircraft: Ensure all aircraft are TRIPLE chocked and tie-downs applied. Delay or suspend pushback and towing of light aircraft in high wind conditions.','Monitor Weather Continuously: Monitor wind speed trends. Escalate to High Wind Protocol immediately if sustained winds reach 35kt or gusts reach 40kt.'];
-  html += '<div style="margin-bottom:16px"><div style="background:#ea580c;color:#fff;font-weight:700;font-size:11px;padding:6px 10px">IMMEDIATE ACTIONS — HIGH WIND</div><div style="border:1px solid #ddd;border-top:none;padding:10px 14px"><ul style="margin:0;padding-left:18px">';
-  wA.forEach(function(a){ html += '<li style="margin-bottom:5px">'+a+'</li>'; });
-  html += '</ul></div></div>';
   return html;
 }
 
