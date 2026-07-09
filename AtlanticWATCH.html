@@ -5522,22 +5522,9 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   if (sections.spc && activeZones.filter(function(z){return z!=='TSTM';}).length)
     html += _getActionHTML('thunderstorm');
 
-  // ── 5. Immediate Actions ──────────────────────────────────────────────────
-  var topRisk = activeZones[0] || 'MRGL';
-  var actions = _getImmediateActions(topRisk, hazardSet);
-  if (sections.spc) {
-  html += '<div style="margin-bottom:16px">'
-    +'<div style="background:#0E2841;color:#fff;font-weight:700;font-size:11px;padding:6px 10px;letter-spacing:.04em">IMMEDIATE ACTIONS</div>'
-    +'<div style="border:1px solid #ddd;border-top:none;padding:10px 14px">'
-    +'<ul style="margin:0;padding-left:18px">';
-  actions.forEach(function(a) { html += '<li style="margin-bottom:5px">'+a+'</li>'; });
-  html += '</ul></div></div>';
-
-  // ── 5b. 24-hour forecast hazards
+  // ── 5. 24-hour forecast hazards
   html += _buildForecastSection(codes);
 
-  // ── 6. Supervisor note ────────────────────────────────────────────────────
-  } // end sections.spc immediate actions
 
   html += '<div style="border:1px solid #ddd;padding:10px 14px;margin-bottom:12px;font-size:11px">'
     +'<strong>Supervisors:</strong> Brief your team on all active hazards covered in this alert before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and heat safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.</div>';
