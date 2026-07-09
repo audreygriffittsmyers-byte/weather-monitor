@@ -5479,6 +5479,10 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     html += '</table>';
   });
 
+  // ── Thunderstorm/SPC Action Items -- immediately after zone tables
+  if (sections.spc && activeZones.filter(function(z){return z!=='TSTM';}).length)
+    html += _getActionHTML('thunderstorm');
+
   } // end sections.spc
 
   // Extra sections -- order: Temp, Wind, NHC, NWS alerts, Winter, Flood
