@@ -4600,18 +4600,25 @@ async function _startupHourlyLoad() {
     return priority.indexOf(f.code) === -1;
   }).map(function(f){ return f.code; });
 
-  // Fetch priority locations immediately (batch 6)
   var BATCH = 6;
+
+  // Fetch hourly + AQI for priority locations simultaneously
   for (var i = 0; i < priority.length; i += BATCH) {
     await Promise.all(priority.slice(i, i+BATCH).map(function(c){
-      return fetch7Day(c).catch(function(){});
+      return Promise.all([
+        fetch7Day(c).catch(function(){}),
+        fetchAQI(c).catch(function(){})
+      ]);
     }));
   }
 
-  // Fetch rest in background with longer delay between batches to avoid rate limits
+  // Background load rest -- hourly + AQI together, 2s between batches
   for (var i = 0; i < rest.length; i += BATCH) {
     await Promise.all(rest.slice(i, i+BATCH).map(function(c){
-      return fetch7Day(c).catch(function(){});
+      return Promise.all([
+        fetch7Day(c).catch(function(){}),
+        fetchAQI(c).catch(function(){})
+      ]);
     }));
     await new Promise(function(r){ setTimeout(r, 2000); });
   }
