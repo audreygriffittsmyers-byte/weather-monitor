@@ -2336,6 +2336,15 @@ function _generateSummaryInner(content, ts, status) {
   });
   if(nRows.length) html+=hazardCard('&#9992;&#65039;','FAA NAS PROGRAMS','Active ground stops, delays, and AFPs','#0E2841','#fff',nRows);
 
+  // AQI
+  var aqiRows=[];
+  fboList.forEach(function(f){
+    var a=aqiData[f.code]; if(!a||a.aqi<101) return;
+    aqiRows.push({code:f.code,city:f.city,state:f.state,detail:a.category+' (AQI '+a.aqi+')',detail2:a.pollutant||''});
+  });
+  aqiRows.sort(function(a,b){return parseInt(b.detail.match(/\d+/)||0)-parseInt(a.detail.match(/\d+/)||0);});
+  if(aqiRows.length) html+=hazardCard('??️','POOR AIR QUALITY','AQI at or above Unhealthy for Sensitive Groups','#7c3aed','#fff',aqiRows);
+
   // ALL CLEAR
   var clearList=fboList.filter(function(f){
     return results[f.code]&&results[f.code].st==='ok'&&!impacted.has(f.code)
@@ -4453,6 +4462,29 @@ function _watchDownloadDocx(codes, notes, sections) {
     }
   }
 
+  // AQI section
+  var _aqiDocx=codes.filter(function(c){var a=aqiData[c];return a&&a.aqi>=101;});
+  if(_aqiDocx.length){
+    sp();
+    add('AIR QUALITY ADVISORY',ppr({fill:'7C3AED',jc:'left',after:'60'}),rpr({b:true,sz:22,color:'FFFFFF'}));
+    add('AQI at or above Unhealthy for Sensitive Groups. Limit prolonged outdoor exertion.',ppr({after:'80'}),rpr({sz:20,i:true}));
+    _aqiDocx.forEach(function(c){
+      var a=aqiData[c],fbo=COVERED.find(function(f){return f.code===c;})||{city:'',state:''};
+      add(c+' — '+(fbo.city||'')+(fbo.state?', '+fbo.state:'')+' — AQI: '+a.aqi+' ('+a.category+')'+(a.pollutant?' — '+a.pollutant:''),ppr({after:'60'}),rpr({sz:20}));
+    });
+    sp();
+    add('IMMEDIATE ACTIONS — POOR AIR QUALITY',ppr({fill:'7C3AED',jc:'left',after:'60'}),rpr({b:true,sz:22,color:'FFFFFF'}));
+    ['Review the Atlantic Aviation Prep Guide as applicable.',
+     'Brief your team on current AQI conditions before their shift.',
+     'Employee safety takes priority. Enforce stop-work authority.',
+     'Require N95 masks (or higher) for all outdoor ramp work when AQI is degraded.',
+     'Shelter employees indoors when AQI exceeds 200 (Very Unhealthy).',
+     'Close all hangar doors and disable fresh-air intake fans when smoke is present.',
+     'Advise customers to keep aircraft windows and vents closed when parked.',
+     'Do not use compressed air or dry sweeping during ash events. Wet ash before cleanup.',
+    ].forEach(function(a,i){add((i+1)+'. '+a,ppr({indL:'720',indH:'360',after:'80'}),rpr({sz:20}));});
+  }
+
   // Extreme temp section
   // Supervisor note
   add('Supervisors: Brief your team on all active hazards covered in this alert before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and heat safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.',
@@ -4705,6 +4737,43 @@ function printHandoffLog() {
     + '</body></html>');
   w.document.close();
   w.print();
+}
+
+
+function _buildAQISection(codes) {
+  var rows = [];
+  codes.forEach(function(code) {
+    var a = aqiData[code];
+    if (!a || a.aqi < 101) return;
+    var fbo = COVERED.find(function(f){ return f.code === code; }) || {city:'', state:''};
+    rows.push({ code:code, city:fbo.city, state:fbo.state, aqi:a.aqi, category:a.category, color:a.level.color, pollutant:a.pollutant });
+  });
+  if (!rows.length) return '';
+  rows.sort(function(a,b){ return b.aqi - a.aqi; });
+  var h = '<div style="background:#7c3aed;color:#fff;padding:12px 16px;margin-bottom:0">'
+    + '<div style="font-size:13px;font-weight:700">ATLANTIC AVIATION</div>'
+    + '<div style="font-size:15px;font-weight:700">??️ AIR QUALITY ADVISORY</div>'
+    + '<div style="font-size:11px;opacity:.85;margin-top:2px">AQI at or above Unhealthy for Sensitive Groups. Limit prolonged outdoor exertion.</div>'
+    + '</div>';
+  h += '<table style="margin-bottom:8px"><tr style="background:#f0f4f7">'
+    + '<th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th>'
+    + '<th style="border:1px solid #ddd;text-align:left;width:160px">City / State</th>'
+    + '<th style="border:1px solid #ddd;text-align:left;width:80px">AQI</th>'
+    + '<th style="border:1px solid #ddd;text-align:left">Category</th>'
+    + '<th style="border:1px solid #ddd;text-align:left">Pollutant</th></tr>';
+  rows.forEach(function(r, i) {
+    var bg = i % 2 === 0 ? '#fff' : '#f9f9f9';
+    h += '<tr style="background:'+bg+'">'
+      + '<td style="border:1px solid #ddd;font-weight:700">'+r.code+'</td>'
+      + '<td style="border:1px solid #ddd">'+r.city+(r.state?', '+r.state:'')+'</td>'
+      + '<td style="border:1px solid #ddd;font-weight:700;color:'+r.color+'">'+r.aqi+'</td>'
+      + '<td style="border:1px solid #ddd"><span style="background:'+r.color+';color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px">'+r.category+'</span></td>'
+      + '<td style="border:1px solid #ddd;font-size:11px;color:#556070">'+r.pollutant+'</td>'
+      + '</tr>';
+  });
+  h += '</table>';
+  h += _getActionHTML('aqi');
+  return h;
 }
 
 
@@ -5499,6 +5568,10 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   if (sections.winter) html += _getActionHTML('winter');
   if (sections.flood) html += _buildNWSHazardSection(codes,'flood',/flood/i,'🌊 FLOOD / FLASH FLOOD','#065f46','#ECFDF5','Flooding or flash flooding possible at or near impacted locations.');
   if (sections.flood) html += _getActionHTML('flood');
+
+  // AQI
+  var _aqiSect = _buildAQISection(codes);
+  if (_aqiSect) html += _aqiSect;
 
   // Alert-only locations table
   if (sections.alerts) {
