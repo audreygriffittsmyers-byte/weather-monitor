@@ -4583,6 +4583,20 @@ async function _prefetchHourly(codes, btn) {
 // ── Startup hourly pre-fetch ──────────────────────────────────────────────────
 // After initial scan completes, load hourly for affected locations first,
 // then quietly background-load remaining locations in small batches.
+// ── Startup AQI pre-fetch -- runs independently, no scan dependency ────────────
+async function _startupAQILoad() {
+  var BATCH = 8; // AQI calls are lightweight -- use larger batch
+  var codes = COVERED.map(function(f){ return f.code; });
+  for (var i = 0; i < codes.length; i += BATCH) {
+    await Promise.all(codes.slice(i, i+BATCH).map(function(c){
+      return fetchAQI(c).catch(function(){});
+    }));
+    if (i + BATCH < codes.length) {
+      await new Promise(function(resolve){ setTimeout(resolve, 1500); });
+    }
+  }
+}
+
 async function _startupHourlyLoad() {
   // Phase 1: immediately fetch impacted locations (SPC risk, NWS alerts, wind, heat, cold)
   var priority = COVERED.filter(function(f) {
@@ -4605,20 +4619,14 @@ async function _startupHourlyLoad() {
   // Fetch hourly + AQI for priority locations simultaneously
   for (var i = 0; i < priority.length; i += BATCH) {
     await Promise.all(priority.slice(i, i+BATCH).map(function(c){
-      return Promise.all([
-        fetch7Day(c).catch(function(){}),
-        fetchAQI(c).catch(function(){})
-      ]);
+      return fetch7Day(c).catch(function(){});
     }));
   }
 
   // Background load rest -- hourly + AQI together, 2s between batches
   for (var i = 0; i < rest.length; i += BATCH) {
     await Promise.all(rest.slice(i, i+BATCH).map(function(c){
-      return Promise.all([
-        fetch7Day(c).catch(function(){}),
-        fetchAQI(c).catch(function(){})
-      ]);
+      return fetch7Day(c).catch(function(){});
     }));
     await new Promise(function(r){ setTimeout(r, 2000); });
   }
@@ -6768,6 +6776,8 @@ setTimeout(() => {
   fetchSPCText(1);
   // Background-load hourly forecasts -- priority locations first after scan settles
   setTimeout(function(){ _startupHourlyLoad(); }, 8000);
+  // Pre-fetch AQI for all locations -- no dependency on scan results
+  setTimeout(function(){ _startupAQILoad(); }, 3000);
   scanSPC();
   fetchTropicalOutlook();
 }, 500);
