@@ -3467,7 +3467,6 @@ async function drawNHCLayer() {
     if (!r.ok) return;
     const d = await r.json();
     const storms = d.activeStorms || [];
-    if (!storms.length) return;
     const layers = [];
     for (const storm of storms) {
       const id = storm.id || storm.atcfID;
