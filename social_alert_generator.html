@@ -378,6 +378,45 @@ window.addEventListener('message',function(e){
 
 // Init
 selectTemplate('severe_tstorm',document.querySelector('.template-btn'));
+
+// Auto-populate from WATCH URL params
+(function() {
+  var p = new URLSearchParams(window.location.search);
+  if (!p.has('slug')) return;
+
+  var slug = p.get('slug') || 'severe_tstorm';
+  var btn = document.querySelector(`.template-btn[onclick*="${slug}"]`);
+  if (btn) selectTemplate(slug, btn);
+
+  if (p.get('date')) document.getElementById('f-date').value = p.get('date');
+  if (p.get('timing')) document.getElementById('f-timing').value = p.get('timing');
+  if (p.get('src')) document.getElementById('f-src').value = p.get('src');
+
+  // Map chip param keys to template chip slots
+  var chipKeys = {
+    severe_tstorm: ['c0','c1','c2','c3','c4','c5'],
+    extreme_heat:  ['h0','h1','h2','h3','h4'],
+    air_quality:   ['a0','a1','a2','a3','a4','a5'],
+    high_wind:     ['w0','w1','w2'],
+    flooding:      ['f0','f1','f2','f3'],
+    extreme_cold:  ['w0','w1','w2'],
+    winter_weather:['w0','w1','w2'],
+    tropical:      ['w0','w1','w2'],
+    fire_weather:  ['c0','c1','c2','c3','c4'],
+  };
+  var keys = chipKeys[slug] || [];
+  keys.forEach(function(key, i) {
+    var el = document.getElementById('f-chip-' + i);
+    if (el && p.has(key)) el.value = p.get(key);
+  });
+
+  // Severity card fields
+  if (p.get('hazardType')) { var el=document.getElementById('f-hazard-type'); if(el) el.value=p.get('hazardType'); }
+  if (p.get('locations'))  { var el=document.getElementById('f-locations');  if(el) el.value=p.get('locations'); }
+  if (p.get('effective'))  { var el=document.getElementById('f-effective');  if(el) el.value=p.get('effective'); }
+
+  setTimeout(updatePreview, 150);
+})();
 </script>
 </body>
 </html>
