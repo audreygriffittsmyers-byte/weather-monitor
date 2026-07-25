@@ -218,8 +218,7 @@
     <button class="tab active" data-tab="map" style="background:transparent;border:none;border-bottom:2px solid #ffffff;color:#ffffff;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Map</button>
     <button class="tab" data-tab="monitor" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Live Monitor</button>
     <button class="tab" data-tab="grid" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Overview</button>
-    <button class="tab" data-tab="social" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" onclick="switchTab('social')">ALERTS</button>
-      <button class="tab" data-tab="build" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Briefing</button>
+    <button class="tab" data-tab="build" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Briefing</button>
   </div>
 
   <!-- BODY -->
@@ -331,12 +330,6 @@
             <div id="handoff-log-content" style="max-height:300px;overflow-y:auto"></div>
           </div>
         </div>
-      </div>
-
-      
-      <!-- Social Alert Generator Panel -->
-      <div id="panel-social" style="display:none;height:100%;overflow:hidden;flex-direction:column">
-        <iframe id="social-iframe" style="flex:1;width:100%;height:100%;border:none"></iframe>
       </div>
 
       <!-- Map panel -->
@@ -1732,8 +1725,6 @@ function switchTab(tab) {
   document.getElementById('panel-map').style.display     = tab === 'map'     ? 'flex' : 'none';
   document.getElementById('panel-build').style.display   = tab === 'build'   ? '' : 'none';
   document.getElementById('panel-grid').style.display    = tab === 'grid'    ? '' : 'none';
-  document.getElementById('panel-social').style.display  = tab === 'social'  ? 'flex' : 'none';
-  if (tab === 'social') initSocialGenerator();
   if (tab === 'build') generateSummary();
   if (tab === 'grid')  renderOpsGrid();
   if (tab === 'map') {
@@ -4799,99 +4790,6 @@ function _buildAQISection(codes) {
   return h;
 }
 
-
-// ── Social Alert Generator ──────────────────────────────────────────────────
-var _socialLoaded = false;
-function initSocialGenerator() {
-  if (_socialLoaded) return;
-  _socialLoaded = true;
-  var iframe = document.getElementById('social-iframe');
-  if (!iframe) return;
-  // Load generator from separate file -- keeps main JS lean
-  iframe.src = 'social_alert_generator.html';
-  iframe.onload = function() { sendWatchDataToGenerator(); };
-}
-
-function sendWatchDataToGenerator() {
-  var iframe = document.getElementById('social-iframe');
-  if (!iframe || !iframe.contentWindow) return;
-  var now = new Date();
-  var dateStr = now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-
-  // Determine best template slug from current hazard state
-  var slug = 'severe_tstorm'; // default
-  var zones = {}; // zone -> [codes]
-  var heatCodes=[], windCodes=[], coldCodes=[], aqiCodes=[], floodCodes=[], winterCodes=[], alertCodes=[];
-
-  COVERED.forEach(function(f) {
-    var s = spcData[1][f.code];
-    if (s && s.st==='ok' && s.label && s.label!=='No Risk') {
-      if (!zones[s.label]) zones[s.label]=[];
-      zones[s.label].push(f.code);
-    }
-    var obs = obsData[f.code];
-    if (obs) {
-      if (obs.tempF >= 95) heatCodes.push(f.code);
-      if (obs.tempF <= 15) coldCodes.push(f.code);
-    }
-    if (getWindStatus(f.code) || getTAFWindForecast(f.code,6)) windCodes.push(f.code);
-    var a = aqiData[f.code]; if (a && a.aqi>=101) aqiCodes.push(f.code);
-    var r = results[f.code];
-    if (r && r.alerts && r.alerts.length) {
-      alertCodes.push(f.code);
-      r.alerts.forEach(function(al){
-        if (/flood/i.test(al.event)) floodCodes.push(f.code);
-        if (/winter|snow|ice|blizzard|freeze/i.test(al.event)) winterCodes.push(f.code);
-      });
-    }
-  });
-
-  // Pick best slug by severity priority
-  var ZONE_ORDER = ['HIGH','MDT','ENH','SLGT','MRGL','TSTM'];
-  var topZone = null;
-  ZONE_ORDER.forEach(function(z){ if (!topZone && zones[z] && zones[z].length) topZone=z; });
-  if (topZone && topZone !== 'TSTM') slug = 'severe_tstorm';
-  else if (heatCodes.length) slug = 'extreme_heat';
-  else if (windCodes.length) slug = 'high_wind';
-  else if (floodCodes.length) slug = 'flooding';
-  else if (winterCodes.length) slug = 'winter_weather';
-  else if (coldCodes.length) slug = 'extreme_cold';
-  else if (aqiCodes.length) slug = 'air_quality';
-  else if (alertCodes.length) slug = 'nws_warning';
-
-  // Build chip codes for SPC card
-  var chipData = [
-    (zones['HIGH']||zones['MDT']||zones['ENH']||[]).join(' '),  // tier 1 chip
-    (zones['SLGT']||[]).join(' '),                               // tier 2 chip
-    (zones['MRGL']||[]).join(' '),                              // tier 3 chip
-  ];
-
-  // Timing from SPC text
-  var timing = (typeof parseSPCTiming === 'function' && topZone) ? parseSPCTiming(topZone) : null;
-  var timingStr = timing || 'This Afternoon \u2013 Tonight';
-
-  // NWS alert effective for severity cards
-  var topAlert = null;
-  COVERED.forEach(function(f){
-    var r=results[f.code]; if(!r||!r.alerts||!r.alerts.length) return;
-    if (!topAlert || (r.alerts[0].bucket||'').toUpperCase() > (topAlert.bucket||'').toUpperCase()) topAlert=r.alerts[0];
-  });
-
-  var payload = {
-    type: 'WATCH_ALERT_DATA',
-    slug: slug,
-    date: dateStr,
-    timing: timingStr,
-    ticks: '12 PM, 6 PM, 12 AM',
-    src: 'Source: NOAA/NWS Storm Prediction Center \u2014 SPC Day 1 Categorical Outlook, Issued ' + now.toUTCString().slice(0,16) + 'Z',
-    chips: chipData,
-    hazardType: topAlert ? topAlert.event : '',
-    locations: alertCodes.slice(0,8).join(' \u00b7 '),
-    effective: topAlert && topAlert.expires ? 'through ' + fmtTime(topAlert.expires) : ''
-  };
-
-  iframe.contentWindow.postMessage(payload, '*');
-}
 
 function openPrintBriefing() {
   var defaultScope = 'all';
