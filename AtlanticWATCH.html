@@ -207,7 +207,7 @@
     <button id="notif-btn" onclick="requestNotifPermission()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">🔔 Enable Alerts</button>
     <button id="install-btn" onclick="promptInstall()" style="display:none;background:#4fc3f7;color:#0E2841;border:none;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;align-items:center;gap:4px">⬇ Install App</button>
     <button onclick="openPrintBriefing()" style="background:#fff;color:#0E2841;border:1px solid #c8d0d8;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer" title="Print briefing">🖨 Brief</button>
-      <button onclick="window.open('social_alert_generator.html','_blank')" style="background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer" title="Open Social Alert Generator">🚨 Alert Card</button>
+      <button onclick="openAlertGenerator()" style="background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer" title="Open Social Alert Generator">🚨 Alert Card</button>
         <button id="scan-btn" style="background:#ffffff;border:1px solid #ffffff;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:.04em">▶ Scan All</button>
   </div>
 
@@ -4789,6 +4789,148 @@ function _buildAQISection(codes) {
   h += '</table>';
   h += _getActionHTML('aqi');
   return h;
+}
+
+
+// ── Social Alert Generator launcher ──────────────────────────────────────────
+// Collects live WATCH data, encodes into URL params, opens generator in new tab
+function openAlertGenerator() {
+  var now = new Date();
+  var dateStr = now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+
+  // Collect SPC zones -> FBO codes
+  var zones = {};
+  var heatCodes=[], windCodes=[], coldCodes=[], aqiCodes=[];
+  var floodCodes=[], winterCodes=[], alertCodes=[];
+
+  COVERED.forEach(function(f) {
+    var s = spcData[1] && spcData[1][f.code];
+    if (s && s.st==='ok' && s.label && s.label!=='No Risk') {
+      if (!zones[s.label]) zones[s.label]=[];
+      zones[s.label].push(f.code);
+    }
+    var obs = obsData[f.code];
+    if (obs) {
+      if (obs.tempF >= 95) heatCodes.push(f.code);
+      if (obs.tempF <= 15) coldCodes.push(f.code);
+    }
+    if (typeof getWindStatus==='function' && (getWindStatus(f.code)||getTAFWindForecast(f.code,6))) windCodes.push(f.code);
+    var a = aqiData[f.code]; if (a && a.aqi>=101) aqiCodes.push(f.code);
+    var r = results[f.code];
+    if (r && r.alerts && r.alerts.length) {
+      alertCodes.push(f.code);
+      r.alerts.forEach(function(al){
+        if (/flood/i.test(al.event)) { if(!floodCodes.includes(f.code)) floodCodes.push(f.code); }
+        if (/winter|snow|ice|blizzard|freeze/i.test(al.event)) { if(!winterCodes.includes(f.code)) winterCodes.push(f.code); }
+      });
+    }
+  });
+
+  // Pick best template slug by severity priority
+  var ZONE_ORDER = ['HIGH','MDT','ENH','SLGT','MRGL'];
+  var topZone = ZONE_ORDER.find(function(z){ return zones[z] && zones[z].length; });
+  var slug = 'severe_tstorm';
+  if (topZone) slug = 'severe_tstorm';
+  else if (heatCodes.length) slug = 'extreme_heat';
+  else if (windCodes.length) slug = 'high_wind';
+  else if (floodCodes.length) slug = 'flooding';
+  else if (winterCodes.length) slug = 'winter_weather';
+  else if (coldCodes.length) slug = 'extreme_cold';
+  else if (aqiCodes.length) slug = 'air_quality';
+  else if (alertCodes.length) slug = 'nws_warning';
+
+  // SPC chip codes -- 6 tiers
+  var c0 = (zones['HIGH']||[]).join(' ');
+  var c1 = (zones['MDT']||[]).join(' ');
+  var c2 = (zones['ENH']||[]).join(' ');
+  var c3 = (zones['SLGT']||[]).join(' ');
+  var c4 = (zones['MRGL']||[]).join(' ');
+  var c5 = (zones['TSTM']||[]).join(' ');
+
+  // Heat chip codes -- 5 tiers based on ramp stress level
+  var hc0=[],hc1=[],hc2=[],hc3=[],hc4=[];
+  COVERED.forEach(function(f){
+    var obs=obsData[f.code]; if(!obs) return;
+    var st=getRampStressStatus(obs);
+    if(!st) { if(obs.tempF>=115) hc0.push(f.code); else if(obs.tempF>=105) hc1.push(f.code); else if(obs.tempF>=100) hc2.push(f.code); else if(obs.tempF>=95) hc3.push(f.code); return; }
+    var l=(st.label||'').toUpperCase();
+    if(l.includes('DANGER')) hc0.push(f.code);
+    else if(l.includes('EXTREME')) hc1.push(f.code);
+    else if(l.includes('HIGH CAUTION')) hc2.push(f.code);
+    else if(l.includes('CAUTION')) hc3.push(f.code);
+    else hc4.push(f.code);
+  });
+
+  // AQI chip codes -- 6 tiers
+  var aq0=[],aq1=[],aq2=[],aq3=[],aq4=[],aq5=[];
+  COVERED.forEach(function(f){
+    var a=aqiData[f.code]; if(!a) return;
+    var ai=a.aqi;
+    if(ai>=301) aq0.push(f.code);
+    else if(ai>=201) aq1.push(f.code);
+    else if(ai>=151) aq2.push(f.code);
+    else if(ai>=101) aq3.push(f.code);
+    else if(ai>=51)  aq4.push(f.code);
+    else             aq5.push(f.code);
+  });
+
+  // Wind -- protocol vs advisory
+  var wc0=[],wc1=[],wc2=[];
+  COVERED.forEach(function(f){
+    var w=getWindStatus(f.code)||getTAFWindForecast(f.code,6);
+    if(!w) return;
+    if(w.level==='protocol') wc0.push(f.code);
+    else wc1.push(f.code);
+  });
+
+  // ERO flood -- 4 tiers from NWS alerts
+  var fl0=[],fl1=[],fl2=[],fl3=[];
+  COVERED.forEach(function(f){
+    var r=results[f.code]; if(!r||!r.alerts) return;
+    r.alerts.forEach(function(al){
+      if(!/flood/i.test(al.event)) return;
+      var ev=al.event.toUpperCase();
+      if(ev.includes('FLASH FLOOD EMERGENCY')) fl0.push(f.code);
+      else if(ev.includes('FLASH FLOOD WARNING')) fl1.push(f.code);
+      else if(ev.includes('FLASH FLOOD WATCH')) fl2.push(f.code);
+      else fl3.push(f.code);
+    });
+  });
+
+  // SPC timing
+  var timing = (typeof parseSPCTiming==='function' && topZone) ? parseSPCTiming(topZone) : null;
+  var timingStr = timing || 'This Afternoon \u2013 Tonight';
+
+  // NWS top alert
+  var topAlert = null;
+  COVERED.forEach(function(f){
+    var r=results[f.code]; if(!r||!r.alerts||!r.alerts.length) return;
+    if(!topAlert) topAlert=r.alerts[0];
+  });
+
+  // Build URL params
+  var params = new URLSearchParams({
+    slug: slug,
+    date: dateStr,
+    timing: timingStr,
+    src: 'Source: NOAA/NWS Storm Prediction Center \u2014 SPC Day 1 Outlook, ' + now.toUTCString().slice(5,16) + ' UTC',
+    // SPC chips
+    c0:c0, c1:c1, c2:c2, c3:c3, c4:c4, c5:c5,
+    // Heat chips
+    h0:hc0.join(' '), h1:hc1.join(' '), h2:hc2.join(' '), h3:hc3.join(' '), h4:hc4.join(' '),
+    // AQI chips
+    a0:aq0.join(' '), a1:aq1.join(' '), a2:aq2.join(' '), a3:aq3.join(' '), a4:aq4.join(' '), a5:aq5.join(' '),
+    // Wind chips
+    w0:wc0.join(' '), w1:wc1.join(' '), w2:wc2.join(' '),
+    // Flood chips
+    f0:fl0.join(' '), f1:fl1.join(' '), f2:fl2.join(' '), f3:fl3.join(' '),
+    // NWS
+    hazardType: topAlert ? topAlert.event : '',
+    locations: alertCodes.slice(0,10).join(' \xb7 '),
+    effective: topAlert && topAlert.expires ? 'through ' + fmtTime(topAlert.expires) : '',
+  });
+
+  window.open('social_alert_generator.html?' + params.toString(), '_blank');
 }
 
 
