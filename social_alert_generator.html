@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WATCH — Social Alert Generator</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #0a1628; color: #e0e8f0; min-height: 100vh; }
+.header { background: #0E2841; border-bottom: 2px solid #29B6D8; padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.header-title { font-size: 13px; font-weight: 800; color: #fff; letter-spacing: 2px; }
+.header-sub { font-size: 10px; color: #29B6D8; letter-spacing: 1px; margin-top: 2px; }
+.layout { display: flex; height: calc(100vh - 62px); }
+.sidebar { width: 220px; min-width: 220px; background: #0E2841; border-right: 1px solid #1a3a5c; overflow-y: auto; padding: 12px; }
+.sidebar h3 { font-size: 9px; font-weight: 800; letter-spacing: 2px; color: #29B6D8; text-transform: uppercase; margin: 14px 0 8px; }
+.sidebar h3:first-child { margin-top: 0; }
+.template-btn { width: 100%; text-align: left; padding: 8px 10px; border-radius: 5px; border: 1px solid transparent; background: rgba(255,255,255,0.04); color: #c0cfe0; cursor: pointer; margin-bottom: 3px; font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: all 0.15s; }
+.template-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.template-btn.active { border-color: var(--accent); background: rgba(255,255,255,0.1); color: #fff; }
+.template-btn .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--accent); }
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.toolbar { background: #0E2841; border-bottom: 1px solid #1a3a5c; padding: 8px 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toolbar label { font-size: 9px; font-weight: 700; color: #7a9ab8; letter-spacing: 1px; display: block; }
+.toolbar input { background: #0a1628; border: 1px solid #1a3a5c; color: #e0e8f0; border-radius: 4px; padding: 4px 7px; font-size: 11px; font-family: Arial; width: 150px; }
+.btn { padding: 6px 14px; border-radius: 4px; border: none; font-size: 11px; font-weight: 700; cursor: pointer; }
+.btn-primary { background: #29B6D8; color: #0E2841; }
+.btn-dl { background: #16a34a; color: #fff; }
+.btn-svg { background: #7c3aed; color: #fff; }
+.preview-area { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 20px; background: #06101e; }
+.preview-wrap { width: 100%; max-width: 860px; }
+#preview-svg { width: 100%; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,0.6); display: block; }
+.fields-panel { width: 260px; min-width: 260px; background: #0E2841; border-left: 1px solid #1a3a5c; overflow-y: auto; padding: 14px; }
+.field-group { margin-bottom: 10px; }
+.field-group label { display: flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 800; color: #7a9ab8; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+.field-group input { width: 100%; background: #0a1628; border: 1px solid #1a3a5c; color: #e0e8f0; border-radius: 4px; padding: 5px 7px; font-size: 11px; font-family: Arial; }
+.hint { font-size: 9px; color: #4a6a8a; margin-top: 3px; font-style: italic; }
+#status { font-size: 10px; color: #29B6D8; padding: 3px 8px; background: rgba(41,182,216,0.1); border-radius: 3px; }
+.fp-h3 { font-size: 9px; font-weight: 800; letter-spacing: 2px; color: #29B6D8; text-transform: uppercase; margin: 14px 0 8px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="header-title">ATLANTIC AVIATION — WATCH</div>
+    <div class="header-sub">SOCIAL ALERT GENERATOR · 1200×630</div>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span id="status">Select a template</span>
+    <button class="btn btn-primary" onclick="updatePreview()">↺ Refresh</button>
+    <button class="btn btn-dl" onclick="downloadPNG()">⬇ PNG</button>
+    <button class="btn btn-svg" onclick="downloadSVG()">⬇ SVG</button>
+  </div>
+</div>
+<div class="layout">
+  <div class="sidebar">
+    <h3>Hazard Cards</h3>
+    <button class="template-btn active" style="--accent:#FFD24A" onclick="selectTemplate('severe_tstorm',this)"><div class="dot"></div>Severe Weather</button>
+    <button class="template-btn" style="--accent:#FF8A2A" onclick="selectTemplate('extreme_heat',this)"><div class="dot"></div>Extreme Heat</button>
+    <button class="template-btn" style="--accent:#6FE3FF" onclick="selectTemplate('extreme_cold',this)"><div class="dot"></div>Extreme Cold</button>
+    <button class="template-btn" style="--accent:#C9DDFF" onclick="selectTemplate('winter_weather',this)"><div class="dot"></div>Winter Weather</button>
+    <button class="template-btn" style="--accent:#5CEFB8" onclick="selectTemplate('high_wind',this)"><div class="dot"></div>High Wind</button>
+    <button class="template-btn" style="--accent:#3FB6FF" onclick="selectTemplate('flooding',this)"><div class="dot"></div>Flood / ERO</button>
+    <button class="template-btn" style="--accent:#FF6B9E" onclick="selectTemplate('tropical',this)"><div class="dot"></div>Tropical</button>
+    <button class="template-btn" style="--accent:#E8B15C" onclick="selectTemplate('air_quality',this)"><div class="dot"></div>Air Quality</button>
+    <button class="template-btn" style="--accent:#FF6B2A" onclick="selectTemplate('fire_weather',this)"><div class="dot"></div>Fire Weather</button>
+    <h3>NWS Severity</h3>
+    <button class="template-btn" style="--accent:#FF4D4D" onclick="selectTemplate('nws_warning',this)"><div class="dot"></div>WARNING</button>
+    <button class="template-btn" style="--accent:#FFB627" onclick="selectTemplate('nws_watch',this)"><div class="dot"></div>WATCH</button>
+    <button class="template-btn" style="--accent:#F5E04A" onclick="selectTemplate('nws_advisory',this)"><div class="dot"></div>ADVISORY</button>
+    <button class="template-btn" style="--accent:#7FB3FF" onclick="selectTemplate('nws_hazard',this)"><div class="dot"></div>OUTLOOK</button>
+    <h3 style="margin-top:18px">Tips</h3>
+    <div style="font-size:10px;color:#4a6a8a;line-height:1.5">Space or comma separated FBO codes per tier.<br><br>Upload a map image to fill the left panel.<br><br>Empty tiers are greyed out automatically.</div>
+  </div>
+  <div class="main">
+    <div class="toolbar">
+      <div><label>DATE</label><input type="text" id="f-date" placeholder="July 24, 2026" oninput="updatePreview()"></div>
+      <div><label>TIMING</label><input type="text" id="f-timing" placeholder="This Afternoon – Tonight" oninput="updatePreview()"></div>
+      <div><label>TIME TICKS (3, comma)</label><input type="text" id="f-ticks" placeholder="12 PM, 6 PM, 12 AM" oninput="updatePreview()" style="width:180px"></div>
+      <div><label>SOURCE</label><input type="text" id="f-src" placeholder="Source: NOAA/NWS SPC..." oninput="updatePreview()" style="width:200px"></div>
+    </div>
+    <div class="preview-area"><div class="preview-wrap"><div id="preview-svg"></div></div></div>
+  </div>
+  <div class="fields-panel">
+    <div id="fields-content"><div style="color:#4a6a8a;font-size:11px;margin-top:20px;text-align:center">Select a template</div></div>
+  </div>
+</div>
+<script>
+const W=1200,H=630,TEAL="#29B6D8",FONT="Arial,Helvetica,sans-serif";
+const ICON={
+  bolt:'<path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  thermo_hi:'<path d="M14 14.76V4a2 2 0 10-4 0v10.76a4 4 0 104 0z"/>',
+  thermo_lo:'<path d="M14 14.76V8a2 2 0 10-4 0v6.76a4 4 0 104 0z"/>',
+  snow:'<path d="M12 2v20M4.5 6.5l15 11M4.5 17.5l15-11M2 12h20"/>',
+  wind:'<path d="M3 8h11a3 3 0 100-6M3 16h15a3 3 0 110 6M3 12h9"/>',
+  gust:'<path d="M2 9h9a2.5 2.5 0 100-5M2 15h13a2.5 2.5 0 110 5M2 12h5"/>',
+  wave:'<path d="M2 16c2-2.5 4-2.5 6 0s4 2.5 6 0 4-2.5 6 0M2 10c2-2.5 4-2.5 6 0s4 2.5 6 0 4-2.5 6 0"/>',
+  drop:'<path d="M12 3c3 4 6 7.5 6 11a6 6 0 11-12 0c0-3.5 3-7 6-11z"/>',
+  hurr:'<path d="M19 5a8 8 0 00-13.7 5.6M5 19a8 8 0 0013.7-5.6"/><circle cx="12" cy="12" r="2.6"/>',
+  smoke:'<path d="M7 20c2.2-2-2.2-4 0-6M12 20c2.2-2-2.2-4 0-6M17 20c2.2-2-2.2-4 0-6M7 12c2.2-2-2.2-4 0-6M12 12c2.2-2-2.2-4 0-6M17 12c2.2-2-2.2-4 0-6"/>',
+  mask:'<path d="M3.5 12c0-2.2 2.5-4 8.5-4s8.5 1.8 8.5 4-2.5 5-8.5 5-8.5-2.8-8.5-5z"/>',
+  eye:'<path d="M2 12s4-6.5 10-6.5S22 12 22 12s-4 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/>',
+  hail:'<circle cx="7" cy="17" r="1.7"/><circle cx="13" cy="19" r="1.7"/><circle cx="17" cy="15" r="1.7"/><path d="M17 10a4 4 0 100-8 6 6 0 00-11.3 2A4.5 4.5 0 006 12.9"/>',
+  tornado:'<path d="M3 5h18M5 9h13M7 13h9M9 17h5M11 21h2"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+  surge:'<path d="M2 18c2-2.5 4-2.5 6 0s4 2.5 6 0 4-2.5 6 0M2 12c2-2.5 4-2.5 6 0s4 2.5 6 0 4-2.5 6 0"/><path d="M12 2v5M9 4.5L12 7l3-2.5"/>',
+  ice:'<path d="M12 2v20M5.5 5.5l13 13M18.5 5.5l-13 13M2 12h20"/>',
+  map:'<path d="M9 20l-6-2V5l6 2m0 13l6-2m-6 2V7m6 11l6 2V5l-6-2m0 15V5m0 0L9 7"/>',
+  shield:'<path d="M12 2l8 3v6c0 5-3.5 9.2-8 11-4.5-1.8-8-6-8-11V5l8-3z"/>',
+  triangle:'<path d="M12 3L2 20h20L12 3z"/><path d="M12 10v5M12 17.5h.01"/>',
+  megaphone:'<path d="M3 11v3l4 1 12 5V4L7 9l-4 2z"/><path d="M7 15v4"/>',
+  binocular:'<circle cx="6.5" cy="16" r="3.5"/><circle cx="17.5" cy="16" r="3.5"/><path d="M10 16v-9a2 2 0 012-2 2 2 0 012 2v9M10 9h4"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  flame:'<path d="M12 2c0 6-6 8-6 14a6 6 0 0012 0c0-4-2-6-3-9-1 3-3 4-3 9a3 3 0 006 0c0-4-6-6-6-14z"/>',
+};
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function wrapText(s,w){const words=(s||'').split(' ');const lines=[];let cur='';words.forEach(word=>{if((cur+' '+word).trim().length>w){if(cur)lines.push(cur);cur=word;}else cur=(cur+' '+word).trim();});if(cur)lines.push(cur);return lines.length?lines:[''];}
+function icon(name,x,y,size,stroke,sw,opacity){sw=sw||1.8;opacity=opacity||1;const s=size/24;return `<g transform="translate(${x},${y}) scale(${s})" fill="none" stroke="${stroke}" opacity="${opacity}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${ICON[name]||''}</g>`;}
+
+const T={
+  severe_tstorm:{title:'SEVERE WEATHER ALERT',bg1:'#2B2409',bg2:'#0F0D04',accent:'#FFD24A',glow:'#B8860B',hero:'bolt',subtitle:'Severe Thunderstorms · Hail · Wind · Tornadoes',src:'Source: NOAA/NWS Storm Prediction Center — SPC Day 1 Categorical Outlook',hazards:[['tornado','Tornadoes'],['hail','Large Hail'],['wind','Damaging Wind'],['bolt','Lightning']],timing:'This Afternoon – Tonight',tl:['12 PM','6 PM','12 AM'],impacts:['Flying debris and downed trees possible in strongest storms','Hail large enough to dent aircraft and vehicles','Brief tornadoes possible with rotating storms','Localized power outages in hardest-hit areas'],chips:[{label:'HIGH · L5',bg:'#EC30F0',fg:'#000'},{label:'MDT · L4',bg:'#EA3232',fg:'#fff'},{label:'ENH · L3',bg:'#E97132',fg:'#000'},{label:'SLGT · L2',bg:'#FFC000',fg:'#000'},{label:'MRGL · L1',bg:'#196B24',fg:'#fff'},{label:'TSTM',bg:'#7dc4c4',fg:'#000'}],type:'hazard'},
+  extreme_heat:{title:'EXTREME HEAT ALERT',bg1:'#3D1503',bg2:'#160701',accent:'#FF8A2A',glow:'#E25822',hero:'sun',subtitle:'Dangerous Heat · High Heat Index',src:'Source: NOAA/NWS — Excessive Heat product',hazards:[['sun','Extreme Heat'],['thermo_hi','High Heat Index'],['clock','Prolonged Exposure'],['shield','Heat Illness Risk']],timing:'Peak Heat Window',tl:['11 AM','3 PM','7 PM'],impacts:['Heat exhaustion and heat stroke risk during ramp work','Hot blacktop surfaces increase fatigue and burn risk','Mandatory water and shade breaks every hour','Ramp duty cycles shortened during peak hours'],chips:[{label:'EXTREME',bg:'#7B0D1E',fg:'#fff'},{label:'MAJOR',bg:'#EA3232',fg:'#fff'},{label:'MODERATE',bg:'#E97132',fg:'#000'},{label:'MINOR',bg:'#FFC000',fg:'#000'},{label:'LITTLE/NONE',bg:'#196B24',fg:'#fff'}],type:'hazard'},
+  extreme_cold:{title:'EXTREME COLD ALERT',bg1:'#04293E',bg2:'#010F18',accent:'#6FE3FF',glow:'#1FA8D8',hero:'thermo_lo',subtitle:'Dangerous Cold · Wind Chill · Frostbite Risk',src:'Source: NOAA/NWS — Wind Chill product',hazards:[['thermo_lo','Extreme Cold'],['wind','Wind Chill'],['snow','Frostbite Risk'],['clock','Limited Exposure']],timing:'Coldest Window',tl:['10 PM','3 AM','8 AM'],impacts:['Frostbite possible on exposed skin in under 30 minutes','Full cold-weather PPE required for all outdoor work','Fuel-soaked gloves must be discarded, not reused','Warm-area breaks and warm beverages required'],chips:[{label:'WIND CHILL WARNING',bg:'#EA3232',fg:'#fff'},{label:'COLD WX ADVISORY',bg:'#FFC000',fg:'#000'},{label:'MONITOR',bg:'#196B24',fg:'#fff'}],type:'hazard'},
+  winter_weather:{title:'WINTER WEATHER ALERT',bg1:'#232B4A',bg2:'#0D101F',accent:'#C9DDFF',glow:'#7B96D8',hero:'snow',subtitle:'Snow · Ice · Freezing Rain',src:'Source: NOAA/NWS — Winter Storm product',hazards:[['ice','Freezing Rain'],['snow','Snow / Sleet'],['wave','Ice Accumulation'],['wind','Reduced Traction']],timing:'Precipitation Window',tl:['6 PM','12 AM','6 AM'],impacts:['Icy ramp, walkway, and roadway conditions','GSE traction and steering loss on untreated surfaces','Ladder and aerial lift use restricted during icing','Ice accumulation risk on tail and control surfaces'],chips:[{label:'WINTER STORM WARNING',bg:'#EA3232',fg:'#fff'},{label:'WINTER WX ADVISORY',bg:'#FFC000',fg:'#000'},{label:'MONITOR',bg:'#196B24',fg:'#fff'}],type:'hazard'},
+  high_wind:{title:'HIGH WIND ALERT',bg1:'#0A3A2E',bg2:'#031712',accent:'#5CEFB8',glow:'#1DBF8A',hero:'gust',subtitle:'Damaging Winds · High Gusts',src:'Source: NOAA/NWS — High Wind product',hazards:[['gust','High Gusts'],['wind','Sustained Wind'],['tornado','Blowing Debris'],['shield','Downed Lines']],timing:'Strongest Gusts Expected',tl:['12 PM','5 PM','10 PM'],impacts:['Loose ramp items become projectiles, secure or remove','Ladder use, aerial lifts, and elevated work prohibited','Triple-chock aircraft; move to hangars where able','Overwing fueling ceased; two-person rule if unavoidable'],chips:[{label:'HIGH WIND WARNING',bg:'#EA3232',fg:'#fff'},{label:'WIND ADVISORY',bg:'#FFC000',fg:'#000'},{label:'MONITOR',bg:'#196B24',fg:'#fff'}],type:'hazard'},
+  flooding:{title:'FLOOD ALERT',bg1:'#062B52',bg2:'#02101F',accent:'#3FB6FF',glow:'#1573C4',hero:'wave',subtitle:'Heavy Rain · Flash Flooding · Excessive Rainfall',src:'Source: NOAA/NWS / WPC — Excessive Rainfall Outlook',hazards:[['drop','Heavy Rainfall'],['wave','Flash Flooding'],['surge','Standing Water'],['clock','Rapid Onset']],timing:'Heaviest Rainfall Window',tl:['2 PM','8 PM','2 AM'],impacts:['Fueling and ramp operations cease in standing water','Never wade or drive through water of unknown depth','Submerged GSE and exposed wiring pose shock hazard','Low-lying equipment and power units require elevation'],chips:[{label:'HIGH · ERO',bg:'#EA3232',fg:'#fff'},{label:'MDT · ERO',bg:'#E97132',fg:'#000'},{label:'SLGT · ERO',bg:'#FFC000',fg:'#000'},{label:'MRGL · ERO',bg:'#196B24',fg:'#fff'}],type:'hazard'},
+  tropical:{title:'TROPICAL WEATHER ALERT',bg1:'#3A0B26',bg2:'#16030E',accent:'#FF6B9E',glow:'#D8266B',hero:'hurr',subtitle:'Hurricane · Storm Surge · Tropical Storm',src:'Source: NOAA/NHC — Tropical Outlook',hazards:[['hurr','Hurricane Wind'],['surge','Storm Surge'],['drop','Heavy Rainfall'],['wave','Flooding']],timing:'Projected Impact Window',tl:['Day 1','Day 3','Day 5'],impacts:['Aircraft securing and hangar relocation required per plan','Fuel farm top-off and generator readiness confirmed','Extended power and supply disruption possible after landfall','Staffing, shelter, and safe-release procedures activated'],chips:[{label:'HURRICANE WARNING',bg:'#EA3232',fg:'#fff'},{label:'HURRICANE WATCH',bg:'#FFC000',fg:'#000'},{label:'TS WARNING',bg:'#196B24',fg:'#fff'}],type:'hazard'},
+  air_quality:{title:'AIR QUALITY ALERT',bg1:'#3A2A12',bg2:'#171006',accent:'#E8B15C',glow:'#B07830',hero:'mask',subtitle:'Wildfire Smoke · Ash · Degraded AQI',src:'Source: AirNow.gov / NWS — Air Quality product',hazards:[['smoke','Wildfire Smoke'],['eye','Poor Visibility'],['mask','Elevated AQI'],['wind','Ash Fallout']],timing:'Degraded Air Quality Window',tl:['Today','Tonight','Tomorrow'],impacts:['N95 or higher masks required for outdoor ramp work','Shelter indoors when AQI exceeds 200','Hangar doors closed, fresh-air intake fans disabled','Wet down ash before cleanup, no dry sweeping or blowers'],chips:[{label:'HAZARDOUS',bg:'#7B0D1E',fg:'#fff'},{label:'VERY UNHEALTHY',bg:'#7c3aed',fg:'#fff'},{label:'UNHEALTHY',bg:'#EA3232',fg:'#fff'},{label:'UNHEALTHY SENS',bg:'#E97132',fg:'#000'},{label:'MODERATE',bg:'#FFC000',fg:'#000'},{label:'GOOD',bg:'#196B24',fg:'#fff'}],type:'hazard'},
+  fire_weather:{title:'FIRE WEATHER ALERT',bg1:'#3A1200',bg2:'#160700',accent:'#FF6B2A',glow:'#C44010',hero:'flame',subtitle:'Critical Fire Weather · Low Humidity · High Winds',src:'Source: NOAA/NWS SPC — Fire Weather Outlook',hazards:[['wind','High Winds'],['sun','Low RH'],['smoke','Dry Fuels'],['bolt','Dry Tstms']],timing:'Peak Fire Weather Window',tl:['10 AM','3 PM','8 PM'],impacts:['Rapidly spreading fire conditions. Outdoor burn bans likely in effect.','Extreme fire behavior possible; ember cast distances may exceed 1 mile.','Dry thunderstorms may ignite new fires with little to no rainfall.','Defer hot work in affected areas; monitor equipment for ignition sources.'],chips:[{label:'EXTREME WIND',bg:'#7B0D1E',fg:'#fff'},{label:'CRITICAL WIND',bg:'#EA3232',fg:'#fff'},{label:'ELEVATED WIND',bg:'#E97132',fg:'#000'},{label:'SCATTERED DRY',bg:'#FFC000',fg:'#000'},{label:'ISOLATED DRY',bg:'#c4920a',fg:'#000'}],type:'hazard'},
+  nws_warning:{title:'NWS WARNING',severity:'WARNING',bg1:'#4A0808',bg2:'#1C0202',accent:'#FF4D4D',glow:'#C0392B',hero:'triangle',subtitle:'[Hazard Type] Warning in Effect',meaning:'TAKE ACTION NOW',meaning_sub:'Hazardous conditions are occurring or imminent',src:'Source: NOAA/NWS — Warning product',impacts:['Conditions are happening now or expected shortly','Follow all applicable prep guide procedures immediately','Cease affected operations per the hazard checklist','Account for all personnel and confirm shelter readiness'],type:'severity'},
+  nws_watch:{title:'NWS WATCH',severity:'WATCH',bg1:'#4A3305',bg2:'#1D1402',accent:'#FFB627',glow:'#D68910',hero:'binocular',subtitle:'[Hazard Type] Watch in Effect',meaning:'BE PREPARED',meaning_sub:'Conditions are favorable, hazard is possible',src:'Source: NOAA/NWS — Watch product',impacts:['Hazardous conditions are possible in the watch area','Begin preparations now, do not wait for a warning','Brief all staff on responsibilities and shelter locations','Stage equipment and review the applicable prep guide'],type:'severity'},
+  nws_advisory:{title:'NWS ADVISORY',severity:'ADVISORY',bg1:'#3D3A08',bg2:'#181703',accent:'#F5E04A',glow:'#B7A824',hero:'info',subtitle:'[Hazard Type] Advisory in Effect',meaning:'USE CAUTION',meaning_sub:'Conditions may cause inconvenience or minor impacts',src:'Source: NOAA/NWS — Advisory product',impacts:['Conditions expected to cause minor operational impacts','Exercise caution during affected outdoor operations','Monitor conditions for potential escalation','Review the applicable prep guide as a precaution'],type:'severity'},
+  nws_hazard:{title:'HAZARDOUS WEATHER OUTLOOK',severity:'OUTLOOK',bg1:'#1E2E4A',bg2:'#0A101D',accent:'#7FB3FF',glow:'#3D6FB5',hero:'megaphone',subtitle:'[Hazard Type] Possible in the Coming Days',meaning:'STAY INFORMED',meaning_sub:'A hazard may develop, monitor updates',src:'Source: NOAA/NWS — Hazardous Weather Outlook',impacts:['Potential hazard identified in the extended forecast','No immediate action required beyond routine readiness','Supervisors should monitor weather.gov for updates','Verify prep supplies and contact lists are current'],type:'severity'},
+};
+
+let currentSlug='severe_tstorm',mapImageB64=null;
+
+function buildSVG(slug){
+  const t=T[slug]; if(!t) return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#0a1628"/></svg>';
+  const a=t.accent; const parts=[]; const A=s=>parts.push(s);
+  const date=document.getElementById('f-date')?.value||'Month DD, YYYY';
+  const timing=document.getElementById('f-timing')?.value||t.timing||'';
+  const ticksRaw=document.getElementById('f-ticks')?.value||(t.tl||[]).join(', ');
+  const tl=ticksRaw.split(',').map(s=>s.trim());
+  const src=document.getElementById('f-src')?.value||t.src||'';
+
+  A(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${FONT}">`);
+  A(`<defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${t.bg1}"/><stop offset="1" stop-color="${t.bg2}"/></linearGradient>
+    <radialGradient id="glow" cx="0.82" cy="0.30" r="0.72"><stop offset="0" stop-color="${t.glow}" stop-opacity="0.5"/><stop offset="1" stop-color="${t.glow}" stop-opacity="0"/></radialGradient>
+    <linearGradient id="side" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${TEAL}"/><stop offset=".45" stop-color="#1E7FA8"/><stop offset="1" stop-color="${t.bg2}"/></linearGradient>
+    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${a}" stop-opacity="0.65"/></linearGradient>
+    <clipPath id="card"><rect width="${W}" height="${H}"/></clipPath>
+    <clipPath id="mapclip"><rect x="30" y="118" width="588" height="404" rx="8"/></clipPath>
+  </defs>`);
+  A(`<g clip-path="url(#card)">`);
+  A(`<rect width="${W}" height="${H}" fill="url(#bg)"/>`);
+  A(`<rect width="${W}" height="${H}" fill="url(#glow)"/>`);
+  A(icon(t.hero,800,110,420,a,1.1,0.09));
+  A(`<rect x="0" y="0" width="14" height="${H}" fill="url(#side)"/>`);
+  A(`<rect x="46" y="21" width="58" height="58" rx="14" fill="url(#badge)"/>`);
+  A(icon(t.hero,58,33,34,t.bg2,2.2));
+  A(`<text x="122" y="36" font-size="11" font-weight="bold" letter-spacing="3" fill="${TEAL}">ATLANTIC AVIATION</text>`);
+  A(`<text x="122" y="63" font-size="26" font-weight="800" fill="#ffffff">${esc(t.title)}</text>`);
+  const subtitle=(t.type==='severity'&&document.getElementById('f-hazard-type')?.value)?`${document.getElementById('f-hazard-type').value} ${t.severity} in Effect`:t.subtitle;
+  A(`<text x="122" y="83" font-size="13" font-weight="600" fill="${a}">${esc(subtitle)}</text>`);
+  A(`<text x="1160" y="55" font-size="14" font-weight="600" fill="#ffffff" fill-opacity="0.75" text-anchor="end">${esc(date)}</text>`);
+  A(`<rect x="14" y="98" width="${W-14}" height="4" fill="${a}"/>`);
+
+  // Map slot
+  A(`<rect x="14" y="102" width="620" height="464" fill="#ffffff" fill-opacity="0.03"/>`);
+  let grid='';
+  for(let x=54;x<634;x+=40) grid+=`<line x1="${x}" y1="102" x2="${x}" y2="566"/>`;
+  for(let y=142;y<566;y+=40) grid+=`<line x1="14" y1="${y}" x2="634" y2="${y}"/>`;
+  A(`<g stroke="#ffffff" stroke-opacity="0.05">${grid}</g>`);
+  A(`<line x1="634" y1="102" x2="634" y2="566" stroke="#ffffff" stroke-opacity="0.10" stroke-width="2"/>`);
+  if(mapImageB64){
+    A(`<image x="30" y="118" width="588" height="404" preserveAspectRatio="xMidYMid slice" clip-path="url(#mapclip)" href="${mapImageB64}"/>`);
+    A(`<rect x="30" y="118" width="588" height="404" rx="8" fill="none" stroke="${a}" stroke-opacity="0.6" stroke-width="2"/>`);
+  } else {
+    A(`<rect x="30" y="118" width="588" height="404" rx="8" fill="none" stroke="${a}" stroke-opacity="0.45" stroke-width="2" stroke-dasharray="8 6"/>`);
+    A(icon('map',306,268,36,'#ffffff',1.6));
+    A(`<text x="324" y="334" font-size="13" font-weight="bold" letter-spacing="1.5" fill="#ffffff" fill-opacity="0.75" text-anchor="middle">MAP GRAPHIC</text>`);
+    A(`<text x="324" y="352" font-size="11" fill="#ffffff" fill-opacity="0.45" text-anchor="middle">Insert issued product map here</text>`);
+  }
+  A(`<text x="30" y="552" font-size="10" font-style="italic" fill="#ffffff" fill-opacity="0.55">${esc(src)}</text>`);
+
+  const px=660,pw=514;
+  function sect(label,y){const lw=8*label.length+14;A(`<text x="${px}" y="${y}" font-size="11" font-weight="800" letter-spacing="2" fill="${a}">${label}</text>`);A(`<line x1="${px+lw}" y1="${y-4}" x2="${px+pw}" y2="${y-4}" stroke="${a}" stroke-opacity="0.35"/>`);}
+
+  if(t.type==='hazard'){
+    sect('HAZARDS',130);
+    const tw=(pw-30)/4;
+    (t.hazards||[]).forEach(([ic,lab],i)=>{
+      const x=px+i*(tw+10);
+      A(`<rect x="${x.toFixed(0)}" y="140" width="${tw.toFixed(0)}" height="86" rx="7" fill="#ffffff" fill-opacity="0.07" stroke="${a}" stroke-opacity="0.3"/>`);
+      A(`<rect x="${x.toFixed(0)}" y="140" width="${tw.toFixed(0)}" height="3" rx="1.5" fill="${a}"/>`);
+      A(icon(ic,x+tw/2-11,152,22,a));
+      const lines=wrapText(lab,12); let ly=lines.length>1?192:198;
+      lines.forEach(L=>{A(`<text x="${(x+tw/2).toFixed(0)}" y="${ly}" font-size="10.5" font-weight="bold" fill="#ffffff" text-anchor="middle">${esc(L)}</text>`);ly+=13;});
+    });
+
+    // Timing
+    A(`<rect x="${px}" y="240" width="${pw}" height="96" rx="7" fill="#ffffff" fill-opacity="0.07" stroke="${a}" stroke-opacity="0.3"/>`);
+    A(`<text x="${px+14}" y="260" font-size="11" font-weight="800" letter-spacing="2" fill="${a}">TIMING</text>`);
+    A(icon('clock',px+14,268,16,'#ffffff'));
+    A(`<text x="${px+38}" y="281" font-size="14" font-weight="800" fill="#ffffff">${esc(timing)}</text>`);
+    const bx=px+14,bw=pw-28,by=298;
+    A(`<rect x="${bx}" y="${by}" width="${bw}" height="8" rx="4" fill="#ffffff" fill-opacity="0.12"/>`);
+    A(`<rect x="${(bx+bw*0.22).toFixed(0)}" y="${by}" width="${(bw*0.46).toFixed(0)}" height="8" rx="4" fill="${a}"/>`);
+    A(`<text x="${bx}" y="${by+22}" font-size="9.5" font-weight="600" fill="#ffffff" fill-opacity="0.55">${esc(tl[0]||'')}</text>`);
+    A(`<text x="${(bx+bw/2).toFixed(0)}" y="${by+22}" font-size="9.5" font-weight="600" fill="#ffffff" fill-opacity="0.55" text-anchor="middle">${esc(tl[1]||'')}</text>`);
+    A(`<text x="${bx+bw}" y="${by+22}" font-size="9.5" font-weight="600" fill="#ffffff" fill-opacity="0.55" text-anchor="end">${esc(tl[2]||'')}</text>`);
+
+    sect('IMPACTS',362);
+    let y=380;
+    (t.impacts||[]).forEach(item=>{
+      const lines=wrapText(item,58);
+      A(`<circle cx="${px+4}" cy="${y-4}" r="3" fill="${a}"/>`);
+      lines.forEach(L=>{A(`<text x="${px+16}" y="${y}" font-size="12.5" fill="#ffffff" fill-opacity="0.9">${esc(L)}</text>`);y+=16;});
+      y+=4;
+    });
+
+    // Chips -- flexible N-chip layout
+    const chips=t.chips||[];
+    const nC=chips.length;
+    const cGap=nC>4?4:8;
+    const cw=(pw-cGap*(nC-1))/nC;
+    const chipY=488;
+    chips.forEach(({label,bg,fg},i)=>{
+      const x=px+i*(cw+cGap);
+      const rawVal=(document.getElementById('f-chip-'+i)?.value||'').trim();
+      const codesVal=rawVal?rawVal.toUpperCase().replace(/[\s,]+/g,' · '):null;
+      const empty=!rawVal;
+      A(`<rect x="${x.toFixed(0)}" y="${chipY}" width="${cw.toFixed(0)}" height="62" rx="5" fill="${empty?'#555':bg}" fill-opacity="${empty?0.35:1}"/>`);
+      const lfs=nC>4?8.5:9.5;
+      const llines=wrapText(label,nC>4?13:17);
+      let ly=chipY+(llines.length>1?12:16);
+      llines.forEach(L=>{A(`<text x="${(x+6).toFixed(0)}" y="${ly}" font-size="${lfs}" font-weight="800" fill="${empty?'#aaa':fg}">${esc(L)}</text>`);ly+=lfs+2;});
+      // Codes -- wrap to fit
+      const maxC=Math.max(6,Math.floor(cw/(nC>4?5.5:6.5)));
+      const display=codesVal||(empty?'\u2014':'XXX');
+      const clines=wrapText(display,maxC);
+      const cfs=nC>4?7.5:9;
+      let cy=ly+4;
+      clines.slice(0,2).forEach(L=>{
+        A(`<text x="${(x+6).toFixed(0)}" y="${cy}" font-size="${cfs}" font-weight="bold" fill="${empty?'#888':fg}" fill-opacity="0.9">${esc(L)}</text>`);
+        cy+=cfs+2;
+      });
+    });
+
+  } else {
+    // Severity card
+    const hazardType=document.getElementById('f-hazard-type')?.value||'[Hazard Type]';
+    const locations=document.getElementById('f-locations')?.value||'XXX · XXX · XXX · XXX · XXX';
+    const effective=document.getElementById('f-effective')?.value||'[start] through [end]';
+    A(`<rect x="${px}" y="120" width="${pw}" height="110" rx="8" fill="${a}"/>`);
+    A(`<text x="${px+20}" y="168" font-size="40" font-weight="800" letter-spacing="2" fill="${t.bg2}">${esc(t.severity)}</text>`);
+    A(`<text x="${px+20}" y="196" font-size="16" font-weight="800" fill="${t.bg2}">${esc(t.meaning)}</text>`);
+    A(`<text x="${px+20}" y="215" font-size="11.5" font-weight="600" fill="${t.bg2}" fill-opacity="0.85">${esc(t.meaning_sub)}</text>`);
+    A(`<rect x="${px}" y="244" width="${pw}" height="96" rx="7" fill="#ffffff" fill-opacity="0.07" stroke="${a}" stroke-opacity="0.3"/>`);
+    A(`<text x="${px+14}" y="266" font-size="11" font-weight="800" letter-spacing="2" fill="${a}">HAZARD AND LOCATIONS</text>`);
+    A(`<text x="${px+14}" y="290" font-size="14" font-weight="800" fill="#ffffff">${esc(hazardType)}</text>`);
+    // Wrap locations
+    const locLines=wrapText(locations,60); let ly=312;
+    locLines.slice(0,2).forEach(L=>{A(`<text x="${px+14}" y="${ly}" font-size="12" font-weight="bold" fill="#ffffff" fill-opacity="0.85">${esc(L)}</text>`);ly+=16;});
+    A(`<text x="${px+14}" y="${ly}" font-size="10.5" fill="#ffffff" fill-opacity="0.6">Effective: ${esc(effective)}</text>`);
+    sect('WHAT THIS MEANS FOR OPERATIONS',366);
+    let y=384;
+    (t.impacts||[]).forEach(item=>{
+      const lines=wrapText(item,58);
+      A(`<circle cx="${px+4}" cy="${y-4}" r="3" fill="${a}"/>`);
+      lines.forEach(L=>{A(`<text x="${px+16}" y="${y}" font-size="12.5" fill="#ffffff" fill-opacity="0.9">${esc(L)}</text>`);y+=16;});
+      y+=4;
+    });
+    const steps=[['OUTLOOK','#7FB3FF'],['ADVISORY','#F5E04A'],['WATCH','#FFB627'],['WARNING','#FF4D4D']];
+    const cw=(pw-24)/4;
+    A(`<text x="${px}" y="496" font-size="10" font-weight="800" letter-spacing="2" fill="${a}">NWS ALERT SCALE</text>`);
+    steps.forEach(([lab,col],i)=>{
+      const x=px+i*(cw+8); const active=lab===t.severity;
+      A(`<rect x="${x.toFixed(0)}" y="504" width="${cw.toFixed(0)}" height="34" rx="5" fill="${col}" fill-opacity="${active?1:0.25}"/>`);
+      A(`<text x="${(x+cw/2).toFixed(0)}" y="525" font-size="10.5" font-weight="800" fill="${active?'#101010':'#ffffff'}" fill-opacity="${active?1:0.55}" text-anchor="middle">${lab}</text>`);
+      if(active) A(`<rect x="${x.toFixed(0)}" y="504" width="${cw.toFixed(0)}" height="34" rx="5" fill="none" stroke="#ffffff" stroke-width="2"/>`);
+    });
+  }
+
+  // Footer
+  A(`<rect x="14" y="566" width="${W-14}" height="32" fill="#000000" fill-opacity="0.45"/>`);
+  A(`<rect x="14" y="566" width="${W-14}" height="2" fill="${a}"/>`);
+  A(`<text x="${W/2+7}" y="587" font-size="12" text-anchor="middle" fill="#ffffff" fill-opacity="0.8"><tspan font-weight="bold" fill="#ffffff">Safety is Paramount. </tspan>Take all necessary precautions and remain alert to changing conditions.</text>`);
+  A(`<rect x="14" y="598" width="${W-14}" height="32" fill="#E8E8E8"/>`);
+  A(`<text x="${W/2+7}" y="611" font-size="9" font-style="italic" fill="#555555" text-anchor="middle">For internal awareness only, based on information available at time of posting and subject to change.</text>`);
+  A(`<text x="${W/2+7}" y="623" font-size="9" font-style="italic" fill="#555555" text-anchor="middle">Does not supersede official NWS watches, warnings, or advisories. Monitor weather.gov for the latest updates.</text>`);
+  A('</g></svg>');
+  return parts.join('');
+}
+
+function selectTemplate(slug,btn){
+  currentSlug=slug; const t=T[slug]; if(!t) return;
+  document.querySelectorAll('.template-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('f-timing').value=t.timing||'';
+  document.getElementById('f-ticks').value=(t.tl||[]).join(', ');
+  document.getElementById('f-src').value=t.src||'';
+  const now=new Date();
+  document.getElementById('f-date').value=now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const fc=document.getElementById('fields-content');
+  if(t.type==='hazard'){
+    fc.innerHTML=`<div class="fp-h3">FBO Codes by Tier</div>`
+      +(t.chips||[]).map((c,i)=>`<div class="field-group"><label><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c.bg};flex-shrink:0"></span>${c.label}</label><input type="text" id="f-chip-${i}" placeholder="e.g. TUL OKC DAL" oninput="updatePreview()"></div>`).join('')
+      +`<div class="hint" style="margin-top:4px">Space or comma separated per tier</div>
+      <div class="fp-h3" style="margin-top:14px">Map Image</div>
+      <div class="field-group"><label>Upload PNG/JPG</label><input type="file" id="f-map" accept="image/*" onchange="loadMap(this)" style="background:none;border:none;color:#7a9ab8;padding:0;font-size:10px"></div>
+      <button class="btn" style="background:#dc2626;color:#fff;font-size:10px;padding:4px 10px;margin-top:4px" onclick="clearMap()">✕ Clear map</button>`;
+  } else {
+    fc.innerHTML=`<div class="fp-h3">Alert Details</div>
+      <div class="field-group"><label>Hazard Type</label><input type="text" id="f-hazard-type" placeholder="Flash Flood" oninput="updatePreview()"></div>
+      <div class="field-group"><label>Affected Locations</label><input type="text" id="f-locations" placeholder="TUL · OKC · DAL · MKC" oninput="updatePreview()"></div>
+      <div class="field-group"><label>Effective Period</label><input type="text" id="f-effective" placeholder="3:00 PM CDT through 10:00 PM" oninput="updatePreview()"></div>
+      <div class="fp-h3" style="margin-top:14px">Map Image</div>
+      <div class="field-group"><label>Upload PNG/JPG</label><input type="file" id="f-map" accept="image/*" onchange="loadMap(this)" style="background:none;border:none;color:#7a9ab8;padding:0;font-size:10px"></div>
+      <button class="btn" style="background:#dc2626;color:#fff;font-size:10px;padding:4px 10px;margin-top:4px" onclick="clearMap()">✕ Clear map</button>`;
+  }
+  updatePreview();
+}
+
+function updatePreview(){
+  const svg=buildSVG(currentSlug);
+  const blob=new Blob([svg],{type:'image/svg+xml'});
+  const url=URL.createObjectURL(blob);
+  document.getElementById('preview-svg').innerHTML=`<img src="${url}" style="width:100%;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,0.6)" onload="URL.revokeObjectURL('${url}')">`;
+  document.getElementById('status').textContent=`${(T[currentSlug]||{}).title||''} · Ready`;
+}
+
+function loadMap(input){
+  const file=input.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=e=>{mapImageB64=e.target.result;updatePreview();};
+  r.readAsDataURL(file);
+}
+function clearMap(){mapImageB64=null;const el=document.getElementById('f-map');if(el)el.value='';updatePreview();}
+function downloadSVG(){
+  const svg=buildSVG(currentSlug);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
+  a.download=`WATCH_${currentSlug}_${new Date().toISOString().slice(0,10)}.svg`;a.click();
+}
+function downloadPNG(){
+  const svg=buildSVG(currentSlug);
+  const img=new Image();
+  img.onload=()=>{
+    const c=document.createElement('canvas');c.width=1200;c.height=630;
+    c.getContext('2d').drawImage(img,0,0,1200,630);
+    const a=document.createElement('a');a.href=c.toDataURL('image/png');
+    a.download=`WATCH_${currentSlug}_${new Date().toISOString().slice(0,10)}.png`;a.click();
+    document.getElementById('status').textContent='PNG downloaded!';
+  };
+  img.src=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
+}
+
+// postMessage from WATCH
+window.addEventListener('message',function(e){
+  const data=e.data; if(!data||data.type!=='WATCH_ALERT_DATA') return;
+  const slug=data.slug||'severe_tstorm';
+  const btn=document.querySelector(`.template-btn[onclick*="${slug}"]`);
+  if(btn) selectTemplate(slug,btn);
+  if(data.date&&document.getElementById('f-date')) document.getElementById('f-date').value=data.date;
+  if(data.timing&&document.getElementById('f-timing')) document.getElementById('f-timing').value=data.timing;
+  if(data.ticks&&document.getElementById('f-ticks')) document.getElementById('f-ticks').value=data.ticks;
+  if(data.src&&document.getElementById('f-src')) document.getElementById('f-src').value=data.src;
+  if(data.chips) data.chips.forEach(function(codes,i){const el=document.getElementById('f-chip-'+i);if(el)el.value=codes;});
+  if(data.chipLabels&&T[slug]&&T[slug].chips) data.chipLabels.forEach(function(label,i){if(T[slug].chips[i])T[slug].chips[i].label=label;});
+  if(data.hazardType&&document.getElementById('f-hazard-type')) document.getElementById('f-hazard-type').value=data.hazardType;
+  if(data.locations&&document.getElementById('f-locations')) document.getElementById('f-locations').value=data.locations;
+  if(data.effective&&document.getElementById('f-effective')) document.getElementById('f-effective').value=data.effective;
+  setTimeout(updatePreview,100);
+});
+
+// Init
+selectTemplate('severe_tstorm',document.querySelector('.template-btn'));
+</script>
+</body>
+</html>
