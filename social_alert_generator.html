@@ -221,32 +221,36 @@ function buildSVG(slug){
       y+=4;
     });
 
-    // Chips -- flexible N-chip layout
+    // Chips -- compact label bars + full-width code rows
     const chips=t.chips||[];
     const nC=chips.length;
-    const cGap=nC>4?4:8;
+    const cGap=nC>4?3:6;
     const cw=(pw-cGap*(nC-1))/nC;
-    const chipY=488;
+    const chipY=480;
+    // Draw label bars (24px tall)
     chips.forEach(({label,bg,fg},i)=>{
       const x=px+i*(cw+cGap);
       const rawVal=(document.getElementById('f-chip-'+i)?.value||'').trim();
-      const codesVal=rawVal?rawVal.toUpperCase().replace(/[\s,]+/g,' · '):null;
       const empty=!rawVal;
-      A(`<rect x="${x.toFixed(0)}" y="${chipY}" width="${cw.toFixed(0)}" height="62" rx="5" fill="${empty?'#555':bg}" fill-opacity="${empty?0.35:1}"/>`);
-      const lfs=nC>4?8.5:9.5;
-      const llines=wrapText(label,nC>4?13:17);
-      let ly=chipY+(llines.length>1?12:16);
-      llines.forEach(L=>{A(`<text x="${(x+6).toFixed(0)}" y="${ly}" font-size="${lfs}" font-weight="800" fill="${empty?'#aaa':fg}">${esc(L)}</text>`);ly+=lfs+2;});
-      // Codes -- wrap to fit
-      const maxC=Math.max(6,Math.floor(cw/(nC>4?5.5:6.5)));
-      const display=codesVal||(empty?'\u2014':'XXX');
-      const clines=wrapText(display,maxC);
-      const cfs=nC>4?7.5:9;
-      let cy=ly+4;
-      clines.slice(0,2).forEach(L=>{
-        A(`<text x="${(x+6).toFixed(0)}" y="${cy}" font-size="${cfs}" font-weight="bold" fill="${empty?'#888':fg}" fill-opacity="0.9">${esc(L)}</text>`);
-        cy+=cfs+2;
+      A(`<rect x="${x.toFixed(0)}" y="${chipY}" width="${cw.toFixed(0)}" height="24" rx="4" fill="${empty?'#444':bg}" fill-opacity="${empty?0.4:1}"/>`) ;
+      const lfs=nC>4?7.5:8.5;
+      const llines=wrapText(label,nC>4?12:16);
+      let ly=chipY+(llines.length>1?10:16);
+      llines.forEach(L=>{A(`<text x="${(x+cw/2).toFixed(0)}" y="${ly}" font-size="${lfs}" font-weight="800" fill="${empty?'#777':fg}" text-anchor="middle">${esc(L)}</text>`);ly+=lfs+1;});
+    });
+    // Code rows below -- one per active tier, full panel width
+    let codeY=chipY+30;
+    chips.forEach(({label,bg},i)=>{
+      const rawVal=(document.getElementById('f-chip-'+i)?.value||'').trim();
+      if(!rawVal) return;
+      const cv=rawVal.toUpperCase().replace(/[\s,]+/g,' \xb7 ');
+      A(`<circle cx="${px+8}" cy="${codeY-3}" r="4" fill="${bg}"/>`) ;
+      const mc=Math.floor((pw-20)/6.2);
+      wrapText(cv,mc).forEach(L=>{
+        A(`<text x="${px+18}" y="${codeY}" font-size="9" font-weight="700" fill="#ffffff" fill-opacity="0.92">${esc(L)}</text>`) ;
+        codeY+=13;
       });
+      codeY+=3;
     });
 
   } else {
