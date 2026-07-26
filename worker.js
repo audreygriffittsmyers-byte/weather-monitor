@@ -180,6 +180,18 @@ export default {
       } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
     }
 
+    if (type === 'aqiforecast') {
+      const lat = url.searchParams.get('lat');
+      const lon = url.searchParams.get('lon');
+      const apiKey = env.AIRNOW_API_KEY;
+      if (!apiKey) return new Response(JSON.stringify([]), { headers: GEOJSON });
+      try {
+        const res = await fetch(`https://www.airnowapi.org/aq/forecast/latLong/?format=application/json&latitude=${lat}&longitude=${lon}&distance=25&API_KEY=${apiKey}`,
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 21600, cacheEverything: true } });
+        return new Response(await res.text(), { headers: GEOJSON });
+      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+    }
+
 
 
 
