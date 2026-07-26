@@ -3513,7 +3513,8 @@ function toggleWinterPolygons(on) {
 // ── NHC Tropical ──────────────────────────────────────────────────────────────
 let nhcLayer = null;
 let showNHC  = true;
-const NHC_COLORS = { TD:'#a8d5ff', TS:'#fbbf24', HU:'#ef4444', TY:'#ef4444' };
+const NHC_COLORS = { TD:'#a8d5ff', STD:'#a8d5ff', TS:'#fbbf24', STS:'#fbbf24', HU:'#ef4444', TY:'#ef4444', PTC:'#94a3b8', PC:'#94a3b8' };
+const NHC_LABELS = { TD:'Tropical Depression', STD:'Subtropical Depression', TS:'Tropical Storm', STS:'Subtropical Storm', HU:'Hurricane', TY:'Typhoon', PTC:'Post-Tropical Cyclone', PC:'Potential Tropical Cyclone' };
 
 
 
@@ -3527,9 +3528,9 @@ async function drawNHCLayer() {
     const storms = d.activeStorms || [];
     const layers = [];
     for (const storm of storms) {
-      const id = storm.id || storm.atcfID;
+      const id = storm.id;
       if (!id) continue;
-      const color = NHC_COLORS[storm.stormType] || '#fbbf24';
+      const color = NHC_COLORS[storm.classification] || '#fbbf24';
       try {
         // Fetch cone and track in parallel
         const [cr, tr] = await Promise.all([
@@ -3541,7 +3542,7 @@ async function drawNHCLayer() {
           if (cone?.features?.length) {
             layers.push(L.geoJSON(cone, {
               style: { color, fillColor:color, fillOpacity:0.15, weight:1.5, dashArray:'6,3' },
-              onEachFeature: (f,l) => l.bindTooltip('🌀 ' + (storm.name||id) + ' — ' + (storm.stormType||'Tropical'), {sticky:true})
+              onEachFeature: (f,l) => l.bindTooltip('🌀 ' + (storm.name||id) + ' — ' + (NHC_LABELS[storm.classification]||'Tropical'), {sticky:true})
             }));
           }
         }
@@ -3573,11 +3574,11 @@ async function drawNHCLayer() {
           }
         }
       } catch(e) {}
-      if (storm.latlon) {
-        const [lat, lon] = storm.latlon.split(',').map(Number);
+      if (storm.latitude_numeric != null && storm.longitude_numeric != null) {
+        const lat = storm.latitude_numeric, lon = storm.longitude_numeric;
         if (!isNaN(lat) && !isNaN(lon)) {
           const icon = L.divIcon({ html:'<div style="background:'+color+';border:2px solid #fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px">🌀</div>', className:'', iconSize:[18,18], iconAnchor:[9,9] });
-          layers.push(L.marker([lat,lon],{icon}).bindTooltip((storm.name||id)+' — '+(storm.stormType||''),{sticky:true}));
+          layers.push(L.marker([lat,lon],{icon}).bindTooltip((storm.name||id)+' — '+(NHC_LABELS[storm.classification]||''),{sticky:true}));
         }
       }
     }
