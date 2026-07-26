@@ -3574,8 +3574,9 @@ async function drawNHCLayer() {
           }
         }
       } catch(e) {}
-      if (storm.latitude_numeric != null && storm.longitude_numeric != null) {
-        const lat = storm.latitude_numeric, lon = storm.longitude_numeric;
+      const lat = storm.latitudeNumeric ?? storm.latitude_numeric;
+      const lon = storm.longitudeNumeric ?? storm.longitude_numeric;
+      if (lat != null && lon != null) {
         if (!isNaN(lat) && !isNaN(lon)) {
           const icon = L.divIcon({ html:'<div style="background:'+color+';border:2px solid #fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px">🌀</div>', className:'', iconSize:[18,18], iconAnchor:[9,9] });
           layers.push(L.marker([lat,lon],{icon}).bindTooltip((storm.name||id)+' — '+(NHC_LABELS[storm.classification]||''),{sticky:true}));
