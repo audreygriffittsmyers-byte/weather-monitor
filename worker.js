@@ -246,29 +246,22 @@ export default {
       } catch(e) { return new Response(JSON.stringify({activeStorms:[]}), { headers: CORS }); }
     }
 
-    if (type === 'nhctrack') {
-      const stormId = url.searchParams.get('id');
-      if (!stormId) return new Response('Missing id', { status: 400, headers: CORS });
+    if (type === 'nhcgis') {
+      const bin = (url.searchParams.get('bin') || '').toUpperCase();
+      const BASE = { AT1:4, AT2:30, AT3:56, AT4:82, AT5:108, EP1:134, EP2:160, EP3:186, EP4:212, EP5:238, CP1:264, CP2:290, CP3:316, CP4:342, CP5:368 };
+      const b = BASE[bin];
+      const empty = { points:{features:[]}, track:{features:[]}, cone:{features:[]} };
+      if (b == null) return new Response(JSON.stringify(empty), { headers: GEOJSON });
+      const svc = 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer';
+      const q = (layerId) => fetch(`${svc}/${layerId}/query?where=1%3D1&outFields=*&returnGeometry=true&f=geojson`,
+        { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
       try {
-        // Fetch both track line and forecast points
-        const [lineRes, ptRes] = await Promise.all([
-          fetch(`https://www.nhc.noaa.gov/storm_graphics/api/${stormId}_5day_lin.json`, { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } }),
-          fetch(`https://www.nhc.noaa.gov/storm_graphics/api/${stormId}_5day_pts.json`, { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } }),
-        ]);
-        const line = lineRes.ok ? await lineRes.json() : {features:[]};
-        const pts  = ptRes.ok  ? await ptRes.json()  : {features:[]};
-        return new Response(JSON.stringify({ line, pts }), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({line:{features:[]},pts:{features:[]}}), { headers: GEOJSON }); }
-    }
-
-    if (type === 'nhccone') {
-      const stormId = url.searchParams.get('id');
-      if (!stormId) return new Response('Missing id', { status: 400, headers: CORS });
-      try {
-        const res = await fetch(`https://www.nhc.noaa.gov/storm_graphics/api/${stormId}_5day_pgn.json`,
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+        const [ptRes, trkRes, coneRes] = await Promise.all([ q(b+2), q(b+3), q(b+4) ]);
+        const points = ptRes.ok   ? await ptRes.json()   : {features:[]};
+        const track  = trkRes.ok  ? await trkRes.json()  : {features:[]};
+        const cone   = coneRes.ok ? await coneRes.json() : {features:[]};
+        return new Response(JSON.stringify({ points, track, cone }), { headers: GEOJSON });
+      } catch(e) { return new Response(JSON.stringify(empty), { headers: GEOJSON }); }
     }
 
     if (type === 'tropicaloutlook') {
