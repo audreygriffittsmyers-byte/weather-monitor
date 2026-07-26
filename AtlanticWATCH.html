@@ -3532,43 +3532,34 @@ async function drawNHCLayer() {
       if (!id) continue;
       const color = NHC_COLORS[storm.classification] || '#fbbf24';
       try {
-        // Fetch cone and track in parallel
-        const [cr, tr] = await Promise.all([
-          fetchWithTimeout(`${PROXY}?type=nhccone&id=${id}`),
-          fetchWithTimeout(`${PROXY}?type=nhctrack&id=${id}`)
-        ]);
-        if (cr.ok) {
-          const cone = await cr.json();
-          if (cone?.features?.length) {
-            layers.push(L.geoJSON(cone, {
+        const gr = await fetchWithTimeout(`${PROXY}?type=nhcgis&bin=${encodeURIComponent(storm.binNumber||'')}`);
+        if (gr.ok) {
+          const gis = await gr.json();
+          if (gis?.cone?.features?.length) {
+            layers.push(L.geoJSON(gis.cone, {
               style: { color, fillColor:color, fillOpacity:0.15, weight:1.5, dashArray:'6,3' },
-              onEachFeature: (f,l) => l.bindTooltip('🌀 ' + (storm.name||id) + ' — ' + (NHC_LABELS[storm.classification]||'Tropical'), {sticky:true})
+              onEachFeature: (f,l) => l.bindTooltip('🌀 ' + (storm.name||id) + ' — Forecast Cone (' + (NHC_LABELS[storm.classification]||'Tropical') + ')', {sticky:true})
             }));
           }
-        }
-        if (tr.ok) {
-          const trackData = await tr.json();
-          // Draw forecast track line
-          if (trackData?.line?.features?.length) {
-            layers.push(L.geoJSON(trackData.line, {
-              style: { color, weight: 2.5, opacity: 0.9, dashArray: null }
+          if (gis?.track?.features?.length) {
+            layers.push(L.geoJSON(gis.track, {
+              style: { color, weight: 2.5, opacity: 0.9 }
             }));
           }
-          // Draw forecast points with time labels
-          if (trackData?.pts?.features?.length) {
-            trackData.pts.features.forEach(function(f) {
+          if (gis?.points?.features?.length) {
+            gis.points.features.forEach(function(f) {
               var coords = f.geometry?.coordinates;
               if (!coords) return;
-              var props = f.properties || {};
-              var dtg   = props.DTG || props.validTime || "";
-              var ws    = props.MAXWIND || props.maxWindSpeed || "";
-              var label = dtg ? dtg.substring(0,10) : "";
+              var p = f.properties || {};
+              var label = p.fldatelbl || p.datelbl || "";
+              var wind  = (p.maxwind != null) ? (p.maxwind + " kt") : "";
+              var cat   = p.tcdvlp || "";
               var ptIcon = L.divIcon({
                 html: '<div style="width:10px;height:10px;border-radius:50%;background:' + color + ';border:2px solid #fff;margin:-5px"></div>',
                 className: "", iconSize: [10,10], iconAnchor: [5,5]
               });
               var marker = L.marker([coords[1], coords[0]], { icon: ptIcon });
-              if (label || ws) marker.bindTooltip((storm.name||id) + (label ? " " + label : "") + (ws ? " — " + ws + "kt" : ""), {sticky:true});
+              marker.bindTooltip((storm.name||id) + (label ? " " + label : "") + (cat ? " — " + cat : "") + (wind ? " — " + wind : ""), {sticky:true});
               layers.push(marker);
             });
           }
