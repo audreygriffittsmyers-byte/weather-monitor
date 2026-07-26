@@ -2553,6 +2553,7 @@ const FIRE_POLY_STYLE = {
   EXTREME:  { color:'#7f1d1d', fillColor:'#7f1d1d', fillOpacity:0.35, weight:2 },
 };
 const WPC_POLY_STYLE = {
+  MARGINAL: { color:'#38a800', fillColor:'#38a800', fillOpacity:0.18, weight:1.5 },
   SLIGHT:   { color:'#22c55e', fillColor:'#22c55e', fillOpacity:0.20, weight:1.5 },
   MODERATE: { color:'#eab308', fillColor:'#eab308', fillOpacity:0.25, weight:2 },
   HIGH:     { color:'#dc2626', fillColor:'#dc2626', fillOpacity:0.30, weight:2 },
@@ -2635,6 +2636,22 @@ function _pointInPolygonGeom(pt, geom) {
 }
 var ERO_TIER_ORDER = ['HIGH','MDT','SLGT','MRGL'];
 var ERO_TIER_LABEL = {HIGH:'HIGH', MDT:'MODERATE', SLGT:'SLIGHT', MRGL:'MARGINAL'};
+function _eroTierFromProps(p) {
+  p = p || {};
+  var dn = parseInt(p.dn, 10);
+  if (!isNaN(dn)) {
+    if (dn >= 4) return 'HIGH';
+    if (dn === 3) return 'MDT';
+    if (dn === 2) return 'SLGT';
+    if (dn === 1) return 'MRGL';
+  }
+  var txt = ((p.outlook||'') + ' ' + (p.product||'') + ' ' + (p.LABEL||'') + ' ' + (p.label||'')).toUpperCase();
+  if (txt.includes('HIGH')) return 'HIGH';
+  if (txt.includes('MOD') || txt.includes('MDT')) return 'MDT';
+  if (txt.includes('SLGT') || txt.includes('SLIGHT')) return 'SLGT';
+  if (txt.includes('MRGL') || txt.includes('MARGINAL')) return 'MRGL';
+  return null;
+}
 function getEroTierForCode(code) {
   var c = COORDS[code];
   if (!c || !wpcPolygons || !wpcPolygons.features) return null;
@@ -2642,13 +2659,7 @@ function getEroTierForCode(code) {
   var best = null, bestRank = 99;
   wpcPolygons.features.forEach(function(f) {
     if (!_pointInPolygonGeom(pt, f.geometry)) return;
-    var p = f.properties || {};
-    var risk = (p.Risk_Level || p.risk_level || p.RISK || p.LABEL || p.label || '').toUpperCase();
-    var tier = null;
-    if (risk.includes('HIGH')) tier = 'HIGH';
-    else if (risk.includes('MOD') || risk.includes('MDT')) tier = 'MDT';
-    else if (risk.includes('SLGT') || risk.includes('SLIGHT')) tier = 'SLGT';
-    else if (risk.includes('MRGL') || risk.includes('MARGINAL')) tier = 'MRGL';
+    var tier = _eroTierFromProps(f.properties);
     if (!tier) return;
     var rank = ERO_TIER_ORDER.indexOf(tier);
     if (rank >= 0 && rank < bestRank) { bestRank = rank; best = tier; }
@@ -2742,15 +2753,15 @@ async function drawWPCPolygons() {
   if (!data?.features?.length) return;
   wpcPolyLayer = L.geoJSON(data, {
     style: f => {
-      const p = f.properties || {};
-      const risk = (p.Risk_Level||p.risk_level||p.RISK||'').toUpperCase();
-      if (risk.includes('HIGH')) return WPC_POLY_STYLE.HIGH;
-      if (risk.includes('MOD')) return WPC_POLY_STYLE.MODERATE;
+      const tier = _eroTierFromProps(f.properties);
+      if (tier === 'HIGH') return WPC_POLY_STYLE.HIGH;
+      if (tier === 'MDT') return WPC_POLY_STYLE.MODERATE;
+      if (tier === 'MRGL') return WPC_POLY_STYLE.MARGINAL;
       return WPC_POLY_STYLE.SLIGHT;
     },
     onEachFeature: (f,layer) => {
-      const p = f.properties || {};
-      layer.bindTooltip(`🌊 WPC Precip Hazard`, {sticky:true});
+      const tier = _eroTierFromProps(f.properties);
+      layer.bindTooltip(`🌊 WPC ERO: ${ERO_TIER_LABEL[tier] || 'Excessive Rainfall'}`, {sticky:true});
     }
   }).addTo(leafletMap);
 }
