@@ -2610,6 +2610,52 @@ async function fetchWPCPolygons() {
   return wpcPolygons;
 }
 
+// ── WPC ERO point-in-polygon lookup (shared by map layer and briefs) ─────────
+function _pipRing(pt, ring) {
+  var x = pt[0], y = pt[1], inside = false;
+  for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    var xi = ring[i][0], yi = ring[i][1];
+    var xj = ring[j][0], yj = ring[j][1];
+    var intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function _pointInPolygonGeom(pt, geom) {
+  if (!geom) return false;
+  if (geom.type === 'Polygon') {
+    if (!_pipRing(pt, geom.coordinates[0])) return false;
+    for (var k = 1; k < geom.coordinates.length; k++) { if (_pipRing(pt, geom.coordinates[k])) return false; }
+    return true;
+  }
+  if (geom.type === 'MultiPolygon') {
+    return geom.coordinates.some(function(poly){ return _pointInPolygonGeom(pt, {type:'Polygon', coordinates:poly}); });
+  }
+  return false;
+}
+var ERO_TIER_ORDER = ['HIGH','MDT','SLGT','MRGL'];
+var ERO_TIER_LABEL = {HIGH:'HIGH', MDT:'MODERATE', SLGT:'SLIGHT', MRGL:'MARGINAL'};
+function getEroTierForCode(code) {
+  var c = COORDS[code];
+  if (!c || !wpcPolygons || !wpcPolygons.features) return null;
+  var pt = [c[1], c[0]]; // GeoJSON order is [lon, lat]
+  var best = null, bestRank = 99;
+  wpcPolygons.features.forEach(function(f) {
+    if (!_pointInPolygonGeom(pt, f.geometry)) return;
+    var p = f.properties || {};
+    var risk = (p.Risk_Level || p.risk_level || p.RISK || p.LABEL || p.label || '').toUpperCase();
+    var tier = null;
+    if (risk.includes('HIGH')) tier = 'HIGH';
+    else if (risk.includes('MOD') || risk.includes('MDT')) tier = 'MDT';
+    else if (risk.includes('SLGT') || risk.includes('SLIGHT')) tier = 'SLGT';
+    else if (risk.includes('MRGL') || risk.includes('MARGINAL')) tier = 'MRGL';
+    if (!tier) return;
+    var rank = ERO_TIER_ORDER.indexOf(tier);
+    if (rank >= 0 && rank < bestRank) { bestRank = rank; best = tier; }
+  });
+  return best;
+}
+
 async function fetchNWSPolygons() {
   const alertedStates = [...new Set(
     COVERED.filter(f => results[f.code]?.alerts?.length > 0).map(f => f.state)
@@ -4460,6 +4506,18 @@ function _watchDownloadDocx(codes, notes, sections) {
       });
       sp();
     }
+    var eroRows=codes.map(function(c){return {code:c, tier:getEroTierForCode(c)};}).filter(function(r){return !!r.tier;});
+    if(eroRows.length){
+      eroRows.sort(function(a,b){return ERO_TIER_ORDER.indexOf(a.tier)-ERO_TIER_ORDER.indexOf(b.tier);});
+      add('WPC EXCESSIVE RAINFALL OUTLOOK', ppr({fill:'0369A1',after:'40'}), rpr({b:true,sz:24,color:'FFFFFF'}));
+      add('FBO  |  City / State  |  ERO Risk', ppr({fill:'F2F4F6',after:'30'}), rpr({b:true,sz:19}));
+      eroRows.forEach(function(r,ci){
+        var fbo=COVERED.find(function(f){return f.code===r.code;})||{city:'',state:''};
+        add(r.code+'  |  '+fbo.city+(fbo.state?', '+fbo.state:'')+'  |  '+ERO_TIER_LABEL[r.tier],
+            ppr({fill:ci%2===0?'FFFFFF':'F0F9FF',after:'30'}), rpr({sz:20}));
+      });
+      sp();
+    }
   }
 
   // AQI section
@@ -4943,7 +5001,7 @@ function openPrintBriefing() {
   var hasSPC    = COVERED.some(function(f){ return spcData[1]&&spcData[1][f.code]&&spcData[1][f.code].label&&spcData[1][f.code].label!=='No Risk'; });
   var hasNHC    = typeof nhcLayer !== 'undefined' && nhcLayer !== null;
   var hasWinter = COVERED.some(function(f){ return (results[f.code]&&results[f.code].alerts||[]).some(function(a){ return /winter|snow|ice|blizzard/i.test(a.event); }); });
-  var hasFlood  = COVERED.some(function(f){ return (results[f.code]&&results[f.code].alerts||[]).some(function(a){ return /flood/i.test(a.event); }); });
+  var hasFlood  = COVERED.some(function(f){ return (results[f.code]&&results[f.code].alerts||[]).some(function(a){ return /flood/i.test(a.event); }) || !!getEroTierForCode(f.code); });
   var hasWind   = COVERED.some(function(f){ return !!getWindStatus(f.code); });
   var hasTemp   = COVERED.some(function(f){ var obs=obsData[f.code]; return obs&&(obs.tempF>=95||obs.tempF<=15); });
   var hasAlerts = COVERED.some(function(f){ return results[f.code]&&results[f.code].alerts&&results[f.code].alerts.length>0; });
@@ -4988,7 +5046,8 @@ function openPrintBriefing() {
   document.body.appendChild(modal);
   document.getElementById('bo-cancel').addEventListener('click', function(){ modal.remove(); });
   modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
-  document.getElementById('bo-docx').addEventListener('click', function() {
+  document.getElementById('bo-docx').addEventListener('click', async function() {
+    await fetchWPCPolygons();
     var sects = {
       spc:document.getElementById('bo-spc')&&document.getElementById('bo-spc').checked,
       nhc:document.getElementById('bo-nhc')&&document.getElementById('bo-nhc').checked,
@@ -5020,7 +5079,8 @@ function openPrintBriefing() {
     });
   });
 
-  document.getElementById('bo-generate').addEventListener('click', function() {
+  document.getElementById('bo-generate').addEventListener('click', async function() {
+    await fetchWPCPolygons();
     var sections = {
       spc:    document.getElementById('bo-spc')    && document.getElementById('bo-spc').checked,
       nhc:    document.getElementById('bo-nhc')    && document.getElementById('bo-nhc').checked,
@@ -5724,6 +5784,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   if (sections.winter) html += _buildNWSHazardSection(codes,'winter',/winter|snow|ice|blizzard|freeze|frost/i,'❄ WINTER STORM','#1e40af','#EFF6FF','Winter weather hazards expected. Ice accumulation, heavy snow, and hazardous travel conditions possible.');
   if (sections.winter) html += _getActionHTML('winter');
   if (sections.flood) html += _buildNWSHazardSection(codes,'flood',/flood/i,'🌊 FLOOD / FLASH FLOOD','#065f46','#ECFDF5','Flooding or flash flooding possible at or near impacted locations.');
+  if (sections.flood) html += _buildEROSection(codes);
   if (sections.flood) html += _getActionHTML('flood');
 
   // AQI
@@ -5888,6 +5949,23 @@ function _buildNWSHazardSection(codes, type, pattern, title, color, bg, bodyText
     var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
     var alerts=(results[code]&&results[code].alerts||[]).filter(function(a){return pattern.test(a.event);});
     html += '<tr style="background:'+(locs.indexOf(code)%2===0?'#fff':'#f9f9f9')+'"><td style="border:1px solid #ddd;font-weight:700">'+code+'</td><td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td><td style="border:1px solid #ddd">'+alerts.map(function(a){return a.event+(a.expires?' until '+fmtTime(a.expires):'');}).join('; ')+'</td></tr>';
+  });
+  html += '</table>';
+  return html;
+}
+
+function _buildEROSection(codes) {
+  var rows = codes.map(function(c){ return {code:c, tier:getEroTierForCode(c)}; }).filter(function(r){ return !!r.tier; });
+  if (!rows.length) return '';
+  rows.sort(function(a,b){ return ERO_TIER_ORDER.indexOf(a.tier) - ERO_TIER_ORDER.indexOf(b.tier); });
+  var html = '<div style="background:#0369a1;color:#fff;padding:12px 16px;margin-bottom:0">'
+    +'<div style="font-size:13px;font-weight:700">ATLANTIC AVIATION</div>'
+    +'<div style="font-size:15px;font-weight:700">WPC EXCESSIVE RAINFALL OUTLOOK</div>'
+    +'<div style="font-size:11px;opacity:.85;margin-top:2px">Locations under an active WPC excessive rainfall risk area, independent of any NWS flood alert in effect.</div></div>';
+  html += '<table style="margin-bottom:8px"><tr style="background:#f0f4f7"><th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th><th style="border:1px solid #ddd;text-align:left;width:160px">City / State</th><th style="border:1px solid #ddd;text-align:left">ERO Risk</th></tr>';
+  rows.forEach(function(r, i) {
+    var fbo=COVERED.find(function(f){return f.code===r.code;})||{city:'',state:''};
+    html += '<tr style="background:'+(i%2===0?'#fff':'#f0f9ff')+'"><td style="border:1px solid #ddd;font-weight:700">'+r.code+'</td><td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td><td style="border:1px solid #ddd;color:#0369a1;font-weight:700">'+ERO_TIER_LABEL[r.tier]+'</td></tr>';
   });
   html += '</table>';
   return html;
