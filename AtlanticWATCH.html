@@ -1616,27 +1616,34 @@ function renderDetail() {
   if (nasCard) content += nasCard;
 
   // ── 6. AQI ────────────────────────────────────────────────────────────────
+  function _aqiChip(data, label) {
+    if (!data) return '';
+    const lvl = data.level;
+    return '<div style="display:inline-flex;align-items:center;gap:8px;background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:6px 12px;margin-bottom:14px;margin-right:8px">'
+      + (label ? '<span style="font-size:9px;font-weight:700;color:#8a94a3;text-transform:uppercase">' + label + '</span>' : '')
+      + '<span style="background:' + lvl.color + ';color:' + lvl.text + ';font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">AQI ' + data.aqi + '</span>'
+      + '<span style="font-size:11px;color:#556070">' + data.category
+      + (data.pollutant ? ' · ' + data.pollutant : '') + '</span>'
+      + '</div>';
+  }
   if (obs) {
     if (aqiData[selected] === undefined) {
       content += '<div id="aqi-strip-' + selected + '"></div>';
       fetchAQI(selected).then(() => {
         const el = document.getElementById('aqi-strip-' + selected);
-        if (el && aqiData[selected]) {
-          const lvl = aqiData[selected].level;
-          el.innerHTML = '<div style="display:inline-flex;align-items:center;gap:8px;background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:6px 12px;margin-bottom:14px">'
-            + '<span style="background:' + lvl.color + ';color:' + lvl.text + ';font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">AQI ' + aqiData[selected].aqi + '</span>'
-            + '<span style="font-size:11px;color:#556070">' + aqiData[selected].category
-            + (aqiData[selected].pollutant ? ' · ' + aqiData[selected].pollutant : '') + '</span>'
-            + '</div>';
-        }
+        if (el && aqiData[selected]) el.innerHTML = _aqiChip(aqiData[selected], 'Now');
       });
     } else if (aqiData[selected]) {
-      const lvl = aqiData[selected].level;
-      content += '<div style="display:inline-flex;align-items:center;gap:8px;background:#f8f9fa;border:1px solid #e8e8e8;border-radius:6px;padding:6px 12px;margin-bottom:14px">'
-        + '<span style="background:' + lvl.color + ';color:' + lvl.text + ';font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px">AQI ' + aqiData[selected].aqi + '</span>'
-        + '<span style="font-size:11px;color:#556070">' + aqiData[selected].category
-        + (aqiData[selected].pollutant ? ' · ' + aqiData[selected].pollutant : '') + '</span>'
-        + '</div>';
+      content += _aqiChip(aqiData[selected], 'Now');
+    }
+    if (aqiForecastData[selected] === undefined) {
+      content += '<div id="aqi-fc-strip-' + selected + '"></div>';
+      fetchAQIForecast(selected).then(() => {
+        const el = document.getElementById('aqi-fc-strip-' + selected);
+        if (el && aqiForecastData[selected]) el.innerHTML = _aqiChip(aqiForecastData[selected], 'Forecast');
+      });
+    } else if (aqiForecastData[selected]) {
+      content += _aqiChip(aqiForecastData[selected], 'Forecast');
     }
   }
 
@@ -2337,14 +2344,23 @@ function _generateSummaryInner(content, ts, status) {
   });
   if(nRows.length) html+=hazardCard('&#9992;&#65039;','FAA NAS PROGRAMS','Active ground stops, delays, and AFPs','#0E2841','#fff',nRows);
 
-  // AQI
-  var aqiRows=[];
+  // AQI -- current + 24h forecast
+  var aqiRows=[]; var aqiAdded=new Set();
   fboList.forEach(function(f){
-    var a=aqiData[f.code]; if(!a||a.aqi<101) return;
-    aqiRows.push({code:f.code,city:f.city,state:f.state,detail:a.category+' (AQI '+a.aqi+')',detail2:a.pollutant||''});
+    var a=aqiData[f.code];
+    if(a && a.aqi>=101){
+      aqiRows.push({code:f.code,city:f.city,state:f.state,detail:a.category+' (AQI '+a.aqi+') (now)',detail2:a.pollutant||''});
+      aqiAdded.add(f.code);
+    }
   });
-  aqiRows.sort(function(a,b){return parseInt(b.detail.match(/\d+/)||0)-parseInt(a.detail.match(/\d+/)||0);});
-  if(aqiRows.length) html+=hazardCard('??️','POOR AIR QUALITY','AQI at or above Unhealthy for Sensitive Groups','#7c3aed','#fff',aqiRows);
+  fboList.forEach(function(f){
+    if(aqiAdded.has(f.code)) return;
+    var fa=aqiForecastData[f.code]; if(!fa||fa.aqi<101) return;
+    aqiRows.push({code:f.code,city:f.city,state:f.state,detail:fa.category+' (AQI '+fa.aqi+') (forecast)',detail2:(fa.pollutant?fa.pollutant+' — ':'')+'24h forecast'});
+    aqiAdded.add(f.code);
+  });
+  aqiRows.sort(function(a,b){return a.detail.includes('now')?-1:b.detail.includes('now')?1:0;});
+  if(aqiRows.length) html+=hazardCard('??️','POOR AIR QUALITY','Current conditions and 24-hour forecast, AQI at or above Unhealthy for Sensitive Groups','#7c3aed','#fff',aqiRows);
 
   // ALL CLEAR
   var clearList=fboList.filter(function(f){
@@ -4651,7 +4667,7 @@ async function _startupAQILoad() {
   var codes = COVERED.map(function(f){ return f.code; });
   for (var i = 0; i < codes.length; i += BATCH) {
     await Promise.all(codes.slice(i, i+BATCH).map(function(c){
-      return fetchAQI(c).catch(function(){});
+      return Promise.all([ fetchAQI(c).catch(function(){}), fetchAQIForecast(c).catch(function(){}) ]);
     }));
     if (i + BATCH < codes.length) {
       await new Promise(function(resolve){ setTimeout(resolve, 1500); });
@@ -4819,25 +4835,34 @@ function printHandoffLog() {
 
 function _buildAQISection(codes) {
   var rows = [];
+  var added = new Set();
   codes.forEach(function(code) {
     var a = aqiData[code];
     if (!a || a.aqi < 101) return;
     var fbo = COVERED.find(function(f){ return f.code === code; }) || {city:'', state:''};
-    rows.push({ code:code, city:fbo.city, state:fbo.state, aqi:a.aqi, category:a.category, color:a.level.color, pollutant:a.pollutant });
+    rows.push({ code:code, city:fbo.city, state:fbo.state, aqi:a.aqi, category:a.category, color:a.level.color, pollutant:a.pollutant, when:'Now' });
+    added.add(code);
+  });
+  codes.forEach(function(code) {
+    if (added.has(code)) return;
+    var fa = aqiForecastData[code];
+    if (!fa || fa.aqi < 101) return;
+    var fbo = COVERED.find(function(f){ return f.code === code; }) || {city:'', state:''};
+    rows.push({ code:code, city:fbo.city, state:fbo.state, aqi:fa.aqi, category:fa.category, color:fa.level.color, pollutant:fa.pollutant, when:'Forecast'+(fa.dateForecast?' ('+fa.dateForecast+')':'') });
   });
   if (!rows.length) return '';
-  rows.sort(function(a,b){ return b.aqi - a.aqi; });
   var h = '<div style="background:#7c3aed;color:#fff;padding:12px 16px;margin-bottom:0">'
     + '<div style="font-size:13px;font-weight:700">ATLANTIC AVIATION</div>'
     + '<div style="font-size:15px;font-weight:700">??️ AIR QUALITY ADVISORY</div>'
-    + '<div style="font-size:11px;opacity:.85;margin-top:2px">AQI at or above Unhealthy for Sensitive Groups. Limit prolonged outdoor exertion.</div>'
+    + '<div style="font-size:11px;opacity:.85;margin-top:2px">Current conditions and 24-hour forecast. AQI at or above Unhealthy for Sensitive Groups. Limit prolonged outdoor exertion.</div>'
     + '</div>';
   h += '<table style="margin-bottom:8px"><tr style="background:#f0f4f7">'
     + '<th style="border:1px solid #ddd;text-align:left;width:80px">FBO</th>'
     + '<th style="border:1px solid #ddd;text-align:left;width:160px">City / State</th>'
     + '<th style="border:1px solid #ddd;text-align:left;width:80px">AQI</th>'
     + '<th style="border:1px solid #ddd;text-align:left">Category</th>'
-    + '<th style="border:1px solid #ddd;text-align:left">Pollutant</th></tr>';
+    + '<th style="border:1px solid #ddd;text-align:left">Pollutant</th>'
+    + '<th style="border:1px solid #ddd;text-align:left;width:110px">When</th></tr>';
   rows.forEach(function(r, i) {
     var bg = i % 2 === 0 ? '#fff' : '#f9f9f9';
     h += '<tr style="background:'+bg+'">'
@@ -4846,6 +4871,7 @@ function _buildAQISection(codes) {
       + '<td style="border:1px solid #ddd;font-weight:700;color:'+r.color+'">'+r.aqi+'</td>'
       + '<td style="border:1px solid #ddd"><span style="background:'+r.color+';color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px">'+r.category+'</span></td>'
       + '<td style="border:1px solid #ddd;font-size:11px;color:#556070">'+r.pollutant+'</td>'
+      + '<td style="border:1px solid #ddd;font-size:11px;color:#556070">'+r.when+'</td>'
       + '</tr>';
   });
   h += '</table>';
@@ -5329,7 +5355,7 @@ function _buildForecastSection(codes) {
   var NAVY = '#0E2841';
 
   // Aggregate hazard locations
-  var windLocs=[], heatLocs=[], coldLocs=[], noData=[];
+  var windLocs=[], heatLocs=[], coldLocs=[], rainLocs=[], tsLocs=[], noData=[];
   var singleMode = codes.length === 1;
 
   codes.forEach(function(code) {
@@ -5339,9 +5365,11 @@ function _buildForecastSection(codes) {
     if (h.windEvents.length)  windLocs.push({code:code, fbo:fbo, hazards:h});
     if (h.heatPeaks.length)   heatLocs.push({code:code, fbo:fbo, hazards:h});
     if (h.coldPeaks.length)   coldLocs.push({code:code, fbo:fbo, hazards:h});
+    if (h.precipEvents.length) rainLocs.push({code:code, fbo:fbo, hazards:h});
+    if (h.tsEvents.length)    tsLocs.push({code:code, fbo:fbo, hazards:h});
   });
 
-  var hasAny = windLocs.length || heatLocs.length || coldLocs.length;
+  var hasAny = windLocs.length || heatLocs.length || coldLocs.length || rainLocs.length || tsLocs.length;
   if (!hasAny && !singleMode) return '';
 
   var html = '<div style="margin-bottom:16px">'
@@ -5353,7 +5381,7 @@ function _buildForecastSection(codes) {
     if (!h) {
       html += '<div style="color:#8a9aaa;font-style:italic">Hourly forecast data not available for this location. Open in Live Monitor and allow data to load, then regenerate the briefing.</div>';
     } else {
-      html += '<div style="color:#16a34a">No forecast wind, heat, or cold hazards in the next 24 hours.</div>';
+      html += '<div style="color:#16a34a">No forecast wind, heat, cold, heavy rain, or thunderstorm hazards in the next 24 hours.</div>';
     }
   }
 
@@ -5404,6 +5432,40 @@ function _buildForecastSection(codes) {
       html += '<tr><td style="padding:4px 6px;font-weight:700;background:'+bg+'">'+loc.code+'</td>'
         + '<td style="padding:4px 6px;background:'+bg+'">'+loc.fbo.city+(loc.fbo.state?', '+loc.fbo.state:'')+'</td>'
         + '<td style="padding:4px 6px;background:'+bg+'">'+peak.temp+'\u00B0F at '+peak.time+'</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  // Heavy rain hazard table
+  if (rainLocs.length) {
+    html += '<div style="font-weight:700;color:#0369a1;margin-bottom:4px;margin-top:4px">\uD83C\uDF27\uFE0F Forecast Heavy Rain (>= 50% chance of precipitation)</div>';
+    html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">'
+      + '<tr><th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">FBO</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">City / State</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">Peak Chance / Time</th></tr>';
+    rainLocs.forEach(function(loc, i) {
+      var bg = i%2===0?'#fff':'#f9f9f9';
+      var peak = loc.hazards.precipEvents.reduce(function(a,b){return b.pct>a.pct?b:a;});
+      html += '<tr><td style="padding:4px 6px;font-weight:700;background:'+bg+'">'+loc.code+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+loc.fbo.city+(loc.fbo.state?', '+loc.fbo.state:'')+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+peak.pct+'% at '+peak.time+(peak.forecast?' — '+peak.forecast:'')+'</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  // Thunderstorm hazard table
+  if (tsLocs.length) {
+    html += '<div style="font-weight:700;color:#7c3aed;margin-bottom:4px;margin-top:4px">\u26A1 Forecast Thunderstorms</div>';
+    html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">'
+      + '<tr><th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">FBO</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">City / State</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">First Chance / Forecast</th></tr>';
+    tsLocs.forEach(function(loc, i) {
+      var bg = i%2===0?'#fff':'#f9f9f9';
+      var first = loc.hazards.tsEvents[0];
+      html += '<tr><td style="padding:4px 6px;font-weight:700;background:'+bg+'">'+loc.code+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+loc.fbo.city+(loc.fbo.state?', '+loc.fbo.state:'')+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+first.time+' — '+first.forecast+'</td></tr>';
     });
     html += '</table>';
   }
@@ -6664,6 +6726,7 @@ function checkProximityAlerts() {
 
 // ── Air Quality Index ─────────────────────────────────────────────────────────
 const aqiData = {}; // code -> { aqi, category, color, pollutant }
+const aqiForecastData = {}; // code -> { aqi, category, pollutant, dateForecast, level } for next available forecast day
 
 const AQI_LEVELS = [
   { max:50,  label:'Good',            color:'#16a34a', text:'#fff' },
@@ -6696,6 +6759,29 @@ async function fetchAQI(code) {
       level:     aqiLevel(top.AQI),
     };
   } catch(e) { aqiData[code] = null; }
+}
+
+async function fetchAQIForecast(code) {
+  const c = COORDS[code];
+  if (!c) { aqiForecastData[code] = null; return; }
+  try {
+    const r = await fetch(`${PROXY}?type=aqiforecast&lat=${c[0].toFixed(3)}&lon=${c[1].toFixed(3)}`);
+    if (!r.ok) { aqiForecastData[code] = null; return; }
+    const d = await r.json();
+    if (!Array.isArray(d) || !d.length) { aqiForecastData[code] = null; return; }
+    // AirNow returns one or more pollutant rows per forecast date; use the earliest date, highest AQI among its rows
+    const earliestDate = d.map(x => x.DateForecast).sort()[0];
+    const sameDay = d.filter(x => x.DateForecast === earliestDate);
+    const top = sameDay.reduce((best, obs) => (obs.AQI > (best?.AQI || 0) ? obs : best), null);
+    if (!top) { aqiForecastData[code] = null; return; }
+    aqiForecastData[code] = {
+      aqi:          top.AQI,
+      category:     top.Category?.Name || aqiLevel(top.AQI).label,
+      pollutant:    top.ParameterName || '',
+      dateForecast: top.DateForecast || '',
+      level:        aqiLevel(top.AQI),
+    };
+  } catch(e) { aqiForecastData[code] = null; }
 }
 
 
