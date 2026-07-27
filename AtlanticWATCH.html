@@ -2746,18 +2746,24 @@ async function drawFirePolygons() {
   if (!showFirePolys) return;
   const data = await fetchFirePolygons();
   if (!data?.features?.length) return;
+  function _fireTier(p) {
+    var dn = parseInt((p||{}).dn, 10);
+    if (dn >= 10) return 'EXTREME';
+    if (dn === 8) return 'CRITICAL';
+    if (dn === 5) return 'ELEVATED';
+    return null;
+  }
   firePolyLayer = L.geoJSON(data, {
     style: f => {
-      const p = f.properties || {};
-      const lbl = (p.LABEL||p.label||p.Fire_Wx_Cat||'').toUpperCase();
-      if (lbl.includes('EXTREME') || lbl.includes('EXTR')) return FIRE_POLY_STYLE.EXTREME;
-      if (lbl.includes('CRITICAL') || lbl.includes('CRIT')) return FIRE_POLY_STYLE.CRITICAL;
+      const tier = _fireTier(f.properties);
+      if (tier === 'EXTREME')  return FIRE_POLY_STYLE.EXTREME;
+      if (tier === 'CRITICAL') return FIRE_POLY_STYLE.CRITICAL;
       return FIRE_POLY_STYLE.ELEVATED;
     },
     onEachFeature: (f,layer) => {
-      const p = f.properties || {};
-      const lbl = p.label2 || p.LABEL2 || p.LABEL || p.label || 'Fire Weather';
-      layer.bindTooltip(`🔥 Fire Wx: ${lbl}`, {sticky:true});
+      const tier = _fireTier(f.properties);
+      const label = tier ? tier.charAt(0) + tier.slice(1).toLowerCase() : 'Fire Weather';
+      layer.bindTooltip(`🔥 Fire Wx: ${label}`, {sticky:true});
     }
   }).addTo(leafletMap);
 }
@@ -2923,6 +2929,8 @@ function toggleNWSPolygons(on)  { showNWSPolys  = on; drawNWSPolygons(); }
 
 // ── Markers ───────────────────────────────────────────────────────────────────
 function getMarkerColors(code) {
+  const inCone = isInTropicalCone(code);
+  if (inCone) return { left:'#ff0000', right:'#ff0000' };
   const spc = spcData[1][code];
   const nws = results[code];
   const spcColor = (spc?.st==='ok' && spc.label && SPC_MARKER_COLOR[spc.label]) ? SPC_MARKER_COLOR[spc.label] : null;
@@ -3488,9 +3496,11 @@ let winterPolygons  = null;
 let showWinterPolys = true;
 
 const WINTER_STYLE = {
-  SLIGHT:   { color:'#93c5fd', fillColor:'#93c5fd', fillOpacity:0.22, weight:1.5 },
-  MODERATE: { color:'#3b82f6', fillColor:'#3b82f6', fillOpacity:0.28, weight:2   },
-  HIGH:     { color:'#1e3a8a', fillColor:'#1e3a8a', fillOpacity:0.35, weight:2.5 },
+  'WINTER WEATHER AREA': { color:'#93c5fd', fillColor:'#93c5fd', fillOpacity:0.18, weight:1.5 },
+  'MINOR':    { color:'#60a5fa', fillColor:'#60a5fa', fillOpacity:0.22, weight:1.5 },
+  'MODERATE': { color:'#3b82f6', fillColor:'#3b82f6', fillOpacity:0.28, weight:2   },
+  'MAJOR':    { color:'#7c3aed', fillColor:'#7c3aed', fillOpacity:0.32, weight:2.5 },
+  'EXTREME':  { color:'#1e3a8a', fillColor:'#1e3a8a', fillOpacity:0.38, weight:2.5 },
 };
 
 async function fetchWinterPolygons() {
@@ -3509,14 +3519,13 @@ async function drawWinterPolygons() {
   if (!data?.features?.length) return;
   winterPolyLayer = L.geoJSON(data, {
     style: f => {
-      const risk = (f.properties?.Risk_Level || f.properties?.label || '').toUpperCase();
-      if (risk.includes('HIGH')) return WINTER_STYLE.HIGH;
-      if (risk.includes('MOD'))  return WINTER_STYLE.MODERATE;
-      return WINTER_STYLE.SLIGHT;
+      const impact = (f.properties?.impact || '').toUpperCase();
+      return WINTER_STYLE[impact] || WINTER_STYLE['WINTER WEATHER AREA'];
     },
     onEachFeature: (f, layer) => {
-      const risk = f.properties?.Risk_Level || f.properties?.label || 'Winter Weather';
-      layer.bindTooltip('❄ WPC Winter: ' + risk, { sticky:true });
+      const impact = f.properties?.impact || 'Winter Weather';
+      const label = impact.charAt(0) + impact.slice(1).toLowerCase();
+      layer.bindTooltip('❄ WPC Winter Storm Severity Index: ' + label, { sticky:true });
     }
   }).addTo(leafletMap);
 }
@@ -3529,14 +3538,24 @@ function toggleWinterPolygons(on) {
 // ── NHC Tropical ──────────────────────────────────────────────────────────────
 let nhcLayer = null;
 let showNHC  = true;
+let nhcConeFeatures = []; // accumulated across all active storms -- used to flag FBOs inside an active cone
 const NHC_COLORS = { TD:'#a8d5ff', STD:'#a8d5ff', TS:'#fbbf24', STS:'#fbbf24', HU:'#ef4444', TY:'#ef4444', PTC:'#94a3b8', PC:'#94a3b8' };
 const NHC_LABELS = { TD:'Tropical Depression', STD:'Subtropical Depression', TS:'Tropical Storm', STS:'Subtropical Storm', HU:'Hurricane', TY:'Typhoon', PTC:'Post-Tropical Cyclone', PC:'Potential Tropical Cyclone' };
 
-
+function isInTropicalCone(code) {
+  const c = COORDS[code];
+  if (!c || !nhcConeFeatures.length) return null;
+  const pt = [c[1], c[0]];
+  for (const f of nhcConeFeatures) {
+    if (_pointInPolygonGeom(pt, f.geometry)) return f._stormName || 'Active Storm';
+  }
+  return null;
+}
 
 async function drawNHCLayer() {
   if (nhcLayer) { leafletMap.removeLayer(nhcLayer); nhcLayer = null; }
-  if (!showNHC) return;
+  nhcConeFeatures = [];
+  if (!showNHC) { renderMapMarkers(); return; }
   try {
     const r = await fetchWithTimeout(`${PROXY}?type=nhc`);
     if (!r.ok) return;
@@ -3552,6 +3571,7 @@ async function drawNHCLayer() {
         if (gr.ok) {
           const gis = await gr.json();
           if (gis?.cone?.features?.length) {
+            gis.cone.features.forEach(f => { f._stormName = storm.name || id; nhcConeFeatures.push(f); });
             layers.push(L.geoJSON(gis.cone, {
               style: { color, fillColor:color, fillOpacity:0.15, weight:1.5, dashArray:'6,3' },
               onEachFeature: (f,l) => l.bindTooltip('🌀 ' + (storm.name||id) + ' — Forecast Cone (' + (NHC_LABELS[storm.classification]||'Tropical') + ')', {sticky:true})
@@ -3608,6 +3628,7 @@ async function drawNHCLayer() {
     }
     if (layers.length) nhcLayer = L.layerGroup(layers).addTo(leafletMap);
   } catch(e) {}
+  renderMapMarkers();
 }
 
 function toggleNHC(on) {
