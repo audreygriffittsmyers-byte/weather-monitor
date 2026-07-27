@@ -5405,7 +5405,7 @@ function _getForecastHazards(code) {
       if (nums) wspd = Math.max.apply(null, nums.map(Number));
     }
     var gust = _gustForHour(code, p.startTime);
-    if (wspd >= 30 || (gust != null && gust >= 40)) windEvents.push({time:hr, speed:wspd, gust:gust, dir:p.windDirection||'', forecast:p.shortForecast||''});
+    if (wspd >= 25 || (gust != null && gust >= 30)) windEvents.push({time:hr, speed:wspd, gust:gust, dir:p.windDirection||'', forecast:p.shortForecast||''});
 
     // Temperature
     var temp = p.temperature;
@@ -5461,7 +5461,7 @@ function _buildForecastSection(codes) {
 
   // Wind hazard table
   if (windLocs.length) {
-    html += '<div style="font-weight:700;color:#ea580c;margin-bottom:4px;margin-top:4px">\uD83D\uDCA8 Forecast Wind / Gust Advisory Threshold (sustained >= 30 mph or gust >= 40 mph)</div>';
+    html += '<div style="font-weight:700;color:#ea580c;margin-bottom:4px;margin-top:4px">\uD83D\uDCA8 Forecast Wind / Gust Advisory Threshold (sustained >= 25 mph or gust >= 30 mph)</div>';
     html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">'
       + '<tr><th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">FBO</th>'
       + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">City / State</th>'
