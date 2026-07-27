@@ -3387,7 +3387,42 @@ async function fetchTAF(code) {
 const forecastData  = {}; // code -> 7-day periods array
 let   nasPrograms   = []; // [{type,arpt,reason,avg,max,end}]
 const hourlyData    = {}; // code -> hourly periods array
+const gridData      = {}; // code -> { windGust: [{start,end,mph}] } from raw NWS gridpoint data
 let   hourlyWindow  = 12; // hours to show: 4/8/12/24/48
+
+function _uomToMph(value, uom) {
+  if (value == null) return null;
+  if (uom && uom.includes('km_h')) return value / 1.60934;
+  if (uom && uom.includes('m_s'))  return value * 2.23694;
+  if (uom && uom.includes('kt'))   return value * 1.15078;
+  return value; // already mph or unknown -- best effort
+}
+
+function _parseGridGust(gridProps) {
+  var series = gridProps?.windGust?.values || [];
+  var uom = gridProps?.windGust?.uom || '';
+  return series.map(function(v) {
+    var parts = (v.validTime||'').split('/'); // "2026-07-27T18:00:00+00:00/PT1H"
+    var start = parts[0];
+    var mph = _uomToMph(v.value, uom);
+    return { start: start, durationISO: parts[1]||'', mph: mph != null ? Math.round(mph) : null };
+  }).filter(function(x){ return x.mph != null; });
+}
+
+function _gustForHour(code, hourStartTime) {
+  var series = gridData[code]?.windGust;
+  if (!series || !series.length) return null;
+  var t = new Date(hourStartTime).getTime();
+  for (var i = 0; i < series.length; i++) {
+    var s = new Date(series[i].start).getTime();
+    // crude duration parse -- default to 1-6 hours per NWS grid convention
+    var durMatch = /PT(\d+)H/.exec(series[i].durationISO||'');
+    var durHrs = durMatch ? parseInt(durMatch[1],10) : 1;
+    var e = s + durHrs*3600000;
+    if (t >= s && t < e) return series[i].mph;
+  }
+  return null;
+}
 
 async function fetch7Day(code) {
   const c = COORDS[code];
@@ -3401,13 +3436,16 @@ async function fetch7Day(code) {
     const pt = await ptRes.json();
     const fUrl  = pt.properties?.forecast;
     const fhUrl = pt.properties?.forecastHourly;
+    const fgUrl = pt.properties?.forecastGridData;
     if (!fUrl) return;
-    const [fRes, fhRes] = await Promise.all([
+    const [fRes, fhRes, fgRes] = await Promise.all([
       fetch(fUrl,  { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } }),
-      fhUrl ? fetch(fhUrl, { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } }) : Promise.resolve(null)
+      fhUrl ? fetch(fhUrl, { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } }) : Promise.resolve(null),
+      fgUrl ? fetch(fgUrl, { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } }) : Promise.resolve(null)
     ]);
     if (fRes.ok) { const fd = await fRes.json(); forecastData[code] = (fd.properties?.periods || []).slice(0, 14); }
     if (fhRes && fhRes.ok) { const fh = await fhRes.json(); hourlyData[code] = (fh.properties?.periods || []).slice(0, 48); }
+    if (fgRes && fgRes.ok) { const fg = await fgRes.json(); gridData[code] = { windGust: _parseGridGust(fg.properties) }; }
   } catch(e) {}
 }
 
@@ -5366,7 +5404,8 @@ function _getForecastHazards(code) {
       var nums = p.windSpeed.match(/\d+/g);
       if (nums) wspd = Math.max.apply(null, nums.map(Number));
     }
-    if (wspd >= 30) windEvents.push({time:hr, speed:wspd, dir:p.windDirection||'', forecast:p.shortForecast||''});
+    var gust = _gustForHour(code, p.startTime);
+    if (wspd >= 30 || (gust != null && gust >= 40)) windEvents.push({time:hr, speed:wspd, gust:gust, dir:p.windDirection||'', forecast:p.shortForecast||''});
 
     // Temperature
     var temp = p.temperature;
@@ -5422,20 +5461,28 @@ function _buildForecastSection(codes) {
 
   // Wind hazard table
   if (windLocs.length) {
-    html += '<div style="font-weight:700;color:#ea580c;margin-bottom:4px;margin-top:4px">\uD83D\uDCA8 Forecast Wind Advisory Threshold (>= 30 mph)</div>';
+    html += '<div style="font-weight:700;color:#ea580c;margin-bottom:4px;margin-top:4px">\uD83D\uDCA8 Forecast Wind / Gust Advisory Threshold (sustained >= 30 mph or gust >= 40 mph)</div>';
     html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">'
       + '<tr><th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">FBO</th>'
       + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">City / State</th>'
-      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">Peak Wind / Time</th></tr>';
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">Peak Sustained</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">Peak Gust</th>'
+      + '<th style="text-align:left;padding:3px 6px;background:#f0f4f7;font-size:10px;color:#556070">Time</th></tr>';
     windLocs.forEach(function(loc, i) {
       var bg = i%2===0?'#fff':'#f9f9f9';
-      var peak = loc.hazards.windEvents.reduce(function(a,b){return b.speed>a.speed?b:a;});
+      var peak = loc.hazards.windEvents.reduce(function(a,b){
+        var av = Math.max(a.speed||0, a.gust||0), bv = Math.max(b.speed||0, b.gust||0);
+        return bv>av?b:a;
+      });
       html += '<tr><td style="padding:4px 6px;font-weight:700;background:'+bg+'">'+loc.code+'</td>'
         + '<td style="padding:4px 6px;background:'+bg+'">'+loc.fbo.city+(loc.fbo.state?', '+loc.fbo.state:'')+'</td>'
-        + '<td style="padding:4px 6px;background:'+bg+'">'+peak.speed+' mph '+peak.dir+' at '+peak.time+'</td></tr>';
+        + '<td style="padding:4px 6px;background:'+bg+'">'+peak.speed+' mph '+peak.dir+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+(peak.gust!=null?('G'+peak.gust+' mph'):'\u2014')+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+peak.time+'</td></tr>';
     });
     html += '</table>';
   }
+
 
   // Heat hazard table
   if (heatLocs.length) {
@@ -5513,7 +5560,7 @@ function _buildForecastSection(codes) {
       var timelineItems = [];
       h.tsEvents.forEach(function(e)   { timelineItems.push({time:e.time, icon:'\u26A1', text:e.forecast,            color:'#ea580c'}); });
       h.precipEvents.forEach(function(e){ timelineItems.push({time:e.time, icon:'\uD83C\uDF27', text:e.pct+'% precip: '+e.forecast, color:'#2563eb'}); });
-      h.windEvents.forEach(function(e)  { timelineItems.push({time:e.time, icon:'\uD83D\uDCA8', text:e.speed+' mph '+e.dir,         color:'#ea580c'}); });
+      h.windEvents.forEach(function(e)  { timelineItems.push({time:e.time, icon:'\uD83D\uDCA8', text:e.speed+' mph '+e.dir+(e.gust!=null?' (G'+e.gust+' mph)':''), color:'#ea580c'}); });
       h.heatPeaks.forEach(function(e)   { timelineItems.push({time:e.time, icon:'\u2600\uFE0F', text:e.temp+'\u00B0F heat',          color:'#dc2626'}); });
       h.coldPeaks.forEach(function(e)   { timelineItems.push({time:e.time, icon:'\uD83E\uDDCA', text:e.temp+'\u00B0F cold',          color:'#2563eb'}); });
 
