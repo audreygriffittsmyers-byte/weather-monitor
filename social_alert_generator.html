@@ -250,20 +250,38 @@ function buildSVG(slug){
       let ly=chipY+(llines.length>1?10:16);
       llines.forEach(L=>{A(`<text x="${(x+cw/2).toFixed(0)}" y="${ly}" font-size="${lfs}" font-weight="800" fill="${empty?'#777':fg}" text-anchor="middle">${esc(L)}</text>`);ly+=lfs+1;});
     });
-    // Code rows below -- one per active tier, full panel width
+    // Code rows below -- one per active tier, full panel width, capped so it never collides with Source/footer
+    const MAX_CODE_Y = 543;
     let codeY=chipY+30;
+    let truncated = false;
+    let remainingCount = 0;
     chips.forEach(({label,bg},i)=>{
       const rawVal=(document.getElementById('f-chip-'+i)?.value||'').trim();
       if(!rawVal) return;
-      const cv=rawVal.toUpperCase().replace(/[\s,]+/g,' \xb7 ');
-      A(`<circle cx="${px+8}" cy="${codeY-3}" r="4" fill="${bg}"/>`) ;
+      const codeList = rawVal.toUpperCase().split(/[\s,]+/).filter(Boolean);
+      if (truncated) { remainingCount += codeList.length; return; }
+      const cv=codeList.join(' \xb7 ');
       const mc=Math.floor((pw-20)/6.2);
-      wrapText(cv,mc).forEach(L=>{
-        A(`<text x="${px+18}" y="${codeY}" font-size="9" font-weight="700" fill="#ffffff" fill-opacity="0.92">${esc(L)}</text>`) ;
+      const lines = wrapText(cv,mc);
+      let shownAnyForTier=false;
+      for (let li=0; li<lines.length; li++) {
+        if (codeY+13 > MAX_CODE_Y) {
+          // Count codes not yet shown in this tier (rough: remaining lines' worth)
+          const shownText = lines.slice(0,li).join(' ');
+          const shownCodes = shownText.split(' \xb7 ').filter(Boolean).length;
+          remainingCount += Math.max(0, codeList.length - shownCodes);
+          truncated = true;
+          break;
+        }
+        if (!shownAnyForTier) { A(`<circle cx="${px+8}" cy="${codeY-3}" r="4" fill="${bg}"/>`); shownAnyForTier=true; }
+        A(`<text x="${px+18}" y="${codeY}" font-size="9" font-weight="700" fill="#ffffff" fill-opacity="0.92">${esc(lines[li])}</text>`);
         codeY+=13;
-      });
-      codeY+=3;
+      }
+      if (!truncated) codeY+=3;
     });
+    if (truncated && remainingCount>0) {
+      A(`<text x="${px+18}" y="${Math.min(codeY,MAX_CODE_Y)}" font-size="9" font-weight="800" font-style="italic" fill="#ffffff" fill-opacity="0.75">+${remainingCount} more (see full list in WATCH)</text>`);
+    }
 
   } else {
     // Severity card
