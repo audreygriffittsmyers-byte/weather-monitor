@@ -244,7 +244,7 @@ function buildSVG(slug,focusIndex){
     const nC=chips.length;
     const cGap=nC>4?3:6;
     const cw=(pw-cGap*(nC-1))/nC;
-    const chipY=480;
+    const chipY=Math.max(480,y+8);
     // Draw label bars (24px tall)
     chips.forEach(({label,bg,fg},i)=>{
       const x=px+i*(cw+cGap);
