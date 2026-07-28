@@ -2116,11 +2116,12 @@ function getZoneTiming(codes) {
   return null;
 }
 
-function generateSummary() {
+async function generateSummary() {
   const content = document.getElementById('summary-content');
   const ts = document.getElementById('summary-timestamp');
   const status = document.getElementById('summary-status');
   try {
+    if (typeof fetchWPCPolygons === 'function') await fetchWPCPolygons();
     _generateSummaryInner(content, ts, status);
   } catch(e) {
     console.error('generateSummary error:', e);
@@ -2361,6 +2362,37 @@ function _generateSummaryInner(content, ts, status) {
   });
   aqiRows.sort(function(a,b){return a.detail.includes('now')?-1:b.detail.includes('now')?1:0;});
   if(aqiRows.length) html+=hazardCard('&#127787;&#65039;','POOR AIR QUALITY','Current conditions and 24-hour forecast, AQI at or above Unhealthy for Sensitive Groups','#7c3aed','#fff',aqiRows);
+
+  // WPC EXCESSIVE RAINFALL OUTLOOK (ERO) -- was missing from the live summary even though
+  // the downloadable brief already includes it via getEroInfoForCode
+  var eroRows=[];
+  var ERO_LABEL={HIGH:'HIGH',MDT:'MODERATE',SLGT:'SLIGHT',MRGL:'MARGINAL'};
+  var ERO_RANK={HIGH:0,MDT:1,SLGT:2,MRGL:3};
+  fboList.forEach(function(f){
+    var info=(typeof getEroInfoForCode==='function')?getEroInfoForCode(f.code):null;
+    if(!info) return;
+    eroRows.push({code:f.code,city:f.city,state:f.state,_tier:info.tier,detail:ERO_LABEL[info.tier]+' ERO Risk',detail2:info.timing||''});
+  });
+  eroRows.sort(function(a,b){ return ERO_RANK[a._tier]-ERO_RANK[b._tier]; });
+  if(eroRows.length) html+=hazardCard('&#127786;&#65039;','WPC EXCESSIVE RAINFALL OUTLOOK','Independent of any active NWS flood alert','#0369a1','#fff',eroRows);
+
+  // 24H FORECAST -- HEAVY RAIN & THUNDERSTORMS (was missing; downloadable brief already covers these)
+  var rainRows=[], tsRows=[];
+  fboList.forEach(function(f){
+    var h=(typeof _getForecastHazards==='function')?_getForecastHazards(f.code):null;
+    if(!h) return;
+    if(h.precipEvents && h.precipEvents.length){
+      var peak=h.precipEvents.reduce(function(a,b){return b.pct>a.pct?b:a;});
+      rainRows.push({code:f.code,city:f.city,state:f.state,detail:peak.pct+'% chance of precipitation',detail2:'Peak at '+peak.time+(peak.forecast?' — '+peak.forecast:'')});
+    }
+    if(h.tsEvents && h.tsEvents.length){
+      var first=h.tsEvents[0];
+      tsRows.push({code:f.code,city:f.city,state:f.state,detail:'Thunderstorms forecast',detail2:'First chance '+first.time+' — '+first.forecast});
+    }
+  });
+  rainRows.sort(function(a,b){return parseInt(b.detail)-parseInt(a.detail);});
+  if(rainRows.length) html+=hazardCard('&#127787;','FORECAST HEAVY RAIN','24-hour forecast, >= 50% chance of precipitation','#0369a1','#fff',rainRows);
+  if(tsRows.length) html+=hazardCard('&#9889;','FORECAST THUNDERSTORMS','24-hour forecast','#7c3aed','#fff',tsRows);
 
   // ALL CLEAR
   var clearList=fboList.filter(function(f){
