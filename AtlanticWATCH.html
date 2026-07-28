@@ -5054,15 +5054,23 @@ async function openAlertGenerator() {
 
   // ── Winter Weather (NWS alerts) -- chips: 0=WARNING,1=ADVISORY,2=MONITOR
   var wt0=[],wt1=[],wt2=[];
+  var wtBuckets=[wt0,wt1,wt2];
+  function _winterReassign(code, targetBucket) {
+    wtBuckets.forEach(function(b){ var idx=b.indexOf(code); if(idx!==-1) b.splice(idx,1); });
+    if (targetBucket.indexOf(code)===-1) targetBucket.push(code);
+  }
   COVERED.forEach(function(f){
     var r=results[f.code]; if(!r||!r.alerts) return;
+    var best=null; // 0=warning,1=advisory/watch,2=other -- keep only the highest severity
     r.alerts.forEach(function(al){
       if(!/winter|snow|ice|blizzard|freeze|frost/i.test(al.event)) return;
       var ev=al.event.toUpperCase();
-      if(ev.indexOf('WARNING')!==-1) { if(wt0.indexOf(f.code)===-1) wt0.push(f.code); }
-      else if(ev.indexOf('WATCH')!==-1 || ev.indexOf('ADVISORY')!==-1) { if(wt1.indexOf(f.code)===-1) wt1.push(f.code); }
-      else { if(wt2.indexOf(f.code)===-1) wt2.push(f.code); }
+      var rank = ev.indexOf('WARNING')!==-1 ? 0 : (ev.indexOf('WATCH')!==-1||ev.indexOf('ADVISORY')!==-1) ? 1 : 2;
+      if (best===null || rank<best) best=rank;
     });
+    if (best===0) _winterReassign(f.code, wt0);
+    else if (best===1) _winterReassign(f.code, wt1);
+    else if (best===2) _winterReassign(f.code, wt2);
   });
   addCard('winter_weather', 0, wt0);
   addCard('winter_weather', 1, wt1);
@@ -5082,6 +5090,11 @@ async function openAlertGenerator() {
 
   // ── Flood / ERO -- chips: 0=HIGH,1=MDT,2=SLGT,3=MRGL (WPC risk polygons, matches brief section)
   var fl0=[],fl1=[],fl2=[],fl3=[];
+  var flBuckets=[fl0,fl1,fl2,fl3];
+  function _floodReassign(code, targetBucket) {
+    flBuckets.forEach(function(b){ var idx=b.indexOf(code); if(idx!==-1) b.splice(idx,1); });
+    if (targetBucket.indexOf(code)===-1) targetBucket.push(code);
+  }
   COVERED.forEach(function(f){
     var tier = (typeof getEroTierForCode==='function') ? getEroTierForCode(f.code) : null;
     if (tier==='HIGH') fl0.push(f.code);
@@ -5089,14 +5102,16 @@ async function openAlertGenerator() {
     else if (tier==='SLGT') fl2.push(f.code);
     else if (tier==='MRGL') fl3.push(f.code);
   });
-  // Also fold in active NWS Flash Flood Warnings/Emergencies into the HIGH/MDT buckets
+  // Fold in genuine Flash Flood Warnings/Emergencies only (not plain river Flood Warnings/Advisories,
+  // which are a different NWS product from WPC's ERO risk scale and shouldn't be conflated with it).
+  // Reassigns rather than adds, so a location never ends up on two tier cards at once.
   COVERED.forEach(function(f){
     var r=results[f.code]; if(!r||!r.alerts) return;
     r.alerts.forEach(function(al){
-      if(!/flood/i.test(al.event)) return;
+      if(!/flash flood/i.test(al.event)) return;
       var ev=al.event.toUpperCase();
-      if(ev.indexOf('EMERGENCY')!==-1) { if(fl0.indexOf(f.code)===-1) fl0.push(f.code); }
-      else if(ev.indexOf('WARNING')!==-1) { if(fl1.indexOf(f.code)===-1) fl1.push(f.code); }
+      if(ev.indexOf('EMERGENCY')!==-1) _floodReassign(f.code, fl0);
+      else if(ev.indexOf('WARNING')!==-1 && fl0.indexOf(f.code)===-1) _floodReassign(f.code, fl1);
     });
   });
   addCard('flooding', 0, fl0);
