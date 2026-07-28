@@ -61,6 +61,7 @@ body { font-family: Arial, sans-serif; background: #0a1628; color: #e0e8f0; min-
     <button class="btn btn-primary" onclick="updatePreview()">↺ Refresh</button>
     <button class="btn btn-dl" onclick="downloadPNG()">⬇ PNG</button>
     <button class="btn btn-svg" onclick="downloadSVG()">⬇ SVG</button>
+    <button class="btn btn-dl" id="btn-download-all" style="display:none" onclick="downloadAllGalleryCards()">⬇ Download All</button>
   </div>
 </div>
 <div class="layout">
@@ -91,6 +92,10 @@ body { font-family: Arial, sans-serif; background: #0a1628; color: #e0e8f0; min-
       <div><label>SOURCE</label><input type="text" id="f-src" placeholder="Source: NOAA/NWS SPC..." oninput="updatePreview()" style="width:200px"></div>
     </div>
     <div class="preview-area"><div class="preview-wrap"><div id="preview-svg"></div></div></div>
+    <div id="gallery-view" style="display:none;overflow:auto;padding:20px;background:#06101e;flex:1">
+      <div style="color:#7a9ab8;font-size:12px;margin-bottom:14px" id="gallery-summary"></div>
+      <div id="gallery-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px"></div>
+    </div>
   </div>
   <div class="fields-panel">
     <div id="fields-content"><div style="color:#4a6a8a;font-size:11px;margin-top:20px;text-align:center">Select a template</div></div>
@@ -147,7 +152,7 @@ const T={
 
 let currentSlug='severe_tstorm',mapImageB64=null;
 
-function buildSVG(slug){
+function buildSVG(slug,focusIndex){
   const t=T[slug]; if(!t) return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#0a1628"/></svg>';
   const a=t.accent; const parts=[]; const A=s=>parts.push(s);
   const date=document.getElementById('f-date')?.value||'Month DD, YYYY';
@@ -155,6 +160,7 @@ function buildSVG(slug){
   const ticksRaw=document.getElementById('f-ticks')?.value||(t.tl||[]).join(', ');
   const tl=ticksRaw.split(',').map(s=>s.trim());
   const src=document.getElementById('f-src')?.value||t.src||'';
+  const hasFocus=(focusIndex!=null && focusIndex>=0);
 
   A(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${FONT}">`);
   A(`<defs>
@@ -243,12 +249,13 @@ function buildSVG(slug){
     chips.forEach(({label,bg,fg},i)=>{
       const x=px+i*(cw+cGap);
       const rawVal=(document.getElementById('f-chip-'+i)?.value||'').trim();
-      const empty=!rawVal;
-      A(`<rect x="${x.toFixed(0)}" y="${chipY}" width="${cw.toFixed(0)}" height="24" rx="4" fill="${empty?'#444':bg}" fill-opacity="${empty?0.4:1}"/>`) ;
+      const dimmed=hasFocus?(i!==focusIndex):!rawVal;
+      A(`<rect x="${x.toFixed(0)}" y="${chipY}" width="${cw.toFixed(0)}" height="24" rx="4" fill="${dimmed?'#444':bg}" fill-opacity="${dimmed?0.4:1}"/>`) ;
+      if(hasFocus&&i===focusIndex) A(`<rect x="${x.toFixed(0)}" y="${chipY}" width="${cw.toFixed(0)}" height="24" rx="4" fill="none" stroke="#ffffff" stroke-width="1.5"/>`);
       const lfs=nC>4?7.5:8.5;
       const llines=wrapText(label,nC>4?12:16);
       let ly=chipY+(llines.length>1?10:16);
-      llines.forEach(L=>{A(`<text x="${(x+cw/2).toFixed(0)}" y="${ly}" font-size="${lfs}" font-weight="800" fill="${empty?'#777':fg}" text-anchor="middle">${esc(L)}</text>`);ly+=lfs+1;});
+      llines.forEach(L=>{A(`<text x="${(x+cw/2).toFixed(0)}" y="${ly}" font-size="${lfs}" font-weight="800" fill="${dimmed?'#777':fg}" text-anchor="middle">${esc(L)}</text>`);ly+=lfs+1;});
     });
     // Code rows below -- one per active tier, full panel width, capped so it never collides with Source/footer
     const MAX_CODE_Y = 543;
@@ -256,6 +263,7 @@ function buildSVG(slug){
     let truncated = false;
     let remainingCount = 0;
     chips.forEach(({label,bg},i)=>{
+      if (hasFocus && i!==focusIndex) return;
       const rawVal=(document.getElementById('f-chip-'+i)?.value||'').trim();
       if(!rawVal) return;
       const codeList = rawVal.toUpperCase().split(/[\s,]+/).filter(Boolean);
@@ -392,6 +400,72 @@ function downloadPNG(){
   img.src=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
 }
 
+// ── Auto-gallery mode: one focused card per (hazard, tier) manifest entry ────
+var galleryCards = []; // {label, pngDataUrl, slug}
+
+function svgToPngDataUrl(svg) {
+  return new Promise(function(resolve) {
+    const img = new Image();
+    img.onload = function() {
+      const c = document.createElement('canvas'); c.width = 1200; c.height = 630;
+      c.getContext('2d').drawImage(img, 0, 0, 1200, 630);
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror = function() { resolve(null); };
+    img.src = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml'}));
+  });
+}
+
+async function runAutoGallery(manifest, dateStr, srcStr) {
+  document.querySelector('.preview-area').style.display = 'none';
+  document.getElementById('gallery-view').style.display = 'block';
+  document.getElementById('btn-download-all').style.display = '';
+  document.getElementById('gallery-summary').textContent = 'Generating ' + manifest.length + ' card' + (manifest.length!==1?'s':'') + ' from live WATCH data...';
+
+  galleryCards = [];
+  for (var i = 0; i < manifest.length; i++) {
+    var entry = manifest[i];
+    var t = T[entry.slug];
+    if (!t) continue;
+    var btn = document.querySelector('.template-btn[onclick*="' + entry.slug + '"]');
+    if (btn) selectTemplate(entry.slug, btn);
+    if (dateStr) document.getElementById('f-date').value = dateStr;
+    if (srcStr)  document.getElementById('f-src').value = srcStr;
+    if (entry.timing) document.getElementById('f-timing').value = entry.timing;
+    // Clear all chip fields for this template, then set only the focused tier
+    (t.chips||[]).forEach(function(c,ci){ var el=document.getElementById('f-chip-'+ci); if(el) el.value=''; });
+    var chipEl = document.getElementById('f-chip-' + entry.chipIndex);
+    if (chipEl) chipEl.value = entry.codes || '';
+    var svg = buildSVG(entry.slug, entry.chipIndex);
+    var pngDataUrl = await svgToPngDataUrl(svg);
+    var chipLabel = (t.chips && t.chips[entry.chipIndex]) ? t.chips[entry.chipIndex].label : '';
+    galleryCards.push({ label: t.title + ' \u2014 ' + chipLabel, slug: entry.slug, pngDataUrl: pngDataUrl });
+  }
+
+  document.getElementById('gallery-summary').textContent = galleryCards.length + ' card' + (galleryCards.length!==1?'s':'') + ' generated from current live hazard data. Each card shows only the locations in that specific risk tier.';
+  var grid = document.getElementById('gallery-grid');
+  grid.innerHTML = galleryCards.map(function(c, i) {
+    return '<div style="background:#0d1b2e;border:1px solid #1a3a5c;border-radius:8px;overflow:hidden">'
+      + (c.pngDataUrl ? '<img src="' + c.pngDataUrl + '" style="width:100%;display:block">' : '<div style="padding:40px;text-align:center;color:#7a9ab8">Render failed</div>')
+      + '<div style="padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px">'
+      + '<span style="color:#e0e8f0;font-size:11px;font-weight:700">' + esc(c.label) + '</span>'
+      + '<a download="WATCH_' + c.slug + '_card' + (i+1) + '.png" href="' + (c.pngDataUrl||'#') + '" style="background:#1a3a5c;color:#fff;font-size:10px;font-weight:700;padding:4px 10px;border-radius:4px;text-decoration:none;white-space:nowrap">\u2b07 PNG</a>'
+      + '</div></div>';
+  }).join('');
+}
+
+function downloadAllGalleryCards() {
+  galleryCards.forEach(function(c, i) {
+    if (!c.pngDataUrl) return;
+    setTimeout(function() {
+      var a = document.createElement('a');
+      a.href = c.pngDataUrl;
+      a.download = 'WATCH_' + c.slug + '_card' + (i+1) + '.png';
+      a.click();
+    }, i * 250);
+  });
+}
+
 // postMessage from WATCH
 window.addEventListener('message',function(e){
   const data=e.data; if(!data||data.type!=='WATCH_ALERT_DATA') return;
@@ -416,6 +490,20 @@ selectTemplate('severe_tstorm',document.querySelector('.template-btn'));
 // Auto-populate from WATCH URL params
 (function() {
   var p = new URLSearchParams(window.location.search);
+
+  // New manifest-driven multi-card auto mode
+  if (p.get('auto') === '1' && p.has('manifest')) {
+    try {
+      var manifest = JSON.parse(p.get('manifest'));
+      var dateStr = p.get('date') || '';
+      var srcStr  = p.get('src') || '';
+      if (Array.isArray(manifest) && manifest.length) {
+        runAutoGallery(manifest, dateStr, srcStr);
+        return;
+      }
+    } catch(e) { console.warn('Bad manifest param', e); }
+  }
+
   if (!p.has('slug')) return;
 
   var slug = p.get('slug') || 'severe_tstorm';
