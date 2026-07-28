@@ -2755,18 +2755,34 @@ async function drawSPCPolygons() {
   }).addTo(leafletMap);
 }
 
+function _fireTier(p) {
+  var dn = parseInt((p||{}).dn, 10);
+  if (dn >= 10) return 'EXTREME';
+  if (dn === 8) return 'CRITICAL';
+  if (dn === 5) return 'ELEVATED';
+  return null;
+}
+var FIRE_TIER_ORDER = ['EXTREME','CRITICAL','ELEVATED'];
+function getFireTierForCode(code) {
+  var c = COORDS[code];
+  if (!c || !firePolygons || !firePolygons.features) return null;
+  var pt = [c[1], c[0]];
+  var best = null, bestRank = 99;
+  firePolygons.features.forEach(function(f) {
+    if (!_pointInPolygonGeom(pt, f.geometry)) return;
+    var tier = _fireTier(f.properties);
+    if (!tier) return;
+    var rank = FIRE_TIER_ORDER.indexOf(tier);
+    if (rank >= 0 && rank < bestRank) { bestRank = rank; best = tier; }
+  });
+  return best;
+}
+
 async function drawFirePolygons() {
   if (firePolyLayer) { leafletMap.removeLayer(firePolyLayer); firePolyLayer = null; }
   if (!showFirePolys) return;
   const data = await fetchFirePolygons();
   if (!data?.features?.length) return;
-  function _fireTier(p) {
-    var dn = parseInt((p||{}).dn, 10);
-    if (dn >= 10) return 'EXTREME';
-    if (dn === 8) return 'CRITICAL';
-    if (dn === 5) return 'ELEVATED';
-    return null;
-  }
   firePolyLayer = L.geoJSON(data, {
     style: f => {
       const tier = _fireTier(f.properties);
@@ -4965,75 +4981,147 @@ function _buildAQISection(codes) {
 
 
 // ── Social Alert Generator launcher ──────────────────────────────────────────
-// Collects live WATCH data, encodes into URL params, opens generator in new tab
-function openAlertGenerator() {
+// Collects live WATCH data, buckets by tier per hazard type, and builds a manifest
+// of one card per (hazard, tier) that actually has locations. The generator
+// renders one focused card per manifest entry instead of bundling every tier
+// onto a single card.
+async function openAlertGenerator() {
+  // Force-load polygon data so ERO/Fire tiers are accurate even if the map
+  // layers were never opened this session.
+  await Promise.all([
+    (typeof fetchWPCPolygons === 'function') ? fetchWPCPolygons() : Promise.resolve(),
+    (typeof fetchFirePolygons === 'function') ? fetchFirePolygons() : Promise.resolve(),
+  ]);
+
   var now = new Date();
   var dateStr = now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  var manifest = [];
 
-  // Collect SPC zones -> FBO codes
+  function addCard(slug, chipIndex, codes, timingOverride) {
+    if (!codes || !codes.length) return;
+    manifest.push({ slug: slug, chipIndex: chipIndex, codes: codes.join(' '), timing: timingOverride || null });
+  }
+
+  // ── SPC Convective -- chips: 0=HIGH,1=MDT,2=ENH,3=SLGT,4=MRGL,5=TSTM
   var zones = {};
-  var heatCodes=[], windCodes=[], coldCodes=[], aqiCodes=[];
-  var floodCodes=[], winterCodes=[], alertCodes=[];
-
   COVERED.forEach(function(f) {
     var s = spcData[1] && spcData[1][f.code];
     if (s && s.st==='ok' && s.label && s.label!=='No Risk') {
       if (!zones[s.label]) zones[s.label]=[];
       zones[s.label].push(f.code);
     }
-    var obs = obsData[f.code];
-    if (obs) {
-      if (obs.tempF >= 95) heatCodes.push(f.code);
-      if (obs.tempF <= 15) coldCodes.push(f.code);
-    }
-    if (typeof getWindStatus==='function' && (getWindStatus(f.code)||getTAFWindForecast(f.code,6))) windCodes.push(f.code);
-    var a = aqiData[f.code]; if (a && a.aqi>=101) aqiCodes.push(f.code);
-    var r = results[f.code];
-    if (r && r.alerts && r.alerts.length) {
-      alertCodes.push(f.code);
-      r.alerts.forEach(function(al){
-        if (/flood/i.test(al.event)) { if(!floodCodes.includes(f.code)) floodCodes.push(f.code); }
-        if (/winter|snow|ice|blizzard|freeze/i.test(al.event)) { if(!winterCodes.includes(f.code)) winterCodes.push(f.code); }
-      });
-    }
+  });
+  var SPC_ORDER = ['HIGH','MDT','ENH','SLGT','MRGL','TSTM'];
+  SPC_ORDER.forEach(function(z, i) {
+    var timing = (typeof parseSPCTiming==='function' && z!=='TSTM') ? parseSPCTiming(z) : null;
+    addCard('severe_tstorm', i, zones[z], timing);
   });
 
-  // Pick best template slug by severity priority
-  var ZONE_ORDER = ['HIGH','MDT','ENH','SLGT','MRGL'];
-  var topZone = ZONE_ORDER.find(function(z){ return zones[z] && zones[z].length; });
-  var slug = 'severe_tstorm';
-  if (topZone) slug = 'severe_tstorm';
-  else if (heatCodes.length) slug = 'extreme_heat';
-  else if (windCodes.length) slug = 'high_wind';
-  else if (floodCodes.length) slug = 'flooding';
-  else if (winterCodes.length) slug = 'winter_weather';
-  else if (coldCodes.length) slug = 'extreme_cold';
-  else if (aqiCodes.length) slug = 'air_quality';
-  else if (alertCodes.length) slug = 'nws_warning';
-
-  // SPC chip codes -- 6 tiers
-  var c0 = (zones['HIGH']||[]).join(' ');
-  var c1 = (zones['MDT']||[]).join(' ');
-  var c2 = (zones['ENH']||[]).join(' ');
-  var c3 = (zones['SLGT']||[]).join(' ');
-  var c4 = (zones['MRGL']||[]).join(' ');
-  var c5 = (zones['TSTM']||[]).join(' ');
-
-  // Heat chip codes -- 5 tiers based on ramp stress level
+  // ── Extreme Heat -- chips: 0=EXTREME,1=MAJOR,2=MODERATE,3=MINOR,4=LITTLE/NONE
   var hc0=[],hc1=[],hc2=[],hc3=[],hc4=[];
   COVERED.forEach(function(f){
     var obs=obsData[f.code]; if(!obs) return;
     var st=getRampStressStatus(obs);
-    if(!st) { if(obs.tempF>=115) hc0.push(f.code); else if(obs.tempF>=105) hc1.push(f.code); else if(obs.tempF>=100) hc2.push(f.code); else if(obs.tempF>=95) hc3.push(f.code); return; }
+    if (st && st.label.indexOf('HEAT')===-1) return; // cold, not heat -- skip here
+    if(!st) { if(obs.tempF>=95) hc3.push(f.code); return; }
     var l=(st.label||'').toUpperCase();
-    if(l.includes('DANGER')) hc0.push(f.code);
-    else if(l.includes('EXTREME')) hc1.push(f.code);
-    else if(l.includes('HIGH CAUTION')) hc2.push(f.code);
-    else if(l.includes('CAUTION')) hc3.push(f.code);
+    if(l.indexOf('DANGER')!==-1) hc0.push(f.code);
+    else if(l.indexOf('ADVISORY')!==-1) hc1.push(f.code);
+    else if(l.indexOf('CAUTION')!==-1) hc3.push(f.code);
     else hc4.push(f.code);
   });
+  addCard('extreme_heat', 0, hc0);
+  addCard('extreme_heat', 1, hc1);
+  addCard('extreme_heat', 2, hc2);
+  addCard('extreme_heat', 3, hc3);
+  addCard('extreme_heat', 4, hc4);
 
-  // AQI chip codes -- 6 tiers
+  // ── Extreme Cold -- chips: 0=WIND CHILL WARNING,1=COLD WX ADVISORY,2=MONITOR
+  var cc0=[],cc1=[],cc2=[];
+  COVERED.forEach(function(f){
+    var obs=obsData[f.code]; if(!obs) return;
+    var st=getRampStressStatus(obs);
+    if (st && st.label.indexOf('COLD')===-1 && st.label.indexOf('FROST')===-1) return;
+    if(!st) { if(obs.tempF<=15) cc2.push(f.code); return; }
+    var l=(st.label||'').toUpperCase();
+    if(l.indexOf('WARNING')!==-1 || l.indexOf('DANGER')!==-1) cc0.push(f.code);
+    else if(l.indexOf('ADVISORY')!==-1) cc1.push(f.code);
+    else cc2.push(f.code);
+  });
+  addCard('extreme_cold', 0, cc0);
+  addCard('extreme_cold', 1, cc1);
+  addCard('extreme_cold', 2, cc2);
+
+  // ── Winter Weather (NWS alerts) -- chips: 0=WARNING,1=ADVISORY,2=MONITOR
+  var wt0=[],wt1=[],wt2=[];
+  COVERED.forEach(function(f){
+    var r=results[f.code]; if(!r||!r.alerts) return;
+    r.alerts.forEach(function(al){
+      if(!/winter|snow|ice|blizzard|freeze|frost/i.test(al.event)) return;
+      var ev=al.event.toUpperCase();
+      if(ev.indexOf('WARNING')!==-1) { if(wt0.indexOf(f.code)===-1) wt0.push(f.code); }
+      else if(ev.indexOf('WATCH')!==-1 || ev.indexOf('ADVISORY')!==-1) { if(wt1.indexOf(f.code)===-1) wt1.push(f.code); }
+      else { if(wt2.indexOf(f.code)===-1) wt2.push(f.code); }
+    });
+  });
+  addCard('winter_weather', 0, wt0);
+  addCard('winter_weather', 1, wt1);
+  addCard('winter_weather', 2, wt2);
+
+  // ── High Wind -- chips: 0=WARNING/PROTOCOL,1=ADVISORY,2=MONITOR
+  var wc0=[],wc1=[],wc2=[];
+  COVERED.forEach(function(f){
+    var w=getWindStatus(f.code);
+    var tafW=getTAFWindForecast ? getTAFWindForecast(f.code,6) : null;
+    if(w){ if(w.level==='protocol') wc0.push(f.code); else wc1.push(f.code); }
+    else if(tafW) wc2.push(f.code);
+  });
+  addCard('high_wind', 0, wc0);
+  addCard('high_wind', 1, wc1);
+  addCard('high_wind', 2, wc2);
+
+  // ── Flood / ERO -- chips: 0=HIGH,1=MDT,2=SLGT,3=MRGL (WPC risk polygons, matches brief section)
+  var fl0=[],fl1=[],fl2=[],fl3=[];
+  COVERED.forEach(function(f){
+    var tier = (typeof getEroTierForCode==='function') ? getEroTierForCode(f.code) : null;
+    if (tier==='HIGH') fl0.push(f.code);
+    else if (tier==='MDT') fl1.push(f.code);
+    else if (tier==='SLGT') fl2.push(f.code);
+    else if (tier==='MRGL') fl3.push(f.code);
+  });
+  // Also fold in active NWS Flash Flood Warnings/Emergencies into the HIGH/MDT buckets
+  COVERED.forEach(function(f){
+    var r=results[f.code]; if(!r||!r.alerts) return;
+    r.alerts.forEach(function(al){
+      if(!/flood/i.test(al.event)) return;
+      var ev=al.event.toUpperCase();
+      if(ev.indexOf('EMERGENCY')!==-1) { if(fl0.indexOf(f.code)===-1) fl0.push(f.code); }
+      else if(ev.indexOf('WARNING')!==-1) { if(fl1.indexOf(f.code)===-1) fl1.push(f.code); }
+    });
+  });
+  addCard('flooding', 0, fl0);
+  addCard('flooding', 1, fl1);
+  addCard('flooding', 2, fl2);
+  addCard('flooding', 3, fl3);
+
+  // ── Tropical -- chips: 0=HURRICANE WARNING,1=HURRICANE WATCH,2=TS WARNING
+  var tr0=[],tr1=[],tr2=[];
+  COVERED.forEach(function(f){
+    var r=results[f.code];
+    var alerts=(r&&r.alerts||[]).filter(function(a){return /tropical|hurricane|typhoon|storm surge/i.test(a.event);});
+    var inCone = (typeof isInTropicalCone==='function') ? isInTropicalCone(f.code) : null;
+    if (!alerts.length && !inCone) return;
+    var evUp = alerts.map(function(a){return a.event.toUpperCase();}).join(' ');
+    if (evUp.indexOf('HURRICANE WARNING')!==-1) tr0.push(f.code);
+    else if (evUp.indexOf('HURRICANE WATCH')!==-1) tr1.push(f.code);
+    else if (alerts.length) tr2.push(f.code);
+    else if (inCone) tr2.push(f.code); // in cone, no formal alert yet
+  });
+  addCard('tropical', 0, tr0);
+  addCard('tropical', 1, tr1);
+  addCard('tropical', 2, tr2);
+
+  // ── Air Quality -- chips: 0=HAZARDOUS,1=VERY UNHEALTHY,2=UNHEALTHY,3=UNHEALTHY SENS,4=MODERATE,5=GOOD
   var aq0=[],aq1=[],aq2=[],aq3=[],aq4=[],aq5=[];
   COVERED.forEach(function(f){
     var a=aqiData[f.code]; if(!a) return;
@@ -5043,63 +5131,35 @@ function openAlertGenerator() {
     else if(ai>=151) aq2.push(f.code);
     else if(ai>=101) aq3.push(f.code);
     else if(ai>=51)  aq4.push(f.code);
-    else             aq5.push(f.code);
   });
+  addCard('air_quality', 0, aq0);
+  addCard('air_quality', 1, aq1);
+  addCard('air_quality', 2, aq2);
+  addCard('air_quality', 3, aq3);
+  addCard('air_quality', 4, aq4);
 
-  // Wind -- protocol vs advisory
-  var wc0=[],wc1=[],wc2=[];
+  // ── Fire Weather -- chips: 0=EXTREME WIND,1=CRITICAL WIND,2=ELEVATED WIND
+  var fw0=[],fw1=[],fw2=[];
   COVERED.forEach(function(f){
-    var w=getWindStatus(f.code)||getTAFWindForecast(f.code,6);
-    if(!w) return;
-    if(w.level==='protocol') wc0.push(f.code);
-    else wc1.push(f.code);
+    var tier = (typeof getFireTierForCode==='function') ? getFireTierForCode(f.code) : null;
+    if (tier==='EXTREME') fw0.push(f.code);
+    else if (tier==='CRITICAL') fw1.push(f.code);
+    else if (tier==='ELEVATED') fw2.push(f.code);
   });
+  addCard('fire_weather', 0, fw0);
+  addCard('fire_weather', 1, fw1);
+  addCard('fire_weather', 2, fw2);
 
-  // ERO flood -- 4 tiers from NWS alerts
-  var fl0=[],fl1=[],fl2=[],fl3=[];
-  COVERED.forEach(function(f){
-    var r=results[f.code]; if(!r||!r.alerts) return;
-    r.alerts.forEach(function(al){
-      if(!/flood/i.test(al.event)) return;
-      var ev=al.event.toUpperCase();
-      if(ev.includes('FLASH FLOOD EMERGENCY')) fl0.push(f.code);
-      else if(ev.includes('FLASH FLOOD WARNING')) fl1.push(f.code);
-      else if(ev.includes('FLASH FLOOD WATCH')) fl2.push(f.code);
-      else fl3.push(f.code);
-    });
-  });
+  if (!manifest.length) {
+    alert('No active hazards found across covered locations right now -- nothing to generate.');
+    return;
+  }
 
-  // SPC timing
-  var timing = (typeof parseSPCTiming==='function' && topZone) ? parseSPCTiming(topZone) : null;
-  var timingStr = timing || 'This Afternoon \u2013 Tonight';
-
-  // NWS top alert
-  var topAlert = null;
-  COVERED.forEach(function(f){
-    var r=results[f.code]; if(!r||!r.alerts||!r.alerts.length) return;
-    if(!topAlert) topAlert=r.alerts[0];
-  });
-
-  // Build URL params
   var params = new URLSearchParams({
-    slug: slug,
+    auto: '1',
     date: dateStr,
-    timing: timingStr,
-    src: 'Source: NOAA/NWS Storm Prediction Center \u2014 SPC Day 1 Outlook, ' + now.toUTCString().slice(5,16) + ' UTC',
-    // SPC chips
-    c0:c0, c1:c1, c2:c2, c3:c3, c4:c4, c5:c5,
-    // Heat chips
-    h0:hc0.join(' '), h1:hc1.join(' '), h2:hc2.join(' '), h3:hc3.join(' '), h4:hc4.join(' '),
-    // AQI chips
-    a0:aq0.join(' '), a1:aq1.join(' '), a2:aq2.join(' '), a3:aq3.join(' '), a4:aq4.join(' '), a5:aq5.join(' '),
-    // Wind chips
-    w0:wc0.join(' '), w1:wc1.join(' '), w2:wc2.join(' '),
-    // Flood chips
-    f0:fl0.join(' '), f1:fl1.join(' '), f2:fl2.join(' '), f3:fl3.join(' '),
-    // NWS
-    hazardType: topAlert ? topAlert.event : '',
-    locations: alertCodes.slice(0,10).join(' \xb7 '),
-    effective: topAlert && topAlert.expires ? 'through ' + fmtTime(topAlert.expires) : '',
+    src: 'Source: NOAA/NWS -- WATCH Weather Awareness Tactical Command Hub, ' + now.toUTCString().slice(5,16) + ' UTC',
+    manifest: JSON.stringify(manifest),
   });
 
   window.open('social_alert_generator.html?' + params.toString(), '_blank');
