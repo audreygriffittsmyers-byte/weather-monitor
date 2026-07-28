@@ -420,7 +420,19 @@ async function runAutoGallery(manifest, dateStr, srcStr) {
   document.querySelector('.preview-area').style.display = 'none';
   document.getElementById('gallery-view').style.display = 'block';
   document.getElementById('btn-download-all').style.display = '';
-  document.getElementById('gallery-summary').textContent = 'Generating ' + manifest.length + ' card' + (manifest.length!==1?'s':'') + ' from live WATCH data...';
+
+  // These panels only ever affected the single manual-mode preview (now hidden), so
+  // leaving them visible and clickable in gallery mode did nothing and looked broken.
+  var sidebar = document.querySelector('.sidebar');
+  var fieldsPanel = document.querySelector('.fields-panel');
+  var toolbar = document.querySelector('.toolbar');
+  if (sidebar) sidebar.style.display = 'none';
+  if (fieldsPanel) fieldsPanel.style.display = 'none';
+  if (toolbar) toolbar.style.display = 'none';
+
+  document.getElementById('gallery-summary').innerHTML =
+    'Generating ' + manifest.length + ' card' + (manifest.length!==1?'s':'') + ' from live WATCH data...'
+    + '<br><a href="javascript:void(0)" onclick="exitGalleryMode()" style="color:#29B6D8;font-size:11px">\u2190 Switch to manual single-card mode</a>';
 
   galleryCards = [];
   for (var i = 0; i < manifest.length; i++) {
@@ -442,7 +454,8 @@ async function runAutoGallery(manifest, dateStr, srcStr) {
     galleryCards.push({ label: t.title + ' \u2014 ' + chipLabel, slug: entry.slug, pngDataUrl: pngDataUrl });
   }
 
-  document.getElementById('gallery-summary').textContent = galleryCards.length + ' card' + (galleryCards.length!==1?'s':'') + ' generated from current live hazard data. Each card shows only the locations in that specific risk tier.';
+  document.getElementById('gallery-summary').innerHTML = galleryCards.length + ' card' + (galleryCards.length!==1?'s':'') + ' generated from current live hazard data. Each card shows only the locations in that specific risk tier.'
+    + '<br><a href="javascript:void(0)" onclick="exitGalleryMode()" style="color:#29B6D8;font-size:11px">\u2190 Switch to manual single-card mode</a>';
   var grid = document.getElementById('gallery-grid');
   grid.innerHTML = galleryCards.map(function(c, i) {
     return '<div style="background:#0d1b2e;border:1px solid #1a3a5c;border-radius:8px;overflow:hidden">'
@@ -452,6 +465,19 @@ async function runAutoGallery(manifest, dateStr, srcStr) {
       + '<a download="WATCH_' + c.slug + '_card' + (i+1) + '.png" href="' + (c.pngDataUrl||'#') + '" style="background:#1a3a5c;color:#fff;font-size:10px;font-weight:700;padding:4px 10px;border-radius:4px;text-decoration:none;white-space:nowrap">\u2b07 PNG</a>'
       + '</div></div>';
   }).join('');
+}
+
+function exitGalleryMode() {
+  document.getElementById('gallery-view').style.display = 'none';
+  document.getElementById('btn-download-all').style.display = 'none';
+  document.querySelector('.preview-area').style.display = '';
+  var sidebar = document.querySelector('.sidebar');
+  var fieldsPanel = document.querySelector('.fields-panel');
+  var toolbar = document.querySelector('.toolbar');
+  if (sidebar) sidebar.style.display = '';
+  if (fieldsPanel) fieldsPanel.style.display = '';
+  if (toolbar) toolbar.style.display = '';
+  updatePreview();
 }
 
 function downloadAllGalleryCards() {
