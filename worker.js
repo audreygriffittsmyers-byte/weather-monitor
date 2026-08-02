@@ -276,6 +276,26 @@ export default {
       } catch(e) { return new Response(JSON.stringify(empty), { headers: GEOJSON }); }
     }
 
+    if (type === 'nwsproduct') {
+      // Generic AWIPS text product fetch via the official products API.
+      // code=AWIPS product id (e.g. SWODY1, QPFERD, PMDSPD), office=issuing center (e.g. KWNS, KWBC)
+      const ALLOWED_PRODUCTS = { SWODY1:'KWNS', QPFERD:'KWBC', PMDSPD:'KWBC' };
+      const code = (url.searchParams.get('code') || '').toUpperCase();
+      const office = ALLOWED_PRODUCTS[code];
+      if (!office) return new Response(JSON.stringify({ text: '', error: 'unsupported product' }), { headers: CORS });
+      try {
+        const listRes = await fetch(`https://api.weather.gov/products/types/${code}/locations/${office}?limit=1`,
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 900, cacheEverything: true } });
+        if (!listRes.ok) return new Response(JSON.stringify({ text: '', error: 'list fetch failed' }), { headers: CORS });
+        const listJson = await listRes.json();
+        const first = listJson['@graph'] && listJson['@graph'][0];
+        if (!first || !first.id) return new Response(JSON.stringify({ text: '', error: 'no product found' }), { headers: CORS });
+        const prodRes = await fetch(first.id, { headers: { 'User-Agent': UA }, cf: { cacheTtl: 900, cacheEverything: true } });
+        const prodJson = prodRes.ok ? await prodRes.json() : {};
+        return new Response(JSON.stringify({ text: prodJson.productText || '', issuanceTime: prodJson.issuanceTime || null }), { headers: CORS });
+      } catch(e) { return new Response(JSON.stringify({ text: '', error: e.message }), { headers: CORS }); }
+    }
+
     if (type === 'tropicaloutlook') {
       try {
         const basin = url.searchParams.get('basin') || 'at';
