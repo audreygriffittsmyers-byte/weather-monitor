@@ -2303,6 +2303,11 @@ function _generateSummaryInner(content, ts, status) {
   var tropSection = getTropicalOutlookSection();
   if (tropSection) html += tropSection;
 
+  // SPC/WPC NARRATIVE DISCUSSIONS -- forecaster narrative text (Day 1 Convective Outlook,
+  // Excessive Rainfall Discussion, Short Range Forecast Discussion). Previously had to be
+  // copy-pasted in manually; now pulled automatically from the same NWS text products.
+  html += getNWSNarrativeSection();
+
   // NWS ALERTS
   var nwsBkt={EXTREME:[],SEVERE:[],MODERATE:[],LOW:[]};
   fboList.forEach(function(f){
@@ -3737,7 +3742,44 @@ function toggleNHC(on) {
   if (on && leafletMap) drawNHCLayer();
 }
 
-// ── Tropical Outlook Text ─────────────────────────────────────────────────────
+// ── SPC/WPC Narrative Discussion Text ────────────────────────────────────────
+// These are the forecaster-written narrative products (not just the categorical
+// tier/polygon data WATCH already extracts) -- the same products that required
+// manual copy-paste before this was wired in.
+let spcDay1NarrativeText = null;
+let wpcRainDiscussionText = null;
+let wpcShortRangeText = null;
+
+async function fetchNWSNarrativeProducts() {
+  try {
+    const [rSpc, rRain, rShort] = await Promise.all([
+      fetch(`${PROXY}?type=nwsproduct&code=SWODY1`),
+      fetch(`${PROXY}?type=nwsproduct&code=QPFERD`),
+      fetch(`${PROXY}?type=nwsproduct&code=PMDSPD`),
+    ]);
+    if (rSpc.ok)   { const d = await rSpc.json();   spcDay1NarrativeText  = d.text || null; }
+    if (rRain.ok)  { const d = await rRain.json();  wpcRainDiscussionText = d.text || null; }
+    if (rShort.ok) { const d = await rShort.json(); wpcShortRangeText     = d.text || null; }
+  } catch(e) {}
+}
+
+function _narrativeCard(icon, label, text) {
+  if (!text) return '';
+  var clean = text.replace(/\r\n/g, '\n').trim();
+  return '<div style="background:#fff;border:1px solid #1e3a5f;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
+    + '<div style="font-size:9px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">' + icon + ' ' + label + '</div>'
+    + '<div style="font-size:10px;font-family:monospace;white-space:pre-wrap;color:#333;max-height:320px;overflow-y:auto">' + clean.replace(/</g,'&lt;') + '</div>'
+    + '</div>';
+}
+
+function getNWSNarrativeSection() {
+  var html = '';
+  html += _narrativeCard('&#9928;', 'SPC Day 1 Convective Outlook (Full Narrative)', spcDay1NarrativeText);
+  html += _narrativeCard('&#127786;&#65039;', 'WPC Excessive Rainfall Discussion', wpcRainDiscussionText);
+  html += _narrativeCard('&#128203;', 'WPC Short Range Forecast Discussion (Day 1-2)', wpcShortRangeText);
+  return html;
+}
+
 let tropicalOutlookText   = null;
 let tropicalOutlookTextEP = null;
 let tropicalOutlookTextCP = null;
@@ -4550,6 +4592,22 @@ function _watchDownloadDocx(codes, notes, sections) {
     ];
     tstmActions.forEach(function(a,i){ add((i+1)+'. '+a, ppr({indL:'720',indH:'360',after:'80'}), rpr({sz:22})); });
     sp();
+
+    // Narrative forecaster discussions -- previously had to be copy-pasted in manually
+    [
+      ['SPC DAY 1 CONVECTIVE OUTLOOK (FULL NARRATIVE)', spcDay1NarrativeText],
+      ['WPC EXCESSIVE RAINFALL DISCUSSION', wpcRainDiscussionText],
+      ['WPC SHORT RANGE FORECAST DISCUSSION (DAY 1-2)', wpcShortRangeText],
+    ].forEach(function(pair){
+      var label = pair[0], text = pair[1];
+      if (!text) return;
+      add(label, ppr({fill:'1e3a5f',jc:'left',after:'60'}), rpr({b:true,sz:20,color:'FFFFFF'}));
+      text.replace(/\r\n/g,'\n').trim().split('\n').forEach(function(line){
+        if (!line.trim()) return;
+        add(line, ppr({after:'20'}), rpr({sz:16}));
+      });
+      sp();
+    });
     }
   } else if (!sections.spc) {
     // Non-SPC brief header
@@ -5269,6 +5327,7 @@ function openPrintBriefing() {
   modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
   document.getElementById('bo-docx').addEventListener('click', async function() {
     await fetchWPCPolygons();
+    if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText) await fetchNWSNarrativeProducts();
     var sects = {
       spc:document.getElementById('bo-spc')&&document.getElementById('bo-spc').checked,
       nhc:document.getElementById('bo-nhc')&&document.getElementById('bo-nhc').checked,
@@ -5302,6 +5361,7 @@ function openPrintBriefing() {
 
   document.getElementById('bo-generate').addEventListener('click', async function() {
     await fetchWPCPolygons();
+    if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText) await fetchNWSNarrativeProducts();
     var sections = {
       spc:    document.getElementById('bo-spc')    && document.getElementById('bo-spc').checked,
       nhc:    document.getElementById('bo-nhc')    && document.getElementById('bo-nhc').checked,
@@ -6049,6 +6109,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   }
   if (sections.wind) { var _wl=codes.filter(function(c){return !!(getWindStatus(c)||getTAFWindForecast(c,6));}); if(_wl.length) { html+=_buildWindSection(_wl); html+=_getActionHTML('wind'); } }
   if (sections.nhc) html += _buildNHCSection(codes);
+  if (sections.spc) html += getNWSNarrativeSection();
   if (sections.winter) html += _buildNWSHazardSection(codes,'winter',/winter|snow|ice|blizzard|freeze|frost/i,'❄ WINTER STORM','#1e40af','#EFF6FF','Winter weather hazards expected. Ice accumulation, heavy snow, and hazardous travel conditions possible.');
   if (sections.winter) html += _getActionHTML('winter');
   if (sections.flood) html += _buildNWSHazardSection(codes,'flood',/flood/i,'🌊 FLOOD / FLASH FLOOD','#065f46','#ECFDF5','Flooding or flash flooding possible at or near impacted locations.');
@@ -7325,6 +7386,7 @@ setTimeout(() => {
   setTimeout(function(){ _startupAQILoad(); }, 3000);
   scanSPC();
   fetchTropicalOutlook();
+  fetchNWSNarrativeProducts();
 }, 500);
 
 // ── In-app alert banner + sound ──────────────────────────────────────────────
