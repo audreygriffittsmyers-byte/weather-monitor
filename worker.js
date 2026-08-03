@@ -195,6 +195,28 @@ export default {
 
 
 
+    // Visual Crossing Timeline -- fills the forecast gap at international sites
+    // (no NWS coverage) and supplies derived comfort metrics for cross-checking.
+    // Requests only the elements WATCH actually renders, to hold record count down.
+    if (type === 'vcx') {
+      const lat = url.searchParams.get('lat');
+      const lon = url.searchParams.get('lon');
+      const apiKey = env.VISUALCROSSING_API_KEY;
+      if (!apiKey || !lat || !lon) return new Response(JSON.stringify({ error: 'unavailable' }), { headers: GEOJSON });
+      const ELEMENTS = 'datetime,datetimeEpoch,temp,feelslike,humidity,dew,precipprob,preciptype,windspeed,windgust,winddir,conditions,severerisk';
+      const qs = new URLSearchParams({
+        key: apiKey, unitGroup: 'us', include: 'hours,current,alerts',
+        elements: ELEMENTS, contentType: 'json'
+      });
+      try {
+        const res = await fetch(
+          `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${lat},${lon}/today/tomorrow?${qs}`,
+          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } });
+        if (!res.ok) return new Response(JSON.stringify({ error: 'upstream', status: res.status }), { headers: GEOJSON });
+        return new Response(await res.text(), { headers: GEOJSON });
+      } catch(e) { return new Response(JSON.stringify({ error: 'fetch_failed' }), { headers: GEOJSON }); }
+    }
+
     if (type === 'wildfirepoly') {
       try {
         const res = await fetch('https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query?where=PolygonDateTime+>=+CURRENT_TIMESTAMP+-+7&outFields=attr_IncidentName,attr_GISAcres,attr_FireBehaviorGeneral&returnGeometry=true&outSR=4326&f=geojson&resultRecordCount=500',
