@@ -520,7 +520,7 @@ const INTL_CODES = new Set(['BDA','GCM','SXM','PLS']);
 const COVERED = FBO_LIST.filter(f => COORDS[f.code] && US_STATES.has(f.state));
 // Add international locations
 [{code:'BDA',city:'Bermuda',state:'BM'},
- {code:'GCM',city:'Grand Cayman',state:'KY'},
+ {code:'GCM',city:'Grand Cayman',state:'CYM'},
  {code:'SXM',city:'Sint Maarten',state:'SX'},
  {code:'PLS',city:'Turks & Caicos',state:'TC'}]
 .forEach(function(f){ if (COORDS[f.code] && !COVERED.find(function(c){return c.code===f.code;})) COVERED.push(f); });
@@ -1069,7 +1069,8 @@ function renderSidebar() {
     const el = makeSidebarItem(fbo);
     container.appendChild(el);
   });
-  document.getElementById('covered-count').textContent = `Live NWS alerts for ${COVERED.length} US FBO locations`;
+  var _cc = document.getElementById('covered-count');
+  if (_cc) _cc.textContent = `Live NWS alerts for ${COVERED.length} US FBO locations`;
 }
 
 function makeSidebarItem(fbo) {
@@ -3880,6 +3881,9 @@ function _gustForHour(code, hourStartTime) {
 async function fetch7Day(code) {
   const c = COORDS[code];
   if (!c) return;
+  // No NWS coverage outside the US -- these 404/500 on every call. Visual Crossing
+  // supplies their forecast instead, via fetchIntlForecasts.
+  if (INTL_CODES.has(code)) { await fetchVCX(code); return; }
   try {
     const ptRes = await fetch(
       `https://api.weather.gov/points/${c[0].toFixed(4)},${c[1].toFixed(4)}`,
