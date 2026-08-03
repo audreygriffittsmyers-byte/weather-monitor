@@ -7442,10 +7442,14 @@ function checkForNewAlerts(){
     var lt=getLightningStatus(code);
     if(lt&&lt.level==="active") lightning=lt;
 
-    // Wind -- current METAR first, then TAF forecast if no current alert
+    // Wind -- current METAR first, then TAF forecast if no current alert.
+    // Banners are an interrupt, not an awareness feed. With the advisory threshold
+    // now at 15 mph / 25 mph, banner-ing every advisory floods the stack, so only
+    // protocol level qualifies. Advisories still show on the map, Live Monitor and
+    // in the briefing sections.
     var w=getWindStatus(code);
-    if(w) wind=w;
-    if(!wind){ var wf=getTAFWindForecast(code,6); if(wf) wind=wf; }
+    if(w && w.level==='protocol') wind=w;
+    if(!wind){ var wf=getTAFWindForecast(code,6); if(wf && wf.level==='protocol') wind=wf; }
 
     if(!nws.length&&!lightning&&!wind) return;
 
