@@ -2122,6 +2122,9 @@ async function generateSummary() {
   const status = document.getElementById('summary-status');
   try {
     if (typeof fetchWPCPolygons === 'function') await fetchWPCPolygons();
+    if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText && typeof fetchNWSNarrativeProducts === 'function') {
+      await fetchNWSNarrativeProducts();
+    }
     _generateSummaryInner(content, ts, status);
   } catch(e) {
     console.error('generateSummary error:', e);
