@@ -516,7 +516,11 @@ const FBO_LIST = [
 
 const US_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);
 
-const COVERED = FBO_LIST.filter(f => COORDS[f.code] && US_STATES.has(f.state));
+const INTL_CODES = new Set(['BDA','GCM','SXM','PLS']);
+const COVERED = FBO_LIST.filter(f => COORDS[f.code] && US_STATES.has(f.state) && !INTL_CODES.has(f.code));
+// Briefing scope: US locations plus the international sites, which have no NWS
+// products and are fed by Visual Crossing instead.
+const COVERED_ALL = COVERED.concat(FBO_LIST.filter(f => COORDS[f.code] && INTL_CODES.has(f.code)));
 // Add international locations
 [{code:'BDA',city:'Bermuda',state:'BM'},
  {code:'GCM',city:'Grand Cayman',state:'KY'},
@@ -746,10 +750,53 @@ async function fetchStateAlerts(state) {
   }
 }
 
+var vcxData = {};
+
+// Visual Crossing Timeline via the Worker. Used as the forecast source at
+// international sites, and as a cross-check source anywhere it has been fetched.
+// Hours are normalised into the NWS hourly shape so every briefing collector
+// works unchanged regardless of which provider supplied the data.
+async function fetchVCX(code) {
+  var c = COORDS[code];
+  if (!c) return null;
+  try {
+    var r = await fetch(PROXY + '?type=vcx&lat=' + c[0].toFixed(3) + '&lon=' + c[1].toFixed(3));
+    if (!r.ok) return null;
+    var d = await r.json();
+    if (!d || d.error || !d.days) { console.warn('VCX unavailable for ' + code, d && d.error); return null; }
+    var hours = [];
+    d.days.forEach(function(day){
+      (day.hours || []).forEach(function(h){
+        hours.push({
+          startTime: new Date((h.datetimeEpoch || 0) * 1000).toISOString(),
+          temperature: h.temp,
+          temperatureUnit: 'F',
+          windSpeed: (h.windspeed != null ? Math.round(h.windspeed) + ' mph' : ''),
+          windDirection: _vcxDir(h.winddir),
+          probabilityOfPrecipitation: { value: h.precipprob != null ? Math.round(h.precipprob) : null },
+          relativeHumidity: { value: h.humidity != null ? Math.round(h.humidity) : null },
+          shortForecast: h.conditions || '',
+          _vcxFeels: h.feelslike,
+          _vcxGust: h.windgust
+        });
+      });
+    });
+    hours.sort(function(a,b){ return new Date(a.startTime) - new Date(b.startTime); });
+    vcxData[code] = { hours: hours, current: d.currentConditions || null, alerts: d.alerts || [], tz: d.timezone || '' };
+    return vcxData[code];
+  } catch(e) { console.warn('VCX fetch failed for ' + code, e); return null; }
+}
+
+function _vcxDir(deg) {
+  if (deg == null) return '';
+  var pts = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return pts[Math.round(deg / 22.5) % 16];
+}
+
 async function fetchAlerts(code) {
   const fbo = FBO_LIST.find(f => f.code === code);
   if (!fbo) throw new Error('FBO not found');
-  if (!US_STATES.has(fbo.state)) throw new Error('Outside NWS coverage');
+  if (INTL_CODES.has(code) || !US_STATES.has(fbo.state)) throw new Error('Outside NWS coverage');
 
   const c = COORDS[code];
   if (!c) throw new Error('No coordinates on file');
@@ -2145,7 +2192,7 @@ var BRIEF_COLD_F       = 40;
 var BRIEF_HEATIDX_F    = 90;
 var BRIEF_CHILL_F      = 30;
 
-function _bFbo(code){ return COVERED.find(function(f){return f.code===code;}) || {code:code,city:'',state:''}; }
+function _bFbo(code){ return COVERED_ALL.find(function(f){return f.code===code;}) || FBO_LIST.find(function(f){return f.code===code;}) || {code:code,city:'',state:''}; }
 function _bRow(code, detail, detail2){
   var f = _bFbo(code);
   return {code:code, city:f.city||'', state:f.state||'', detail:detail||'', detail2:detail2||''};
@@ -2165,6 +2212,7 @@ function _bRH(tempF, dewF){
 // Future hours only -- used for every "forecast" section so they share one window.
 function _bHourly(code){
   var p = hourlyData[code];
+  if ((!p || !p.length) && vcxData[code] && vcxData[code].hours) p = vcxData[code].hours;
   if (!p || !p.length) return [];
   var now = new Date();
   return p.slice(0,24).filter(function(x){ return new Date(x.startTime) >= now; });
@@ -2419,6 +2467,7 @@ var WATCH_BRIEF_SECTIONS = [
         var rh = p.relativeHumidity && p.relativeHumidity.value;
         if (rh==null && p.dewpoint && p.dewpoint.value!=null) rh=_bRH(t, p.dewpoint.value*9/5+32);
         var hi = (rh!=null && typeof calcHeatIndex==='function') ? calcHeatIndex(t, rh) : null;
+        if (p._vcxFeels != null && p._vcxFeels > t) hi = Math.max(hi==null?-999:hi, p._vcxFeels);
         var wc = (typeof calcWindChill==='function') ? calcWindChill(t, _bWindMph(p)) : null;
         if (t>=BRIEF_HEAT_F || (hi!=null && hi>=BRIEF_HEATIDX_F)) {
           var v = Math.max(t, hi!=null?hi:t);
@@ -2687,7 +2736,7 @@ function _generateSummaryInner(content, ts, status) {
 
   var scopeEl = document.getElementById('summary-scope');
   var useMyStations = scopeEl && scopeEl.value === 'mine' && myLocations.size > 0;
-  var fboList = useMyStations ? COVERED.filter(function(f){ return myLocations.has(f.code); }) : COVERED;
+  var fboList = useMyStations ? COVERED_ALL.filter(function(f){ return myLocations.has(f.code); }) : COVERED_ALL;
 
   var spcLoaded   = fboList.some(function(f){ return spcData[1][f.code]&&spcData[1][f.code].st==='ok'; });
   var alertLoaded = fboList.some(function(f){ return results[f.code]&&results[f.code].st==='ok'; });
@@ -3838,6 +3887,12 @@ async function fetch7Day(code) {
   } catch(e) {}
 }
 
+// International sites have no NWS gridpoint at all -- pull their forecast from
+// Visual Crossing so the briefing forecast sections are not silently empty.
+async function fetchIntlForecasts() {
+  await Promise.all(Array.from(INTL_CODES).map(function(c){ return fetchVCX(c); }));
+}
+
 function render7Day(code) {
   const periods = forecastData[code];
   if (!periods || !periods.length) return '';
@@ -4939,6 +4994,7 @@ async function _startupAQILoad() {
 }
 
 async function _startupHourlyLoad() {
+  fetchIntlForecasts();
   // Phase 1: immediately fetch impacted locations (SPC risk, NWS alerts, wind, heat, cold)
   var priority = COVERED.filter(function(f) {
     var spc = spcData[1][f.code];
@@ -5347,7 +5403,7 @@ async function openAlertGenerator() {
 // Which sections actually have data right now -- drives the modal checkboxes so
 // the list can never drift from the sections the renderers know about.
 function _briefSelCodes(){
-  var all = COVERED.map(function(f){ return f.code; });
+  var all = COVERED_ALL.map(function(f){ return f.code; });
   return WATCH_BRIEF_SECTIONS.map(function(def){
     var d=null; try { d = def.collect(all); } catch(e) { d=null; }
     var active = !!(d && (d.html || (d.groups&&d.groups.length) || (d.rows&&d.rows.length)));
