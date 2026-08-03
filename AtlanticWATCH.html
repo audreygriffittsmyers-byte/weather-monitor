@@ -2194,15 +2194,26 @@ var WATCH_BRIEF_SECTIONS = [
     };
     var groups = [];
     ['HIGH','MDT','ENH','SLGT','MRGL','TSTM'].forEach(function(z){
-      var rows = [];
+      var rows = [], maxTorn = 0, maxHail = 0, maxWind = 0;
       codes.forEach(function(c){
         var s = spcData[1] && spcData[1][c];
         if (!s || s.label !== z) return;
+        if (s.torn) maxTorn = Math.max(maxTorn, parseInt(s.torn,10) || 0);
+        if (s.hail) maxHail = Math.max(maxHail, parseInt(s.hail,10) || 0);
+        if (s.wind) maxWind = Math.max(maxWind, parseInt(s.wind,10) || 0);
         var t = (typeof parseSPCTiming==='function') ? parseSPCTiming(z) : null;
         rows.push(_bRow(c, t || 'Monitor for convective development.'));
       });
-      if (rows.length) groups.push({label:Z[z].label, level:Z[z].level, bg:Z[z].bg, docxBg:Z[z].docxBg,
-                                    action:Z[z].action, hazards:Z[z].hazards, cols:['FBO','City / State','Timing'], rows:rows});
+      if (!rows.length) return;
+      // Highest SPC point probability seen across the locations in this tier.
+      var probs = [];
+      if (maxTorn) probs.push('TOR '+maxTorn+'%');
+      if (maxHail) probs.push('HAIL '+maxHail+'%');
+      if (maxWind) probs.push('WIND '+maxWind+'%');
+      var hz = Z[z].hazards + (probs.length ? ' | Max probs: '+probs.join(' ') : '');
+      groups.push({label:Z[z].label, level:Z[z].level, bg:Z[z].bg, docxBg:Z[z].docxBg,
+                   action:Z[z].action, hazards:hz, probs:probs.join(' '),
+                   cols:['FBO','City / State','Timing'], rows:rows});
     });
     return groups.length ? {groups:groups} : null;
   }},
