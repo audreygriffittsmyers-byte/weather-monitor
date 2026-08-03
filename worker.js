@@ -299,46 +299,46 @@ export default {
     }
 
     if (type === 'nwsproduct') {
-      // Generic AWIPS text product fetch via the official products API.
-      // code=AWIPS product id (e.g. SWODY1, QPFERD, PMDSPD).
-      // NWS's own /offices registry only uses 3-letter codes (OUN, MTR, ...), never
-      // 4-letter ones -- so try the 3-letter form first, then fall back to 4-letter
-      // in case this particular product type registers under the WMO-style id instead.
-      const ALLOWED_PRODUCTS = { SWODY1:['WNS','KWNS'], QPFERD:['WBC','KWBC'], PMDSPD:['WBC','KWBC'] };
+      // The products API indexes by 3-char product code + 4-char issuing office,
+      // passed as QUERY params on /products. SWODY1 is the full AWIPS ID, not a
+      // type -- /products/types/SWODY1 and /types/SWO/locations/WNS both return
+      // an empty @graph, which is what every previous attempt was hitting.
+      const PRODUCTS = {
+        SWODY1: { code: 'SWO', office: 'KWNS', match: /day\s*1/i },
+        QPFERD: { code: 'QPF', office: 'KWBC', match: /excessive\s*rainfall/i },
+        PMDSPD: { code: 'PMD', office: 'KWBC', match: /short\s*range/i },
+      };
       const code = (url.searchParams.get('code') || '').toUpperCase();
-      const officeCandidates = ALLOWED_PRODUCTS[code];
-      if (!officeCandidates) return new Response(JSON.stringify({ text: '', error: 'unsupported product' }), { headers: CORS });
+      const spec = PRODUCTS[code];
+      if (!spec) return new Response(JSON.stringify({ text: '', error: 'unsupported product' }), { headers: CORS });
       try {
-        // The unqualified /products/types/{code} listing returns the latest issuance
-        // regardless of issuing office. The office-qualified path was guesswork and
-        // returned nothing for all three products; keep it only as a fallback.
-        let first = null, triedOffices = ['(none)'];
-        // cacheEverything was caching the 400/404 responses, so every retry for the
-        // next 15 minutes replayed the same failure. Only cache on success.
-        const topRes = await fetch(`https://api.weather.gov/products/types/${code}`,
-          { headers: { 'User-Agent': UA } });
-        const diag = { topStatus: topRes.status, topUrl: `https://api.weather.gov/products/types/${code}` };
-        if (topRes.ok) {
-          const topJson = await topRes.json();
-          const c0 = topJson['@graph'] && topJson['@graph'][0];
-          if (c0 && c0.id) first = c0;
+        const listUrl = `https://api.weather.gov/products?type=${spec.code}&office=${spec.office}&limit=25`;
+        const listRes = await fetch(listUrl, { headers: { 'User-Agent': UA } });
+        const diag = { listUrl, listStatus: listRes.status };
+        if (!listRes.ok) {
+          return new Response(JSON.stringify({ text: '', error: 'listing failed', diag }), { headers: CORS });
         }
-        if (!first) {
-          for (const office of officeCandidates) {
-            triedOffices.push(office);
-            const listRes = await fetch(`https://api.weather.gov/products/types/${code}/locations/${office}`,
-              { headers: { 'User-Agent': UA } });
-            diag['office_' + office] = listRes.status;
-            if (!listRes.ok) continue;
-            const listJson = await listRes.json();
-            const candidate = listJson['@graph'] && listJson['@graph'][0];
-            if (candidate && candidate.id) { first = candidate; break; }
-          }
+        const listJson = await listRes.json();
+        const graph = listJson['@graph'] || [];
+        diag.count = graph.length;
+        diag.names = graph.slice(0, 5).map(g => g.productName);
+        if (!graph.length) {
+          return new Response(JSON.stringify({ text: '', error: 'no product found', diag }), { headers: CORS });
         }
-        if (!first) return new Response(JSON.stringify({ text: '', error: 'no product found', triedOffices, diag }), { headers: CORS });
-        const prodRes = await fetch(first.id, { headers: { 'User-Agent': UA }, cf: { cacheTtl: 900, cacheEverything: true } });
-        const prodJson = prodRes.ok ? await prodRes.json() : {};
-        return new Response(JSON.stringify({ text: prodJson.productText || '', issuanceTime: prodJson.issuanceTime || null }), { headers: CORS });
+        // One office+code can cover several products (SWO covers Day 1/2/3 and
+        // mesoscale discussions), so match on product name and fall back to newest.
+        const pick = graph.find(g => spec.match.test(g.productName || '')) || graph[0];
+        diag.picked = pick.productName;
+        const prodRes = await fetch(pick.id, { headers: { 'User-Agent': UA } });
+        if (!prodRes.ok) {
+          return new Response(JSON.stringify({ text: '', error: 'product fetch failed', diag }), { headers: CORS });
+        }
+        const prodJson = await prodRes.json();
+        return new Response(JSON.stringify({
+          text: prodJson.productText || '',
+          issuanceTime: prodJson.issuanceTime || null,
+          productName: prodJson.productName || null
+        }), { headers: CORS });
       } catch(e) { return new Response(JSON.stringify({ text: '', error: e.message }), { headers: CORS }); }
     }
 
