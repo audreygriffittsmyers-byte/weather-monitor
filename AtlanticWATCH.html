@@ -2249,7 +2249,7 @@ function _bWindMph(p){
 var WATCH_BRIEF_SECTIONS = [
 
 // 1 ── SPC convective outlook (tiered) ───────────────────────────────────────
-{ id:'spc', title:'SPC CONVECTIVE OUTLOOK', sub:'Storm Prediction Center Day 1 categorical risk',
+{ id:'spc', narrativeVar:'spcDay1NarrativeText', title:'SPC CONVECTIVE OUTLOOK', sub:'Storm Prediction Center Day 1 categorical risk',
   icon:'\u26C8', bg:'#0E2841', tc:'#fff', docxBg:'0E2841', actions:'thunderstorm',
   collect:function(codes){
     var Z = {
@@ -2324,7 +2324,7 @@ var WATCH_BRIEF_SECTIONS = [
   }},
 
 // 5 ── WPC excessive rainfall outlook (tiered) ───────────────────────────────
-{ id:'ero', title:'WPC EXCESSIVE RAINFALL OUTLOOK', sub:'Locations under an active WPC excessive rainfall risk area',
+{ id:'ero', narrativeVar:'wpcRainDiscussionText', title:'WPC EXCESSIVE RAINFALL OUTLOOK', sub:'Locations under an active WPC excessive rainfall risk area',
   icon:'\uD83C\uDF27', bg:'#0369a1', tc:'#fff', docxBg:'0369A1', actions:'flood',
   collect:function(codes){
     var byTier={};
@@ -2341,7 +2341,7 @@ var WATCH_BRIEF_SECTIONS = [
   }},
 
 // 6 ── 24h heavy rainfall forecast ───────────────────────────────────────────
-{ id:'rainfcst', title:'24-HOUR HEAVY RAINFALL FORECAST', sub:'50% or greater chance of precipitation',
+{ id:'rainfcst', narrativeVar:'wpcShortRangeText', title:'24-HOUR HEAVY RAINFALL FORECAST', sub:'50% or greater chance of precipitation',
   icon:'\uD83C\uDF27', bg:'#0891b2', tc:'#fff', docxBg:'0891B2', actions:'flood',
   collect:function(codes){
     var rows=[];
@@ -2572,9 +2572,9 @@ var WATCH_BRIEF_SECTIONS = [
 { id:'nhc', title:'NHC DISCUSSIONS, WATCHES AND ADVISORIES', sub:'National Hurricane Center text products',
   icon:'\uD83C\uDF00', bg:'#5b21b6', tc:'#fff', docxBg:'5B21B6', actions:null,
   collect:function(codes){
-    var t='';
-    if (typeof getTropicalOutlookSection==='function') t += (getTropicalOutlookSection()||'');
-    if (typeof getNWSNarrativeSection==='function')    t += (getNWSNarrativeSection()||'');
+    // SPC/WPC narratives moved to the hazard sections they actually discuss --
+    // this section is NHC only now.
+    var t = (typeof getTropicalOutlookSection==='function') ? (getTropicalOutlookSection()||'') : '';
     return t ? {html:t} : null;
   }}
 ];
@@ -2584,6 +2584,21 @@ function _bNormalizeSel(sel){
   if (!sel) return null;
   var anyTrue = Object.keys(sel).some(function(k){ return sel[k]; });
   return anyTrue ? sel : null;
+}
+
+// The forecaster narrative that belongs to a given hazard section.
+var _BRIEF_NARRATIVES = {
+  spcDay1NarrativeText:  ['\u26C8', 'SPC Day 1 Convective Outlook (Full Narrative)'],
+  wpcRainDiscussionText: ['\uD83C\uDF27', 'WPC Excessive Rainfall Discussion'],
+  wpcShortRangeText:     ['\uD83D\uDCCB', 'WPC Short Range Forecast Discussion (Day 1-2)']
+};
+function _briefNarrativeFor(def){
+  if (!def.narrativeVar) return '';
+  var meta = _BRIEF_NARRATIVES[def.narrativeVar];
+  var txt = null;
+  try { txt = eval(def.narrativeVar); } catch(e) { txt = null; }
+  if (!meta || !txt) return '';
+  return _narrativeCard(meta[0], meta[1], txt);
 }
 
 function collectBriefSections(codes, sel){
@@ -2705,6 +2720,7 @@ function _renderBriefHTML(secs){
         html += '</table>';
       });
     }
+    html += _briefNarrativeFor(def);
     if (runs[i]) html += _getActionHTML(runs[i]);
   });
   return html;
@@ -2735,6 +2751,12 @@ function _renderBriefDocx(secs, add, ppr, rpr, sp){
         });
         sp();
       });
+    }
+    var narr = _briefNarrativeFor(def);
+    if (narr) {
+      var ntxt = narr.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'\n').replace(/&lt;/g,'<').replace(/&nbsp;/g,' ');
+      ntxt.split('\n').forEach(function(line){ if(line.trim()) add(line.trim(), ppr({after:'20'}), rpr({sz:17})); });
+      sp();
     }
     if (runs[i]) {
       var txt2 = _getActionHTML(runs[i]);
@@ -4183,7 +4205,7 @@ function _narrativeCard(icon, label, text) {
   var clean = text.replace(/\r\n/g, '\n').trim();
   return '<div style="background:#fff;border:1px solid #1e3a5f;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
     + '<div style="font-size:9px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">' + icon + ' ' + label + '</div>'
-    + '<div style="font-size:10px;font-family:monospace;white-space:pre-wrap;color:#333;max-height:320px;overflow-y:auto">' + clean.replace(/</g,'&lt;') + '</div>'
+    + '<div style="font-size:10px;font-family:monospace;white-space:pre-wrap;color:#333;page-break-inside:auto">' + clean.replace(/</g,'&lt;') + '</div>'
     + '</div>';
 }
 
