@@ -313,8 +313,11 @@ export default {
         // regardless of issuing office. The office-qualified path was guesswork and
         // returned nothing for all three products; keep it only as a fallback.
         let first = null, triedOffices = ['(none)'];
+        // cacheEverything was caching the 400/404 responses, so every retry for the
+        // next 15 minutes replayed the same failure. Only cache on success.
         const topRes = await fetch(`https://api.weather.gov/products/types/${code}`,
-          { headers: { 'User-Agent': UA }, cf: { cacheTtl: 900, cacheEverything: true } });
+          { headers: { 'User-Agent': UA } });
+        const diag = { topStatus: topRes.status, topUrl: `https://api.weather.gov/products/types/${code}` };
         if (topRes.ok) {
           const topJson = await topRes.json();
           const c0 = topJson['@graph'] && topJson['@graph'][0];
@@ -324,14 +327,15 @@ export default {
           for (const office of officeCandidates) {
             triedOffices.push(office);
             const listRes = await fetch(`https://api.weather.gov/products/types/${code}/locations/${office}`,
-              { headers: { 'User-Agent': UA }, cf: { cacheTtl: 900, cacheEverything: true } });
+              { headers: { 'User-Agent': UA } });
+            diag['office_' + office] = listRes.status;
             if (!listRes.ok) continue;
             const listJson = await listRes.json();
             const candidate = listJson['@graph'] && listJson['@graph'][0];
             if (candidate && candidate.id) { first = candidate; break; }
           }
         }
-        if (!first) return new Response(JSON.stringify({ text: '', error: 'no product found', triedOffices, topStatus: topRes.status }), { headers: CORS });
+        if (!first) return new Response(JSON.stringify({ text: '', error: 'no product found', triedOffices, diag }), { headers: CORS });
         const prodRes = await fetch(first.id, { headers: { 'User-Agent': UA }, cf: { cacheTtl: 900, cacheEverything: true } });
         const prodJson = prodRes.ok ? await prodRes.json() : {};
         return new Response(JSON.stringify({ text: prodJson.productText || '', issuanceTime: prodJson.issuanceTime || null }), { headers: CORS });
