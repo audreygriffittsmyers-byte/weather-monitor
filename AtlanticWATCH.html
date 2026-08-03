@@ -3446,6 +3446,13 @@ const hourlyData    = {}; // code -> hourly periods array
 const gridData      = {}; // code -> { windGust: [{start,end,mph}] } from raw NWS gridpoint data
 let   hourlyWindow  = 12; // hours to show: 4/8/12/24/48
 
+function _ord(n) {
+  n = parseInt(n, 10);
+  if (isNaN(n)) return '';
+  var s = ['th','st','nd','rd'], v = n % 100;
+  return n + (s[(v-20)%10] || s[v] || s[0]);
+}
+
 function _uomToMph(value, uom) {
   if (value == null) return null;
   if (uom && uom.includes('km_h')) return value / 1.60934;
@@ -3465,6 +3472,27 @@ function _parseGridGust(gridProps) {
   }).filter(function(x){ return x.mph != null; });
 }
 
+// The NWS hourly endpoint only returns hours from "now" forward, so a gust peak that
+// occurred earlier today is invisible to a briefing generated at midday. The raw
+// gridpoint series covers the whole day, which is what a daily alert product needs.
+function _dayPeakGust(code) {
+  var series = gridData[code] && gridData[code].windGust;
+  if (!series || !series.length) return null;
+  var now = new Date();
+  var dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  var dayEnd = dayStart + 24*3600000;
+  var best = null;
+  for (var i = 0; i < series.length; i++) {
+    var t = new Date(series[i].start).getTime();
+    if (isNaN(t) || t < dayStart || t >= dayEnd) continue;
+    if (series[i].mph == null) continue;
+    if (!best || series[i].mph > best.mph) best = { mph: series[i].mph, t: t };
+  }
+  if (!best) return null;
+  return { mph: best.mph,
+           time: new Date(best.t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}) };
+}
+
 function _gustForHour(code, hourStartTime) {
   var series = gridData[code]?.windGust;
   if (!series || !series.length) return null;
@@ -3472,8 +3500,16 @@ function _gustForHour(code, hourStartTime) {
   for (var i = 0; i < series.length; i++) {
     var s = new Date(series[i].start).getTime();
     // crude duration parse -- default to 1-6 hours per NWS grid convention
-    var durMatch = /PT(\d+)H/.exec(series[i].durationISO||'');
-    var durHrs = durMatch ? parseInt(durMatch[1],10) : 1;
+    // NWS grid durations can be P1DT6H, PT6H, PT30M -- the old /PT(\d+)H/ read
+    // "P1DT6H" as 6 hours, so lookups late in a long block returned no gust.
+    var dISO = series[i].durationISO || '';
+    var dDay = /P(\d+)D/.exec(dISO);
+    var dHr  = /T[^]*?(\d+)H/.exec(dISO);
+    var dMin = /T[^]*?(\d+)M/.exec(dISO);
+    var durHrs = (dDay ? parseInt(dDay[1],10)*24 : 0)
+               + (dHr  ? parseInt(dHr[1],10)      : 0)
+               + (dMin ? parseInt(dMin[1],10)/60  : 0);
+    if (!durHrs) durHrs = 1;
     var e = s + durHrs*3600000;
     if (t >= s && t < e) return series[i].mph;
   }
@@ -4540,14 +4576,15 @@ function _watchDownloadDocx(codes, notes, sections) {
           var alerts=(results[code]&&results[code].alerts)||[];
           var taf=tafData[code];
           var timing='';
-          if(alerts.length){
-            timing=alerts[0].event+(alerts[0].expires?' until '+fmtTime(alerts[0].expires):'');
+          var convA=alerts.filter(function(a){return /thunderstorm|tornado|severe weather/i.test(a.event||'');});
+          if(convA.length){
+            timing=convA[0].event+(convA[0].expires?' until '+fmtTime(convA[0].expires):'');
           } else {
             var spcT=(typeof parseSPCTiming==='function')?parseSPCTiming(z):null;
             if(taf&&taf.rawTAF){
               var rawT=taf.rawTAF.toUpperCase();
               var tsM=rawT.match(/FM(\d{2})(\d{2})\d{2}[^]*?(?:TSRA|TS\b)/);
-              timing=tsM?'Thunderstorm activity possible from approx '+tsM[2]+'00Z on the '+parseInt(tsM[1],10)+'th'+(spcT?'. '+spcT:'')+'.':
+              timing=tsM?'Thunderstorm activity possible from approx '+tsM[2]+'00Z on the '+_ord(tsM[1])+(spcT?'. '+spcT:'')+'.':
                          (spcT?'Storms expected '+spcT.toLowerCase()+'.':'Monitor for convective development.');
             } else {
               timing=spcT?'Storm development possible '+spcT.toLowerCase()+'.':'Monitor for convective development.';
@@ -5605,6 +5642,13 @@ function _getForecastHazards(code) {
     if (/thunder|tstm/i.test(p.shortForecast||'')) tsEvents.push({time:hr, forecast:p.shortForecast||''});
   });
 
+  // Fold in the whole-day gust peak so a morning peak still reports at midday.
+  var dayGust = _dayPeakGust(code);
+  if (dayGust && dayGust.mph >= 30) {
+    var covered = windEvents.some(function(w){ return (w.gust||0) >= dayGust.mph; });
+    if (!covered) windEvents.push({time:dayGust.time, speed:0, gust:dayGust.mph, dir:'', forecast:'', dayPeak:true});
+  }
+
   return { windEvents:windEvents, heatPeaks:heatPeaks, coldPeaks:coldPeaks, precipEvents:precipEvents, tsEvents:tsEvents };
 }
 
@@ -5659,7 +5703,7 @@ function _buildForecastSection(codes) {
       });
       html += '<tr><td style="padding:4px 6px;font-weight:700;background:'+bg+'">'+loc.code+'</td>'
         + '<td style="padding:4px 6px;background:'+bg+'">'+loc.fbo.city+(loc.fbo.state?', '+loc.fbo.state:'')+'</td>'
-        + '<td style="padding:4px 6px;background:'+bg+'">'+peak.speed+' mph '+peak.dir+'</td>'
+        + '<td style="padding:4px 6px;background:'+bg+'">'+(peak.speed?peak.speed+' mph '+peak.dir:'\u2014')+'</td>'
         + '<td style="padding:4px 6px;background:'+bg+'">'+(peak.gust!=null?('G'+peak.gust+' mph'):'\u2014')+'</td>'
         + '<td style="padding:4px 6px;background:'+bg+'">'+peak.time+'</td></tr>';
     });
@@ -6054,13 +6098,17 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
       var taf = tafData[code];
       var spcT = (typeof parseSPCTiming === 'function') ? parseSPCTiming(z) : null;
       // Thunderstorm timing
-      if (alerts.length) {
-        timingParts.push(alerts[0].event + (alerts[0].expires ? ' until '+fmtTime(alerts[0].expires) : ''));
+      // Only convective alerts belong in a convective timing column -- this used to
+      // print whatever alert happened to be first, so flood-alerted sites showed
+      // "Flash Flood Warning" as their thunderstorm timing.
+      var convAlerts = alerts.filter(function(a){ return /thunderstorm|tornado|severe weather/i.test(a.event||''); });
+      if (convAlerts.length) {
+        timingParts.push(convAlerts[0].event + (convAlerts[0].expires ? ' until '+fmtTime(convAlerts[0].expires) : ''));
       } else if (taf && taf.rawTAF) {
         var raw = taf.rawTAF.toUpperCase();
         var tsMatch = raw.match(/FM(\d{2})(\d{2})\d{2}[^]*?(?:TSRA|TS\b)/);
         if (tsMatch) {
-          var tsPart = 'Thunderstorms possible from approx '+tsMatch[2]+'00Z on the '+parseInt(tsMatch[1],10)+'th';
+          var tsPart = 'Thunderstorms possible from approx '+tsMatch[2]+'00Z on the '+_ord(tsMatch[1]);
           if (spcT) tsPart += ' ('+spcT+')';
           timingParts.push(tsPart);
         } else if (spcT) {
