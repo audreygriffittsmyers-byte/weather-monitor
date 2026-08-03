@@ -329,7 +329,10 @@ export default {
         // mesoscale discussions), so match on product name and fall back to newest.
         const pick = graph.find(g => spec.match.test(g.productName || '')) || graph[0];
         diag.picked = pick.productName;
-        const prodRes = await fetch(pick.id, { headers: { 'User-Agent': UA } });
+        // /products returns a bare UUID in `id`; the resolvable URL is in `@id`.
+        const prodUrl = pick['@id'] || `https://api.weather.gov/products/${pick.id}`;
+        diag.prodUrl = prodUrl;
+        const prodRes = await fetch(prodUrl, { headers: { 'User-Agent': UA } });
         if (!prodRes.ok) {
           return new Response(JSON.stringify({ text: '', error: 'product fetch failed', diag }), { headers: CORS });
         }
