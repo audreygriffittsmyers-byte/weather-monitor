@@ -304,9 +304,12 @@ export default {
       // type -- /products/types/SWODY1 and /types/SWO/locations/WNS both return
       // an empty @graph, which is what every previous attempt was hitting.
       const PRODUCTS = {
-        SWODY1: { code: 'SWO', office: 'KWNS', match: /day\s*1/i },
-        QPFERD: { code: 'QPF', office: 'KWBC', match: /excessive\s*rainfall/i },
-        PMDSPD: { code: 'PMD', office: 'KWBC', match: /short\s*range/i },
+        // wmo is the reliable discriminator: one code+office covers several
+        // products (SWO/KWNS carries the Day 1/2/3 outlooks AND mesoscale
+        // discussions, which are ACUS11 and are issued far more often).
+        SWODY1: { code: 'SWO', office: 'KWNS', wmo: 'ACUS01', match: /convective\s*outlook/i },
+        QPFERD: { code: 'QPF', office: 'KWBC', wmo: 'FOUS30', match: /excessive\s*rainfall/i },
+        PMDSPD: { code: 'PMD', office: 'KWBC', wmo: 'FXUS01', match: /short\s*range/i },
       };
       const code = (url.searchParams.get('code') || '').toUpperCase();
       const spec = PRODUCTS[code];
@@ -321,13 +324,15 @@ export default {
         const listJson = await listRes.json();
         const graph = listJson['@graph'] || [];
         diag.count = graph.length;
-        diag.names = graph.slice(0, 5).map(g => g.productName);
+        diag.names = graph.slice(0, 5).map(g => (g.wmoCollectiveId || '?') + ' ' + g.productName);
         if (!graph.length) {
           return new Response(JSON.stringify({ text: '', error: 'no product found', diag }), { headers: CORS });
         }
         // One office+code can cover several products (SWO covers Day 1/2/3 and
         // mesoscale discussions), so match on product name and fall back to newest.
-        const pick = graph.find(g => spec.match.test(g.productName || '')) || graph[0];
+        const pick = graph.find(g => (g.wmoCollectiveId || '').toUpperCase().startsWith(spec.wmo))
+                  || graph.find(g => spec.match.test(g.productName || ''))
+                  || graph[0];
         diag.picked = pick.productName;
         // /products returns a bare UUID in `id`; the resolvable URL is in `@id`.
         const prodUrl = pick['@id'] || `https://api.weather.gov/products/${pick.id}`;
