@@ -313,7 +313,7 @@ export default {
         // regardless of issuing office. The office-qualified path was guesswork and
         // returned nothing for all three products; keep it only as a fallback.
         let first = null, triedOffices = ['(none)'];
-        const topRes = await fetch(`https://api.weather.gov/products/types/${code}?limit=1`,
+        const topRes = await fetch(`https://api.weather.gov/products/types/${code}`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 900, cacheEverything: true } });
         if (topRes.ok) {
           const topJson = await topRes.json();
@@ -323,7 +323,7 @@ export default {
         if (!first) {
           for (const office of officeCandidates) {
             triedOffices.push(office);
-            const listRes = await fetch(`https://api.weather.gov/products/types/${code}/locations/${office}?limit=1`,
+            const listRes = await fetch(`https://api.weather.gov/products/types/${code}/locations/${office}`,
               { headers: { 'User-Agent': UA }, cf: { cacheTtl: 900, cacheEverything: true } });
             if (!listRes.ok) continue;
             const listJson = await listRes.json();
@@ -331,7 +331,7 @@ export default {
             if (candidate && candidate.id) { first = candidate; break; }
           }
         }
-        if (!first) return new Response(JSON.stringify({ text: '', error: 'no product found', triedOffices }), { headers: CORS });
+        if (!first) return new Response(JSON.stringify({ text: '', error: 'no product found', triedOffices, topStatus: topRes.status }), { headers: CORS });
         const prodRes = await fetch(first.id, { headers: { 'User-Agent': UA }, cf: { cacheTtl: 900, cacheEverything: true } });
         const prodJson = prodRes.ok ? await prodRes.json() : {};
         return new Response(JSON.stringify({ text: prodJson.productText || '', issuanceTime: prodJson.issuanceTime || null }), { headers: CORS });
