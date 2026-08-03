@@ -2426,6 +2426,27 @@ var WATCH_BRIEF_SECTIONS = [
     return {rows:rows, cols:['FBO','City / State','Peak / Low','Feels Like']};
   }},
 
+// 15b ── Air quality ────────────────────────────────────────────────────────
+{ id:'aqi', title:'AIR QUALITY ADVISORY',
+  sub:'Current conditions and 24-hour forecast. AQI at or above Unhealthy for Sensitive Groups. Limit prolonged outdoor exertion.',
+  icon:'\uD83C\uDF2B', bg:'#7c3aed', tc:'#fff', docxBg:'7C3AED', actions:'aqi',
+  collect:function(codes){
+    var rows=[], seen={};
+    codes.forEach(function(c){
+      var a=aqiData[c];
+      if (!a || a.aqi==null || a.aqi<101) return;
+      seen[c]=1;
+      rows.push(_bRow(c, 'AQI '+a.aqi+' \u2014 '+(a.category||''), (a.pollutant?a.pollutant+' \u2014 ':'')+'Now'));
+    });
+    codes.forEach(function(c){
+      if (seen[c]) return;
+      var fa=aqiForecastData[c];
+      if (!fa || fa.aqi==null || fa.aqi<101) return;
+      rows.push(_bRow(c, 'AQI '+fa.aqi+' \u2014 '+(fa.category||''), (fa.pollutant?fa.pollutant+' \u2014 ':'')+'24h forecast'));
+    });
+    return {rows:rows, cols:['FBO','City / State','AQI / Category','Pollutant / When']};
+  }},
+
 // 16 ── Winter storm ─────────────────────────────────────────────────────────
 { id:'winteralerts', title:'WINTER STORM IMPACTS', sub:'Winter storm products in effect',
   icon:'\u2744', bg:'#1d4ed8', tc:'#fff', docxBg:'1D4ED8', actions:'winter',
@@ -5877,6 +5898,14 @@ function _getActionHTML(type) {
   if (type==='cold')         return list('Extreme Cold','#1e40af',UNIVERSAL.concat(COLD));
   if (type==='flood')        return list('Flooding / Excessive Precipitation','#065f46',UNIVERSAL.concat(FLOOD));
   if (type==='winter')       return list('Ice / Freezing Precipitation','#0891b2',UNIVERSAL.concat(WINTER));
+  if (type==='aqi')          return list('Poor Air Quality','#7c3aed',UNIVERSAL.concat([
+    "Require N95 masks (or higher) for all outdoor ramp work while AQI remains degraded.",
+    "Shelter employees indoors when AQI exceeds 200 (Very Unhealthy). Limit outdoor task duration below that.",
+    "Close all hangar doors and disable fresh-air intake fans when smoke is present.",
+    "Advise customers to keep aircraft windows and vents closed while parked.",
+    "Do not use compressed air or dry sweeping during ash events. Wet ash before cleanup.",
+    "Monitor employees with asthma or other respiratory conditions and reassign them indoors as needed."
+  ]));
   if (type==='universal')    return list('All Hazards','#0E2841',UNIVERSAL);
   return '';
 }
