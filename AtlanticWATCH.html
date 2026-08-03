@@ -5355,8 +5355,20 @@ async function openAlertGenerator() {
   COVERED.forEach(function(f){
     var w=getWindStatus(f.code);
     var tafW=getTAFWindForecast ? getTAFWindForecast(f.code,6) : null;
-    if(w){ if(w.level==='protocol') wc0.push(f.code); else wc1.push(f.code); }
-    else if(tafW) wc2.push(f.code);
+    if(w){ if(w.level==='protocol') wc0.push(f.code); else wc1.push(f.code); return; }
+    if(tafW){ wc2.push(f.code); return; }
+    // A location can be calm now but forecast to exceed the briefing thresholds
+    // (15 mph sustained / 25 mph gust). Those appear in the brief, so they must
+    // appear on a card too, otherwise the card set understates the day.
+    var fcSus=0, fcGst=0;
+    _bHourly(f.code).forEach(function(p){
+      fcSus = Math.max(fcSus, _bWindMph(p));
+      var g = _gustForHour(f.code, p.startTime);
+      if (g!=null) fcGst = Math.max(fcGst, g);
+    });
+    var dp = _dayPeakGust(f.code);
+    if (dp && dp.mph > fcGst) fcGst = dp.mph;
+    if (fcSus>=BRIEF_WIND_SUS_MPH || fcGst>=BRIEF_WIND_GST_MPH) wc2.push(f.code);
   });
   addCard('high_wind', 0, wc0);
   addCard('high_wind', 1, wc1);
@@ -5413,7 +5425,10 @@ async function openAlertGenerator() {
   // ── Air Quality -- chips: 0=HAZARDOUS,1=VERY UNHEALTHY,2=UNHEALTHY,3=UNHEALTHY SENS,4=MODERATE,5=GOOD
   var aq0=[],aq1=[],aq2=[],aq3=[],aq4=[],aq5=[];
   COVERED.forEach(function(f){
-    var a=aqiData[f.code]; if(!a) return;
+    // Match the briefing's AQI section: current reading, else the 24h forecast.
+    var a=aqiData[f.code];
+    if(!a || a.aqi==null) a=aqiForecastData[f.code];
+    if(!a || a.aqi==null) return;
     var ai=a.aqi;
     if(ai>=301) aq0.push(f.code);
     else if(ai>=201) aq1.push(f.code);
