@@ -1355,11 +1355,23 @@ function renderCaribWxCard(code) {
   if (!isIntlLocation(code)) return "";
   var text = caribWxData.MIAOFFNT2 || "";
   if (!text) {
-    // Trigger fetch and re-render when done
-    fetchCaribWx().then(function(){ if (selected === code) renderDetail(); });
-    return '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">'
-      + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em">Caribbean Marine Forecast</div>'
-      + '<div style="font-size:10px;color:#8a9aaa;margin-top:6px">Loading NHC Caribbean forecast...</div></div>';
+    // fetchCaribWx sets _loaded even when it comes back empty, so re-rendering
+    // on every failure used to fetch and re-render forever, hanging the tab on
+    // the four international locations. Fetch at most once, then say so.
+    function _cwCard(msg){
+      return '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:14px">'
+        + '<div style="font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em">Caribbean Marine Forecast</div>'
+        + '<div style="font-size:10px;color:#8a9aaa;margin-top:6px">'+msg+'</div></div>';
+    }
+    if (caribWxData._loaded) return _cwCard('NHC Caribbean forecast unavailable right now. Use Refresh to try again.');
+    if (!caribWxData._inflight) {
+      caribWxData._inflight = true;
+      fetchCaribWx().then(function(){
+        caribWxData._inflight = false;
+        if (selected === code) renderDetail();
+      }).catch(function(){ caribWxData._inflight = false; });
+    }
+    return _cwCard('Loading NHC Caribbean forecast...');
   }
   // Extract relevant section for location
   var sections = {
