@@ -880,7 +880,12 @@ async function loadFBO(code) {
     const alerts = await fetchAlerts(code);
     results[code] = {st:'ok', alerts};
   } catch(e) {
-    results[code] = {st:'error', error: e.message, alerts:[]};
+    // No NWS coverage is an expected steady state, not a failure to retry.
+    if (INTL_CODES.has(code) || /Outside NWS coverage/.test(e.message || '')) {
+      results[code] = {st:'ok', alerts:[], intl:true};
+    } else {
+      results[code] = {st:'error', error: e.message, alerts:[]};
+    }
   }
   renderSidebarItem(code);
   if (selected === code) renderDetail();
@@ -7332,7 +7337,26 @@ setTimeout(() => {
 
 // ── In-app alert banner + sound ──────────────────────────────────────────────
 let bannerTimeout = null;
-const notifiedAlertIds = new Set();
+let notifiedAlertIds = new Set();
+// Banner suppression has to survive a reload. Dismissing a banner only removed a
+// DOM node, so the in-memory guard was the only thing stopping a repeat -- and it
+// died with the page.
+function loadNotified() {
+  try {
+    var s = localStorage.getItem('watch_notified_alerts');
+    if (!s) return;
+    var cutoff = Date.now() - 12*3600*1000;
+    notifiedAlertIds = new Set(JSON.parse(s).filter(function(x){return x[1]>cutoff;}).map(function(x){return x[0];}));
+  } catch(e) {}
+}
+function saveNotified() {
+  try {
+    var now = Date.now();
+    localStorage.setItem('watch_notified_alerts',
+      JSON.stringify(Array.from(notifiedAlertIds).map(function(k){return [k, now];})));
+  } catch(e) {}
+}
+loadNotified();
 
 function showAlertBanner(title, body, color, requireAck, code) {
   color = color || '#dc2626';
@@ -7461,6 +7485,7 @@ function checkForNewAlerts(){
     var locKey=code+"|"+keyParts.sort().join("|");
     if(notifiedAlertIds.has(locKey)) return;
     notifiedAlertIds.add(locKey);
+    saveNotified();
 
     // Build title: location + all active alert types
     var parts=[];
