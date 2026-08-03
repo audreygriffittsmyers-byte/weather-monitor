@@ -5506,14 +5506,14 @@ function buildForwardLook(code) {
     }
   }
 
-  // 5. High wind onset >= 29 mph (~25 kt)
+  // 5. Wind onset at the briefing sustained threshold (15 mph)
   var windActive = false;
   next12.forEach(function(p) {
     var mph = parseInt(p.windSpeed || '');
-    if (!isNaN(mph) && mph >= 29 && !windActive) {
+    if (!isNaN(mph) && mph >= BRIEF_WIND_SUS_MPH && !windActive) {
       flags.push({ type:'warn', icon:'➤', text: 'High winds: ' + (p.windSpeed||'') + ' from ' + (p.windDirection||'') + ' at ' + fmtHour(p.startTime) });
       windActive = true;
-    } else if (!isNaN(mph) && mph < 20) { windActive = false; }
+    } else if (!isNaN(mph) && mph < BRIEF_WIND_SUS_MPH - 3) { windActive = false; }
   });
 
   var colorMap = { warn:'#dc2626', caution:'#d97706', good:'#16a34a' };
@@ -6442,7 +6442,9 @@ function _parseAlertGustMph(alerts) {
   return best;
 }
 
-var WIND_ADVISORY_SPD=30,WIND_ADVISORY_GST=35,WIND_PROTOCOL_SPD=35,WIND_PROTOCOL_GST=40;
+// Knots -- every consumer compares against obs.windKts / TAF knots.
+// Advisory aligned to the briefing thresholds: 15 mph sustained (13 kt), 25 mph gust (22 kt).
+var WIND_ADVISORY_SPD=13,WIND_ADVISORY_GST=22,WIND_PROTOCOL_SPD=35,WIND_PROTOCOL_GST=40;
 function getWindStatus(code){
   var obs=obsData[code];if(!obs)return null;
   var spd=obs.windKts||0,gust=obs.windGustKts||0;
