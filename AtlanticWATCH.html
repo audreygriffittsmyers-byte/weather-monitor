@@ -3760,10 +3760,10 @@ async function fetchNWSNarrativeProducts() {
       fetch(`${PROXY}?type=nwsproduct&code=QPFERD`),
       fetch(`${PROXY}?type=nwsproduct&code=PMDSPD`),
     ]);
-    if (rSpc.ok)   { const d = await rSpc.json();   spcDay1NarrativeText  = d.text || null; }
-    if (rRain.ok)  { const d = await rRain.json();  wpcRainDiscussionText = d.text || null; }
-    if (rShort.ok) { const d = await rShort.json(); wpcShortRangeText     = d.text || null; }
-  } catch(e) {}
+    if (rSpc.ok)   { const d = await rSpc.json();   spcDay1NarrativeText  = d.text || null; if (d.error) console.warn('SWODY1 narrative fetch:', d.error, d.triedOffices); }
+    if (rRain.ok)  { const d = await rRain.json();  wpcRainDiscussionText = d.text || null; if (d.error) console.warn('QPFERD narrative fetch:', d.error, d.triedOffices); }
+    if (rShort.ok) { const d = await rShort.json(); wpcShortRangeText     = d.text || null; if (d.error) console.warn('PMDSPD narrative fetch:', d.error, d.triedOffices); }
+  } catch(e) { console.warn('fetchNWSNarrativeProducts failed:', e.message); }
 }
 
 function _narrativeCard(icon, label, text) {
