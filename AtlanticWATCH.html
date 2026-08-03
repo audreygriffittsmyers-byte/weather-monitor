@@ -15,6 +15,7 @@
 <link rel="apple-touch-icon" href="/weather-monitor/icon-192.png"/>
 <link rel="apple-touch-icon" sizes="192x192" href="/weather-monitor/icon-192.png"/>
 <link rel="apple-touch-icon" sizes="512x512" href="/weather-monitor/icon-512.png"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230E2841%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-family=%27Arial%27 font-size=%2716%27 font-weight=%27bold%27 fill=%27%23fff%27 text-anchor=%27middle%27%3EW%3C/text%3E%3C/svg%3E">
 <title>Atlantic Aviation — WATCH</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -3927,6 +3928,14 @@ async function fetch7Day(code) {
       fhUrl ? fetch(fhUrl, { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } }) : Promise.resolve(null),
       fgUrl ? fetch(fgUrl, { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } }) : Promise.resolve(null)
     ]);
+    // NWS sometimes hands back a gridpoint from /points that then 404s on their
+    // own gridpoints endpoint (CHS/85,68 is doing this). Don't lose the location's
+    // forecast over it -- fall back to Visual Crossing, same as the international sites.
+    if (!fRes.ok && (!fhRes || !fhRes.ok)) {
+      console.warn('NWS gridpoint unusable for ' + code + ' (' + fRes.status + ') -- falling back to Visual Crossing');
+      await fetchVCX(code);
+      return;
+    }
     if (fRes.ok) { const fd = await fRes.json(); forecastData[code] = (fd.properties?.periods || []).slice(0, 14); }
     if (fhRes && fhRes.ok) { const fh = await fhRes.json(); hourlyData[code] = (fh.properties?.periods || []).slice(0, 48); }
     if (fgRes && fgRes.ok) { const fg = await fgRes.json(); gridData[code] = { windGust: _parseGridGust(fg.properties) }; }
