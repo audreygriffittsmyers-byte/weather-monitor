@@ -315,7 +315,10 @@ export default {
       const spec = PRODUCTS[code];
       if (!spec) return new Response(JSON.stringify({ text: '', error: 'unsupported product' }), { headers: CORS });
       try {
-        const listUrl = `https://api.weather.gov/products?type=${spec.code}&office=${spec.office}&limit=25`;
+        // Query the WMO id directly. Filtering a type+office listing failed because
+        // SPC issues dozens of mesoscale discussions (ACUS11) a day under the same
+        // SWO/KWNS pair, so the Day 1 outlook (ACUS01) fell outside the window.
+        const listUrl = `https://api.weather.gov/products?wmoid=${spec.wmo}&office=${spec.office}&limit=5`;
         const listRes = await fetch(listUrl, { headers: { 'User-Agent': UA } });
         const diag = { listUrl, listStatus: listRes.status };
         if (!listRes.ok) {
@@ -326,13 +329,22 @@ export default {
         diag.count = graph.length;
         diag.names = graph.slice(0, 5).map(g => (g.wmoCollectiveId || '?') + ' ' + g.productName);
         if (!graph.length) {
+          const altUrl = `https://api.weather.gov/products?type=${spec.code}&office=${spec.office}&limit=50`;
+          const altRes = await fetch(altUrl, { headers: { 'User-Agent': UA } });
+          diag.altUrl = altUrl; diag.altStatus = altRes.status;
+          if (altRes.ok) {
+            const altJson = await altRes.json();
+            const altGraph = (altJson['@graph'] || []).filter(g => (g.wmoCollectiveId || '').toUpperCase().startsWith(spec.wmo));
+            diag.altCount = altGraph.length;
+            if (altGraph.length) graph.push(altGraph[0]);
+          }
+        }
+        if (!graph.length) {
           return new Response(JSON.stringify({ text: '', error: 'no product found', diag }), { headers: CORS });
         }
         // One office+code can cover several products (SWO covers Day 1/2/3 and
         // mesoscale discussions), so match on product name and fall back to newest.
-        const pick = graph.find(g => (g.wmoCollectiveId || '').toUpperCase().startsWith(spec.wmo))
-                  || graph.find(g => spec.match.test(g.productName || ''))
-                  || graph[0];
+        const pick = graph.find(g => (g.wmoCollectiveId || '').toUpperCase().startsWith(spec.wmo)) || graph[0];
         diag.picked = pick.productName;
         // /products returns a bare UUID in `id`; the resolvable URL is in `@id`.
         const prodUrl = pick['@id'] || `https://api.weather.gov/products/${pick.id}`;
