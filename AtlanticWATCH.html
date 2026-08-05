@@ -4624,13 +4624,26 @@ function renderNASCard(code) {
 // ── Ops Grid ──────────────────────────────────────────────────────────────────
 var GRID_REGIONS = {
   'All':         null,
-  'East Coast':  ['AGC','BAF','BCT','BDL','BDR','BED','CLE','ELM','FRG','HPN','HYA','IAD','ILG','JZI','MMU','ORH','OXC','PBI','PHF','PHL','PIT','PNE','PVD','SBN','SDF','SGJ','SRQ','SUA','SWF','TEB'],
-  'Southeast':   ['BHM','BNA','CHS','DTS','FXE','HOU','HYA','IAH','JAN','MCO','MSY','OPF','ORL','PDK','SDF','SKF'],
-  'Central':     ['ADS','DAL','DTS','EAS(Corp)','FMN','HOU','IAH','LIT','MKC','OKC','OMA','PWA','RIL','SAF','SCK','SKF','TUL'],
-  'West Coast':  ['APC','ASE','BFL','BUR','CRQ','EUG','FAT','GPI','HDN','LAX','LGB','MTJ','ORL','PDX','RNO','SBA','SJC','SLC','SMO','UAO'],
-  'Alaska':      ['ANC','FAI','JNU','KTN','SIT'],
-  'Hawaii':      ['HNL','ITO','KOA','LIH','LNY','OGG'],
-  'International': ['BDA','GCM','SXM','PLS'],
+  // Regions follow the NWS/WPC forecast-discussion naming used in the SPC and
+  // WPC narrative text, so a tab name matches what the forecaster wrote.
+  'Northeast':         ['6N5','BAF','BDL','BDR','BED','ELM','FRG','HPN','HYA','MMU','ORH','OXC','PVD','SWF','TEB'],
+  'Mid-Atlantic':      ['AGC','IAD','ILG','PHF','PHL','PIT','PNE','RDU'],
+  'Southeast':         ['CHS','JZI','PDK','SGJ'],
+  'Florida':           ['BCT','DTS','FXE','MCO','OPF','ORL','PBI','SRQ','SUA'],
+  'Gulf Coast':        ['BHM','CRP','HOU','IAH','JAN','MSY'],
+  'Ohio Valley':       ['BNA','CLE','SBN','SDF'],
+  'Corn Belt':         ['ANE','MDW','MKC','PWK','UES'],
+  'Central Plains':    ['LIT','LNK','OKC','OMA','PWA','TUL'],
+  'Southern Plains':   ['ADS','AUS','DAL','EAS(Corp)','ELP','SKF'],
+  'Northern Rockies':  ['CPR','GPI','SUN'],
+  'Southern Rockies':  ['ABQ','ASE','FMN','HDN','MTJ','RIL','SAF'],
+  'Great Basin':       ['LAS','RNO','SLC'],
+  'Desert Southwest':  ['PSP','SDL','TRM','TUS'],
+  'Pacific Northwest': ['EUG','PDX','UAO'],
+  'California':        ['APC','BFL','BUR','CRQ','FAT','LAX','LGB','SBA','SCK','SJC','SMO'],
+  'Alaska':            ['ANC','FAI','JNU','KTN','SIT'],
+  'Hawaii':            ['HNL','ITO','KOA','LIH','LNY','OGG'],
+  'International':     ['BDA','GCM','SXM','PLS'],
 };
 
 var gridRegion   = 'All';
