@@ -2247,6 +2247,11 @@ function _bWindMph(p){
   return n ? Math.max.apply(null, n.map(Number)) : 0;
 }
 
+// Every event pattern claimed by a hazard section above. Anything not matching
+// this lands in OTHER ACTIVE NWS ALERTS rather than being silently dropped --
+// dust, dense fog, ashfall and similar used to disappear from the briefing.
+var _BRIEF_CLAIMED = /thunderstorm|tornado|severe weather|flood|wind|heat|chill|extreme cold|cold weather|freeze|frost|winter|blizzard|ice storm|snow|freezing rain|sleet|tropical|hurricane|storm surge|typhoon|dust|sand|haboob/i;
+
 var WATCH_BRIEF_SECTIONS = [
 
 // 1 ── SPC convective outlook (tiered) ───────────────────────────────────────
@@ -2507,6 +2512,24 @@ var WATCH_BRIEF_SECTIONS = [
     return {rows:rows, cols:['FBO','City / State','Peak / Low','Feels Like']};
   }},
 
+// 15a ── Blowing dust / sand ────────────────────────────────────────────────
+{ id:'dust', title:'BLOWING DUST / SAND', sub:'Dust storm and blowing dust products, plus dust or sand observed at the station',
+  icon:'\uD83C\uDF2A', bg:'#a16207', tc:'#fff', docxBg:'A16207', actions:'dust',
+  collect:function(codes){
+    var rows=[];
+    codes.forEach(function(c){
+      var a=_bAlerts(c, /dust|sand|haboob|blowing dust/i);
+      // METAR dust/sand groups: DU/DS blowing or storm, SA/SS sand, PO dust whirls.
+      var ob=obsData[c], seen='';
+      if (ob && ob.rawOb && /\b(\+?BLDU|\+?BLSA|DU|DS|SS|SA|PO)\b/.test(ob.rawOb)) {
+        seen = 'Dust or sand in current observation';
+      }
+      if (a.length) rows.push(_bRow(c, _bAlertTxt(a), seen));
+      else if (seen) rows.push(_bRow(c, seen, ob.visibility!=null ? ('Visibility '+ob.visibility+' sm') : ''));
+    });
+    return {rows:rows, cols:['FBO','City / State','Alert / Status','Detail']};
+  }},
+
 // 15b ── Air quality ────────────────────────────────────────────────────────
 { id:'aqi', title:'AIR QUALITY ADVISORY',
   sub:'Current conditions and 24-hour forecast. AQI at or above Unhealthy for Sensitive Groups. Limit prolonged outdoor exertion.',
@@ -2570,6 +2593,18 @@ var WATCH_BRIEF_SECTIONS = [
   }},
 
 // 19 ── NHC discussions ──────────────────────────────────────────────────────
+// 18b ── Anything the hazard sections above did not claim ─────────────────
+{ id:'otheralerts', title:'OTHER ACTIVE NWS ALERTS', sub:'Active products not covered by a hazard section above',
+  icon:'\u26A0', bg:'#475569', tc:'#fff', docxBg:'475569', actions:'universal',
+  collect:function(codes){
+    var rows=[];
+    codes.forEach(function(c){
+      var a=((results[c]&&results[c].alerts)||[]).filter(function(x){ return !_BRIEF_CLAIMED.test(x.event||''); });
+      if (a.length) rows.push(_bRow(c, _bAlertTxt(a)));
+    });
+    return {rows:rows, cols:['FBO','City / State','Alert / Status']};
+  }},
+
 { id:'nhc', title:'NHC DISCUSSIONS, WATCHES AND ADVISORIES', sub:'National Hurricane Center text products',
   icon:'\uD83C\uDF00', bg:'#5b21b6', tc:'#fff', docxBg:'5B21B6', actions:null,
   collect:function(codes){
@@ -6050,6 +6085,15 @@ function _getActionHTML(type) {
   if (type==='cold')         return list('Extreme Cold','#1e40af',UNIVERSAL.concat(COLD));
   if (type==='flood')        return list('Flooding / Excessive Precipitation','#065f46',UNIVERSAL.concat(FLOOD));
   if (type==='winter')       return list('Ice / Freezing Precipitation','#0891b2',UNIVERSAL.concat(WINTER));
+  if (type==='dust')         return list('Blowing Dust / Sand','#a16207',UNIVERSAL.concat([
+    "Suspend ramp operations when visibility drops below operational minimums. Blowing dust can reduce it to near zero in minutes.",
+    "Require eye protection and N95 masks (or higher) for any outdoor work while dust is present.",
+    "Stop all aircraft movement and towing during a dust storm. Do not attempt to reposition equipment in low visibility.",
+    "Close hangar doors and shut down fresh-air intakes to keep grit out of the facility.",
+    "Cover or hangar aircraft where able. Airborne grit damages windscreens, blades, and engine intakes.",
+    "Protect fuel connections and keep caps and ports covered. Do not fuel in blowing dust unless you can keep the point of contact clean.",
+    "Inspect GSE filters and intakes after the event, and do not resume normal operations until a ramp inspection is complete."
+  ]));
   if (type==='aqi')          return list('Poor Air Quality','#7c3aed',UNIVERSAL.concat([
     "Require N95 masks (or higher) for all outdoor ramp work while AQI remains degraded.",
     "Shelter employees indoors when AQI exceeds 200 (Very Unhealthy). Limit outdoor task duration below that.",
