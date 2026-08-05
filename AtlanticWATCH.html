@@ -441,7 +441,7 @@ const COORDS = {
   MSY:[29.9934,-90.258],MTJ:[38.5098,-107.8938],OGG:[20.8986,-156.4305],
   OKC:[35.3931,-97.6007],OMA:[41.3032,-95.894],OPF:[25.907,-80.2786],
   ORH:[42.2673,-71.8757],ORL:[28.5455,-81.3329],OXC:[41.4786,-73.1352],
-  PBI:[26.6832,-80.0956],PDK:[33.8756,-84.302],PDX:[45.5887,-122.5975],
+  DJT:[26.6832,-80.0956],PDK:[33.8756,-84.302],PDX:[45.5887,-122.5975],
   PHF:[37.1317,-76.493],PHL:[39.8719,-75.2411],
   PIT:[40.4915,-80.2329],PNE:[40.0819,-75.0107],PSP:[33.8297,-116.5067],
   PVD:[41.7258,-71.4282],PWA:[35.5342,-97.6471],PWK:[42.1142,-87.9015],
@@ -494,7 +494,7 @@ const FBO_LIST = [
   {code:"OKC",city:"Oklahoma City",state:"OK"},{code:"OMA",city:"Omaha",state:"NE"},
   {code:"OPF",city:"Opa Locka",state:"FL"},{code:"ORH",city:"Worcester",state:"MA"},
   {code:"ORL",city:"Orlando",state:"FL"},{code:"OXC",city:"Oxford",state:"CT"},
-  {code:"PBI",city:"W. Palm Beach",state:"FL"},{code:"PDK",city:"Atlanta",state:"GA"},
+  {code:"DJT",city:"W. Palm Beach",state:"FL"},{code:"PDK",city:"Atlanta",state:"GA"},
   {code:"PDX",city:"Portland",state:"OR"},
   {code:"PHF",city:"Newport News",state:"VA"},{code:"PHL",city:"Philadelphia",state:"PA"},
   {code:"PIT",city:"Moon Township",state:"PA"},{code:"PNE",city:"Philadelphia",state:"PA"},
@@ -3619,6 +3619,8 @@ function toICAO(code) {
     'PLS':'MBPV',   // Turks & Caicos
     'SXM':'TNCM',   // Sint Maarten -- without this it fell through to 'K'+code (KSXM, not a station)
     // Special cases
+    'DJT':'KDJT',   // renamed from Palm Beach Intl; ICAO changed 2026-07-09
+    'PBI':'KDJT',   // legacy alias -- saved station lists may still hold PBI
     'HPN':'KHPN',
     '6N5':'KFOK',   // No direct METAR, use nearest
     'EAS(Corp)':'KADS', // Plano TX corp office -- use ADS airport
@@ -4652,7 +4654,7 @@ var GRID_REGIONS = {
   'Northeast':         ['6N5','BAF','BDL','BDR','BED','ELM','FRG','HPN','HYA','MMU','ORH','OXC','PVD','SWF','TEB'],
   'Mid-Atlantic':      ['AGC','IAD','ILG','PHF','PHL','PIT','PNE','RDU'],
   'Southeast':         ['CHS','JZI','PDK','SGJ'],
-  'Florida':           ['BCT','DTS','FXE','MCO','OPF','ORL','PBI','SRQ','SUA'],
+  'Florida':           ['BCT','DTS','FXE','DJT','MCO','OPF','ORL','SRQ','SUA'],
   'Gulf Coast':        ['BHM','CRP','HOU','IAH','JAN','MSY'],
   'Ohio Valley':       ['BNA','CLE','SBN','SDF'],
   'Corn Belt':         ['ANE','MDW','MKC','PWK','UES'],
