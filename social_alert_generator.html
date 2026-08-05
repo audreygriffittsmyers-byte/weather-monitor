@@ -232,7 +232,7 @@ function buildSVG(slug,focusIndex){
 
     sect('IMPACTS',362);
     let y=380;
-    const IMPACTS_MAX_Y=466; // hard stop -- keeps chipY (below) from ever colliding with the code-list zone
+    const IMPACTS_MAX_Y=458; // hard stop -- a bullet starting here can still add ~20px, so this bounds y at ~478
     (t.impacts||[]).forEach(item=>{
       if (y>IMPACTS_MAX_Y) return;
       const lines=wrapText(item,58);
@@ -246,7 +246,7 @@ function buildSVG(slug,focusIndex){
     const nC=chips.length;
     const cGap=nC>4?3:6;
     const cw=(pw-cGap*(nC-1))/nC;
-    const chipY=Math.min(500,Math.max(480,y+8));
+    const chipY=Math.min(486,Math.max(470,y+8));
     // Draw label bars (24px tall)
     chips.forEach(({label,bg,fg},i)=>{
       const x=px+i*(cw+cGap);
@@ -260,8 +260,11 @@ function buildSVG(slug,focusIndex){
       llines.forEach(L=>{A(`<text x="${(x+cw/2).toFixed(0)}" y="${ly}" font-size="${lfs}" font-weight="800" fill="${dimmed?'#777':fg}" text-anchor="middle">${esc(L)}</text>`);ly+=lfs+1;});
     });
     // Code rows below -- one per active tier, full panel width, capped so it never collides with Source/footer
-    const MAX_CODE_Y = 543;
-    let codeY=chipY+30;
+    // chipY+38 leaves 14px below the 24px chip bars. The code row needs ~7px of
+    // ascent plus a 4px tier dot, so the old +30 (a 6px gap) drew into the chips.
+    const MAX_CODE_Y = 552;
+    const MAX_LINE_Y = MAX_CODE_Y - 13; // keep a clear row for the "+N more" note
+    let codeY=chipY+38;
     let truncated = false;
     let remainingCount = 0;
     chips.forEach(({label,bg},i)=>{
@@ -275,7 +278,7 @@ function buildSVG(slug,focusIndex){
       const lines = wrapText(cv,mc);
       let shownAnyForTier=false;
       for (let li=0; li<lines.length; li++) {
-        if (codeY+13 > MAX_CODE_Y) {
+        if (codeY > MAX_LINE_Y) {
           // Count codes not yet shown in this tier (rough: remaining lines' worth)
           const shownText = lines.slice(0,li).join(' ');
           const shownCodes = shownText.split(' \xb7 ').filter(Boolean).length;
