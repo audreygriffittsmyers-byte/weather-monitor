@@ -2342,7 +2342,7 @@ var WATCH_BRIEF_SECTIONS = [
   }},
 
 // 6 ── 24h heavy rainfall forecast ───────────────────────────────────────────
-{ id:'rainfcst', narrativeVar:'wpcShortRangeText', title:'24-HOUR HEAVY RAINFALL FORECAST', sub:'50% or greater chance of precipitation',
+{ id:'rainfcst', title:'24-HOUR HEAVY RAINFALL FORECAST', sub:'50% or greater chance of precipitation',
   icon:'\uD83C\uDF27', bg:'#0891b2', tc:'#fff', docxBg:'0891B2', actions:'flood',
   collect:function(codes){
     var rows=[];
@@ -2593,6 +2593,13 @@ var _BRIEF_NARRATIVES = {
   wpcRainDiscussionText: ['\uD83C\uDF27', 'WPC Excessive Rainfall Discussion'],
   wpcShortRangeText:     ['\uD83D\uDCCB', 'WPC Short Range Forecast Discussion (Day 1-2)']
 };
+function _briefNarrativeHTML(varName){
+  var meta = _BRIEF_NARRATIVES[varName];
+  var txt = null;
+  try { txt = eval(varName); } catch(e) { txt = null; }
+  if (!meta || !txt) return '';
+  return _narrativeCard(meta[0], meta[1], txt);
+}
 function _briefNarrativeFor(def){
   if (!def.narrativeVar) return '';
   var meta = _BRIEF_NARRATIVES[def.narrativeVar];
@@ -4932,6 +4939,14 @@ function _watchDownloadDocx(codes, notes, sections) {
   add(buildBriefNarrative(secs), ppr({after:'100'}), rpr({sz:22}));
   add('This is the only alert that will be issued today. Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.',
       ppr({after:'120'}), rpr({sz:22, i:true, b:true}));
+  var _srd = _briefNarrativeHTML('wpcShortRangeText');
+  if (_srd) {
+    add('WPC Short Range Forecast Discussion (Day 1-2)', ppr({fill:'0E2841', after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
+    _srd.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'\n').replace(/&lt;/g,'<').replace(/&nbsp;/g,' ')
+        .split('\n').forEach(function(line){ if(line.trim()) add(line.trim(), ppr({after:'20'}), rpr({sz:17})); });
+    sp();
+  }
+
   if (notes) { add('Shift Notes: '+notes, ppr({fill:'F0F4F7', after:'120'}), rpr({sz:20})); sp(); }
 
   _renderBriefDocx(secs, add, ppr, rpr, sp);
@@ -6167,6 +6182,10 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   html += '<p style="margin:0 0 10px 0">Team,</p>';
   html += '<p style="margin:0 0 10px 0">'+buildBriefNarrative(secs)+'</p>';
   html += '<p style="margin:0 0 16px 0;font-style:italic;font-weight:700">This is the only alert that will be issued today. Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.</p>';
+  // WPC Short Range Forecast Discussion leads the briefing -- it is the synoptic
+  // setup for everything below, so it reads first rather than under one hazard.
+  html += _briefNarrativeHTML('wpcShortRangeText');
+
   if (notes) {
     html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px;font-size:11px"><strong>Shift Notes:</strong> '+notes+'</div>';
   }
