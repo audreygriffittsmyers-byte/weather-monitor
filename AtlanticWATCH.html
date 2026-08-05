@@ -2287,6 +2287,7 @@ var WATCH_BRIEF_SECTIONS = [
       var hz = Z[z].hazards + (probs.length ? ' | Max probs: '+probs.join(' ') : '');
       groups.push({label:Z[z].label, level:Z[z].level, bg:Z[z].bg, docxBg:Z[z].docxBg,
                    action:Z[z].action, hazards:hz, probs:probs.join(' '),
+                   listOnly:(z==='TSTM'),
                    cols:['FBO','City / State','Timing'], rows:rows});
     });
     return groups.length ? {groups:groups} : null;
@@ -2707,6 +2708,16 @@ function _renderBriefLive(secs){
     }
     var groups = d.groups || [{label:null, bg:def.bg, rows:d.rows}];
     groups.forEach(function(g){
+      if (g.listOnly) {
+        html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:12px">'
+          + '<div style="font-size:11px;font-weight:700;color:#556070;margin-bottom:6px">'+g.label
+          + (g.hazards?' <span style="font-weight:400;color:#8a9aaa">\u2014 '+g.hazards+'</span>':'')+'</div>'
+          + '<div style="font-size:10px;color:#556070;line-height:2;overflow-wrap:anywhere">'
+          + g.rows.map(function(r){
+              return '<span style="display:inline-block;background:#f0f4f7;border-radius:3px;padding:1px 6px;margin:0 3px 3px 0;font-family:monospace">'+r.code+'</span>';
+            }).join('') + '</div></div>';
+        return;
+      }
       var rows = g.rows.map(function(r){
         return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 14px;border-top:1px solid #e8e8e8">'
           + '<div style="display:flex;align-items:center;gap:8px">'
@@ -2747,6 +2758,13 @@ function _renderBriefHTML(secs){
       if (def.sub) html += '<div style="font-size:10px;color:#556070;font-style:italic;margin:3px 0 6px">'+def.sub+'</div>';
       groups.forEach(function(g){
         var cols = g.cols || d.cols || ['FBO','City / State','Detail'];
+        if (g.listOnly) {
+          html += '<div style="background:'+(g.bg||def.bg)+';color:#fff;font-weight:700;font-size:11px;padding:5px 8px">'
+            + g.label + (g.level?' \u2014 Level '+g.level:'') + (g.action?' | '+g.action:'') + (g.hazards?' | '+g.hazards:'') + '</div>'
+            + '<div style="border:1px solid #ddd;border-top:none;padding:8px;font-size:11px;line-height:1.9;margin-bottom:10px;overflow-wrap:anywhere">'
+            + g.rows.map(function(r){return r.code;}).join(' \u00B7 ') + '</div>';
+          return;
+        }
         html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">';
         if (g.label) html += '<tr><td colspan="'+cols.length+'" style="background:'+(g.bg||def.bg)+';color:#fff;font-weight:700;font-size:11px;padding:5px 8px;border:1px solid '+(g.bg||def.bg)+'">'
           + g.label + (g.level?' \u2014 Level '+g.level:'') + (g.action?' | '+g.action:'') + (g.hazards?' | '+g.hazards:'') + '</td></tr>';
@@ -2786,6 +2804,11 @@ function _renderBriefDocx(secs, add, ppr, rpr, sp){
         var cols = g.cols || d.cols || ['FBO','City / State','Detail'];
         if (g.label) add(g.label + (g.level?' \u2014 Level '+g.level:'') + (g.action?' | '+g.action:'') + (g.hazards?' | '+g.hazards:''),
                          ppr({fill:g.docxBg||def.docxBg, after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
+        if (g.listOnly) {
+          add(g.rows.map(function(r){return r.code;}).join(' \u00B7 '), ppr({after:'80'}), rpr({sz:20}));
+          sp();
+          return;
+        }
         add(cols.join('  |  '), ppr({fill:'F2F4F6', after:'30'}), rpr({b:true, sz:19}));
         g.rows.forEach(function(r,ri){
           var parts=[r.code, r.city+(r.state?', '+r.state:'')];
