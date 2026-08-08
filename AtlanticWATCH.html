@@ -2252,6 +2252,31 @@ function _bWindMph(p){
 // dust, dense fog, ashfall and similar used to disappear from the briefing.
 var _BRIEF_CLAIMED = /thunderstorm|tornado|severe weather|flood|wind|heat|chill|extreme cold|cold weather|freeze|frost|winter|blizzard|ice storm|snow|freezing rain|sleet|tropical|hurricane|storm surge|typhoon|dust|sand|haboob/i;
 
+// SPC gives a tier, not a time. parseSPCTiming() only ever returns tier-wide
+// narrative text, so the Timing column read "Monitor for convective development"
+// for every row. The hourly forecast already knows when storms arrive locally.
+function _bTsTiming(code){
+  var hit=null, likely=null;
+  _bHourly(code).forEach(function(p){
+    if (!/thunder|tstm/i.test(p.shortForecast||'')) return;
+    if (!hit) hit = p;
+    if (!likely && /likely|scattered|numerous/i.test(p.shortForecast||'')) likely = p;
+  });
+  if (hit) {
+    var s = 'From ' + _bHrLabel(hit.startTime);
+    if (likely && likely !== hit) s += ', likely by ' + _bHrLabel(likely.startTime);
+    return s + (hit.shortForecast ? ' \u2014 ' + hit.shortForecast : '');
+  }
+  // TAF fallback: a TEMPO/PROB group carrying TS
+  var taf = tafData && tafData[code];
+  if (taf && taf.rawTAF && /\bTS/.test(taf.rawTAF)) {
+    var mm = taf.rawTAF.match(/(?:TEMPO|PROB\d{2})\s+(\d{2})(\d{2})\/(\d{2})(\d{2})/);
+    if (mm) return 'Thunderstorms possible ' + mm[2] + '00Z\u2013' + mm[4] + '00Z';
+    return 'Thunderstorms in TAF period';
+  }
+  return null;
+}
+
 var WATCH_BRIEF_SECTIONS = [
 
 // 1 ── SPC convective outlook (tiered) ───────────────────────────────────────
@@ -2275,8 +2300,10 @@ var WATCH_BRIEF_SECTIONS = [
         if (s.torn) maxTorn = Math.max(maxTorn, parseInt(s.torn,10) || 0);
         if (s.hail) maxHail = Math.max(maxHail, parseInt(s.hail,10) || 0);
         if (s.wind) maxWind = Math.max(maxWind, parseInt(s.wind,10) || 0);
-        var t = (typeof parseSPCTiming==='function') ? parseSPCTiming(z) : null;
-        rows.push(_bRow(c, t || 'Monitor for convective development.'));
+        var t = _bTsTiming(c)
+             || ((typeof parseSPCTiming==='function') ? parseSPCTiming(z) : null)
+             || 'No local timing yet \u2014 monitor for development.';
+        rows.push(_bRow(c, t));
       });
       if (!rows.length) return;
       // Highest SPC point probability seen across the locations in this tier.
