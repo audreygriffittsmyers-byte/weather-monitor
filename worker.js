@@ -226,38 +226,38 @@ export default {
     }
 
     if (type === 'nhcdisturbances') {
-      // NHC Graphical Tropical Weather Outlook (GTWO) via NOAA ArcGIS.
+      // NHC Graphical Tropical Weather Outlook (GTWO).
       // Layer 3 = Seven-Day: Potential Development Region (polygons)
       // Layer 2 = Seven-Day: Current Location (points)
-      // Fields verified live: basin, prob2day, risk2day, prob7day, risk7day, idp_source
-      const TWSUM = 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer';
+      // Both services expose identical GTWO layer IDs; try summary first, fall back.
       const TWQ = '/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson';
-      try {
-        const [rArea, rPt] = await Promise.all([
-          fetch(TWSUM + '/3' + TWQ, { headers:{'User-Agent':UA}, cf:{cacheTtl:600, cacheEverything:true} }),
-          fetch(TWSUM + '/2' + TWQ, { headers:{'User-Agent':UA}, cf:{cacheTtl:600, cacheEverything:true} }),
-        ]);
-        let area = { features: [] }, pts = { features: [] };
-        try { if (rArea.ok) area = await rArea.json(); } catch(e) {}
-        try { if (rPt.ok)   pts  = await rPt.json();  } catch(e) {}
-        const out = { type: 'FeatureCollection', features: [] };
-        (area.features || []).forEach(function(f) {
-          f.properties = f.properties || {}; f.properties._kind = 'area';
-          out.features.push(f);
-        });
-        (pts.features || []).forEach(function(f) {
-          f.properties = f.properties || {}; f.properties._kind = 'point';
-          out.features.push(f);
-        });
-        // _debug surfaces upstream failures instead of silently returning empty
-        out._debug = {
-          areaStatus: rArea.status, areaCount: (area.features||[]).length,
-          ptStatus: rPt.status,     ptCount:   (pts.features||[]).length
-        };
-        return new Response(JSON.stringify(out), { headers: GEOJSON });
-      } catch(e) {
-        return new Response(JSON.stringify({ type:'FeatureCollection', features:[], _debug:{ error:String(e) } }), { headers: GEOJSON });
+      const SERVICES = [
+        ['summary', 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer'],
+        ['full',    'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer'],
+      ];
+      const dbg = [];
+      const out = { type: 'FeatureCollection', features: [] };
+      for (const [tag, base] of SERVICES) {
+        try {
+          const [rArea, rPt] = await Promise.all([
+            fetch(base + '/3' + TWQ, { headers:{'User-Agent':UA}, cf:{cacheTtl:600, cacheEverything:true} }),
+            fetch(base + '/2' + TWQ, { headers:{'User-Agent':UA}, cf:{cacheTtl:600, cacheEverything:true} }),
+          ]);
+          let area = { features: [] }, pts = { features: [] };
+          try { if (rArea.ok) area = await rArea.json(); } catch(e) {}
+          try { if (rPt.ok)   pts  = await rPt.json();  } catch(e) {}
+          const af = area.features || [], pf = pts.features || [];
+          dbg.push({ svc: tag, areaStatus: rArea.status, areaCount: af.length, ptStatus: rPt.status, ptCount: pf.length });
+          if (af.length || pf.length) {
+            af.forEach(function(f){ f.properties = f.properties || {}; f.properties._kind = 'area';  out.features.push(f); });
+            pf.forEach(function(f){ f.properties = f.properties || {}; f.properties._kind = 'point'; out.features.push(f); });
+            out._src = tag;
+            break;
+          }
+        } catch(e) { dbg.push({ svc: tag, error: String(e) }); }
       }
+      out._debug = dbg;
+      return new Response(JSON.stringify(out), { headers: GEOJSON });
     }
 
     if (type === 'nhc') {
