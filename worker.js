@@ -225,40 +225,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    if (type === 'gtwodebug') {
-      // Diagnostic only. Probes GTWO layers 0-3 on both services with several
-      // query variants to distinguish "layer is empty" from "query is wrong".
-      const BASES = {
-        summary: 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer',
-        full:    'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer',
-      };
-      const VARIANTS = {
-        count:   '/query?where=1%3D1&returnCountOnly=true&f=json',
-        plain:   '/query?where=1%3D1&outFields=*&returnGeometry=false&f=json',
-        geojson: '/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
-      };
-      const res = {};
-      for (const svc of Object.keys(BASES)) {
-        for (const lyr of [0,1,2,3]) {
-          for (const v of Object.keys(VARIANTS)) {
-            const key = svc + '/L' + lyr + '/' + v;
-            try {
-              const r = await fetch(BASES[svc] + '/' + lyr + VARIANTS[v], { headers:{'User-Agent':UA} });
-              const t = await r.text();
-              let j = null; try { j = JSON.parse(t); } catch(e) {}
-              res[key] = {
-                status: r.status,
-                count: j && j.count != null ? j.count : (j && j.features ? j.features.length : null),
-                err: j && j.error ? (j.error.message || JSON.stringify(j.error)) : null,
-                raw: j ? null : t.slice(0, 120)
-              };
-            } catch(e) { res[key] = { fetchError: String(e) }; }
-          }
-        }
-      }
-      return new Response(JSON.stringify(res, null, 1), { headers: GEOJSON });
-    }
-
     if (type === 'nhcdisturbances') {
       // NHC Graphical Tropical Weather Outlook (GTWO).
       // Layer 3 = Seven-Day: Potential Development Region (polygons)
