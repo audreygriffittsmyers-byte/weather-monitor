@@ -4256,19 +4256,27 @@ async function drawNHCLayer() {
       }
     }
     if (nhcDisturbances && nhcDisturbances.length) {
-      nhcDisturbances.forEach(function(d) {
-        if (!d.lat || !d.lon) return;
-        var risk = (d.RISK7DAY || d.RISK2DAY || '').toLowerCase();
-        var color = risk === 'high' ? '#dc2626' : risk === 'medium' ? '#ea580c' : '#ca8a04';
-        var c = L.circle([d.lat, d.lon], {
-          radius: 280000, color: color, fillColor: color,
-          fillOpacity: 0.12, weight: 2, dashArray: '8 5'
-        });
-        var label = '🌀 Atlantic Area ' + (d.AREA||'')
-          + ' · 2-day: ' + (d.PROB2DAY||'0%') + ' ' + (d.RISK2DAY||'')
-          + ' · 7-day: ' + (d.PROB7DAY||'0%') + ' ' + (d.RISK7DAY||'');
-        c.bindTooltip(label, {sticky:true});
-        layers.push(c);
+      nhcDisturbances.forEach(function(f) {
+        var p = f.properties || {};
+        var pr = parseInt(String(p.prob7day || p.prob2day || '0').replace('%',''), 10) || 0;
+        var color = pr >= 70 ? '#dc2626' : pr >= 40 ? '#ea580c' : '#eab308';
+        var label = 'NHC ' + (p.basin || 'Tropical') + ' disturbance'
+          + ' \u00b7 2-day: ' + (p.prob2day || 'n/a')
+          + ' \u00b7 7-day: ' + (p.prob7day || 'n/a');
+        if (p._kind === 'point') {
+          if (!f.geometry || f.geometry.type !== 'Point') return;
+          var c = f.geometry.coordinates;
+          var ico = L.divIcon({
+            html: '<div style="color:' + color + ';font:700 18px/18px sans-serif;text-shadow:0 0 3px #fff,0 0 3px #fff">\u2715</div>',
+            className: '', iconSize: [18,18], iconAnchor: [9,9]
+          });
+          layers.push(L.marker([c[1], c[0]], { icon: ico }).bindTooltip(label, { sticky: true }));
+        } else {
+          if (!f.geometry) return;
+          layers.push(L.geoJSON(f, {
+            style: { color: color, weight: 2, fillColor: color, fillOpacity: 0.18, dashArray: '6 4' }
+          }).bindTooltip(label, { sticky: true }));
+        }
       });
     }
     if (layers.length) nhcLayer = L.layerGroup(layers).addTo(leafletMap);
@@ -4335,7 +4343,10 @@ async function fetchTropicalOutlook() {
     if (rat.ok) tropicalOutlookText   = await rat.text();
     if (rep.ok) tropicalOutlookTextEP = await rep.text();
     if (rcp.ok) tropicalOutlookTextCP = await rcp.text();
-    if (rdist.ok) { const arr = await rdist.json(); nhcDisturbances = Array.isArray(arr) ? arr : []; }
+    if (rdist.ok) { const j = await rdist.json();
+      nhcDisturbances = (j && Array.isArray(j.features)) ? j.features : (Array.isArray(j) ? j : []);
+      if (j && j._debug) console.log('[WATCH] GTWO debug', j._debug);
+    }
   } catch(e) {}
 }
 
@@ -4350,16 +4361,17 @@ function getTropicalOutlookSection() {
   const text = tropicalOutlookText ? tropicalOutlookText.replace(/\r\n/g, '\n').trim().substring(0, 1500) : '';
   return '<div style="background:#fff;border:1px solid #1e3a5f;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
     + '<div style="font-size:9px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">🌀 NHC Tropical Weather Outlook</div>'
-    + (nhcDisturbances.length ? nhcDisturbances.map(function(d){
-        var p2=d.PROB2DAY||d.FormationChance2day||'0%',p7=d.PROB7DAY||d.FormationChance7day||'0%';
-        var risk=(d.RISK7DAY||d.RISK2DAY||'low').toLowerCase();
+    + (nhcDisturbances.length ? nhcDisturbances.filter(function(f){return (f.properties||{})._kind!=='point';}).map(function(f){
+        var d=f.properties||{};
+        var p2=d.prob2day||'0%',p7=d.prob7day||'0%';
+        var risk=(d.risk7day||d.risk2day||'low').toLowerCase();
         var col=risk==='high'?'#dc2626':risk==='medium'?'#ea580c':'#ca8a04';
         return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #e8e8e8">'
           +'<span style="font-size:14px">🌀</span>'
           +'<div style="flex:1"><div style="font-size:11px;font-weight:700">'+(d.Name||'Disturbance')+'</div>'
-          +'<div style="font-size:10px;color:#556070">'+(d.Location||d.location||'')+'</div></div>'
+          +'<div style="font-size:10px;color:#556070">'+((d.risk7day||'')+' 7-day risk')+'</div></div>'
           +'<span style="background:'+col+';color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px">'
-          +'2-day: '+p2+'% | 7-day: '+p7+'%</span></div>';
+          +'2-day: '+p2+' | 7-day: '+p7+'</span></div>';
       }).join('')+'<div style="height:6px"></div>' : '')
     + (text ? '<div style="font-size:10px;font-weight:700;color:#1e3a5f;margin-bottom:3px">Atlantic</div>'
         + '<div style="font-size:11px;color:#1a2a3a;line-height:1.65;white-space:pre-line;margin-bottom:10px">' + text + '</div>' : '')
