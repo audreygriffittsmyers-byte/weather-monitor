@@ -226,50 +226,38 @@ export default {
     }
 
     if (type === 'nhcdisturbances') {
+      // NHC Graphical Tropical Weather Outlook (GTWO) via NOAA ArcGIS.
+      // Layer 3 = Seven-Day: Potential Development Region (polygons)
+      // Layer 2 = Seven-Day: Current Location (points)
+      // Fields verified live: basin, prob2day, risk2day, prob7day, risk7day, idp_source
+      const TWSUM = 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer';
+      const TWQ = '/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson';
       try {
-        // Fetch all three NHC TWO basin JSON files in parallel
-        const [rat, rep, rcp] = await Promise.all([
-          fetch('https://www.nhc.noaa.gov/nhc_at.json', { headers:{'User-Agent':UA}, cf:{cacheTtl:600,cacheEverything:true} }),
-          fetch('https://www.nhc.noaa.gov/nhc_ep.json', { headers:{'User-Agent':UA}, cf:{cacheTtl:600,cacheEverything:true} }),
-          fetch('https://www.nhc.noaa.gov/nhc_cp.json', { headers:{'User-Agent':UA}, cf:{cacheTtl:600,cacheEverything:true} }),
+        const [rArea, rPt] = await Promise.all([
+          fetch(TWSUM + '/3' + TWQ, { headers:{'User-Agent':UA}, cf:{cacheTtl:600, cacheEverything:true} }),
+          fetch(TWSUM + '/2' + TWQ, { headers:{'User-Agent':UA}, cf:{cacheTtl:600, cacheEverything:true} }),
         ]);
-        function parseTWO(raw, basinLabel) {
-          try {
-            const data = JSON.parse(raw);
-            const features = data.features || data;
-            if (!Array.isArray(features)) return [];
-            return features.map(f => {
-              const p = f.properties || f;
-              let lat = null, lon = null;
-              const geom = f.geometry;
-              if (geom && geom.coordinates) {
-                const ring = geom.type==='Polygon' ? geom.coordinates[0]
-                  : geom.type==='MultiPolygon' ? geom.coordinates[0][0] : null;
-                if (ring && ring.length) {
-                  lon = ring.reduce((s,c)=>s+c[0],0)/ring.length;
-                  lat = ring.reduce((s,c)=>s+c[1],0)/ring.length;
-                }
-              }
-              return { BASIN:p.BASIN||p.basin||basinLabel, AREA:p.AREA||p.area||'',
-                PROB2DAY:p.PROB2DAY||p.prob2day||'0%', RISK2DAY:p.RISK2DAY||p.risk2day||'Low',
-                PROB7DAY:p.PROB7DAY||p.prob7day||'0%', RISK7DAY:p.RISK7DAY||p.risk7day||'Low',
-                lat: lat!=null ? Math.round(lat*1000)/1000 : null,
-                lon: lon!=null ? Math.round(lon*1000)/1000 : null };
-            }).filter(d => d.lat !== null);
-          } catch(e) { return []; }
-        }
-        const [at, ep, cp] = await Promise.all([
-          rat.ok ? rat.text() : Promise.resolve('[]'),
-          rep.ok ? rep.text() : Promise.resolve('[]'),
-          rcp.ok ? rcp.text() : Promise.resolve('[]'),
-        ]);
-        const all = [
-          ...parseTWO(at, 'Atlantic'),
-          ...parseTWO(ep, 'East Pacific'),
-          ...parseTWO(cp, 'Central Pacific'),
-        ];
-        return new Response(JSON.stringify(all), { headers: CORS });
-      } catch(e) { return new Response('[]', { headers: CORS }); }
+        let area = { features: [] }, pts = { features: [] };
+        try { if (rArea.ok) area = await rArea.json(); } catch(e) {}
+        try { if (rPt.ok)   pts  = await rPt.json();  } catch(e) {}
+        const out = { type: 'FeatureCollection', features: [] };
+        (area.features || []).forEach(function(f) {
+          f.properties = f.properties || {}; f.properties._kind = 'area';
+          out.features.push(f);
+        });
+        (pts.features || []).forEach(function(f) {
+          f.properties = f.properties || {}; f.properties._kind = 'point';
+          out.features.push(f);
+        });
+        // _debug surfaces upstream failures instead of silently returning empty
+        out._debug = {
+          areaStatus: rArea.status, areaCount: (area.features||[]).length,
+          ptStatus: rPt.status,     ptCount:   (pts.features||[]).length
+        };
+        return new Response(JSON.stringify(out), { headers: GEOJSON });
+      } catch(e) {
+        return new Response(JSON.stringify({ type:'FeatureCollection', features:[], _debug:{ error:String(e) } }), { headers: GEOJSON });
+      }
     }
 
     if (type === 'nhc') {
