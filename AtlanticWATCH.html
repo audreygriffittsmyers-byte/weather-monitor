@@ -735,6 +735,63 @@ function alertContainsPoint(feature, lat, lon) {
 
 // State-level alert cache: state -> { ts, features }
 const stateAlertCache = {};
+
+// ── Zone codes per FBO ────────────────────────────────────────────────────────
+// Zone-based NWS products (most Special Weather Statements, many flood and
+// winter advisories) arrive with geometry:null, so proximity matching cannot
+// see them. api.weather.gov/points returns the forecastZone and county UGC for
+// a coordinate; those never change, so they are cached in localStorage and
+// looked up once per location, ever.
+const fboZones = {};
+const ZONE_LS_KEY = 'watch_fbo_zones_v1';
+try {
+  const saved = JSON.parse(localStorage.getItem(ZONE_LS_KEY) || '{}');
+  if (saved && typeof saved === 'object') Object.assign(fboZones, saved);
+} catch(e) {}
+
+function saveFboZones() {
+  try { localStorage.setItem(ZONE_LS_KEY, JSON.stringify(fboZones)); } catch(e) {}
+}
+
+async function getZonesForFBO(code) {
+  if (fboZones[code]) return fboZones[code];
+  const c = COORDS[code];
+  if (!c) return null;
+  try {
+    const r = await fetch(
+      'https://api.weather.gov/points/' + c[0].toFixed(4) + ',' + c[1].toFixed(4),
+      { headers: { 'User-Agent': 'AtlanticAviation-WATCH/1.0' } }
+    );
+    if (!r.ok) return null;
+    const d = await r.json();
+    const zone   = (d.properties && d.properties.forecastZone) || '';
+    const county = (d.properties && d.properties.county) || '';
+    const rec = {
+      zone:   zone   ? zone.split('/').pop()   : null,
+      county: county ? county.split('/').pop() : null
+    };
+    if (!rec.zone && !rec.county) return null;
+    fboZones[code] = rec;
+    saveFboZones();
+    return rec;
+  } catch(e) { return null; }
+}
+
+// Pull every zone id an alert claims, tolerating either shape NWS uses:
+// properties.geocode.UGC (array of ids) or properties.affectedZones (array of URLs).
+function alertZoneIds(p) {
+  const ids = [];
+  const ugc = p && p.geocode && p.geocode.UGC;
+  if (Array.isArray(ugc)) ugc.forEach(function(z){ if (z) ids.push(String(z).toUpperCase()); });
+  if (Array.isArray(p && p.affectedZones)) {
+    p.affectedZones.forEach(function(u){
+      if (!u) return;
+      const id = String(u).split('/').pop();
+      if (id) ids.push(id.toUpperCase());
+    });
+  }
+  return ids;
+}
 const STATE_CACHE_MS = 60 * 1000; // 60 seconds -- reduced for active severe wx
 
 async function fetchStateAlerts(state) {
@@ -807,6 +864,13 @@ async function fetchAlerts(code) {
 
   // Fetch all active alerts for this state
   const features = await fetchStateAlerts(fbo.state);
+  // Zone ids for this FBO, used to catch geometry-less zone products.
+  const myZones = await getZonesForFBO(code);
+  const myZoneSet = new Set();
+  if (myZones) {
+    if (myZones.zone)   myZoneSet.add(myZones.zone.toUpperCase());
+    if (myZones.county) myZoneSet.add(myZones.county.toUpperCase());
+  }
 
   // Filter to alerts within 25 miles or containing the point
   const PROXIMITY_MILES = 10;
@@ -822,6 +886,16 @@ async function fetchAlerts(code) {
       const edgeMiles = /Watch/.test(event) ? 25 : /Warning/.test(event) ? 15 : PROXIMITY_MILES;
       const dist = alertDistanceMiles(f, lat, lon);
       if (dist !== null && dist <= edgeMiles) return true;
+    }
+
+    // Exact zone match: the reliable way to catch geometry-less zone products
+    // (Special Weather Statements, many flood/winter advisories). Runs before
+    // the office-distance fallback because it is precise rather than approximate.
+    if (!f.geometry && myZoneSet.size) {
+      const zids = alertZoneIds(p);
+      for (let i = 0; i < zids.length; i++) {
+        if (myZoneSet.has(zids[i])) return true;
+      }
     }
 
     // Fallback: no geometry -- check if issuing NWS office is within service range of FBO
