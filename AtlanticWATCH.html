@@ -4187,6 +4187,8 @@ function toggleWinterPolygons(on) {
 let nhcLayer = null;
 let showNHC  = true;
 let nhcConeFeatures = []; // accumulated across all active storms -- used to flag FBOs inside an active cone
+let nhcTrackFeatures = [];  // forecast track lines, for briefing maps
+let nhcPointFeatures = [];  // forecast position points, for briefing maps
 const NHC_COLORS = { TD:'#a8d5ff', STD:'#a8d5ff', TS:'#fbbf24', STS:'#fbbf24', HU:'#ef4444', TY:'#ef4444', PTC:'#94a3b8', PC:'#94a3b8' };
 const NHC_LABELS = { TD:'Tropical Depression', STD:'Subtropical Depression', TS:'Tropical Storm', STS:'Subtropical Storm', HU:'Hurricane', TY:'Typhoon', PTC:'Post-Tropical Cyclone', PC:'Potential Tropical Cyclone' };
 
@@ -4203,6 +4205,8 @@ function isInTropicalCone(code) {
 async function drawNHCLayer() {
   if (nhcLayer) { leafletMap.removeLayer(nhcLayer); nhcLayer = null; }
   nhcConeFeatures = [];
+  nhcTrackFeatures = [];
+  nhcPointFeatures = [];
   if (!showNHC) { renderMapMarkers(); return; }
   try {
     const r = await fetchWithTimeout(`${PROXY}?type=nhc`);
@@ -4219,18 +4223,25 @@ async function drawNHCLayer() {
         if (gr.ok) {
           const gis = await gr.json();
           if (gis?.cone?.features?.length) {
-            gis.cone.features.forEach(f => { f._stormName = storm.name || id; nhcConeFeatures.push(f); });
+            gis.cone.features.forEach(f => {
+              f._stormName = storm.name || id;
+              f._stormColor = color;
+              f._stormClass = storm.classification || '';
+              nhcConeFeatures.push(f);
+            });
             layers.push(L.geoJSON(gis.cone, {
               style: { color, fillColor:color, fillOpacity:0.15, weight:1.5, dashArray:'6,3' },
               onEachFeature: (f,l) => l.bindTooltip('🌀 ' + (storm.name||id) + ' — Forecast Cone (' + (NHC_LABELS[storm.classification]||'Tropical') + ')', {sticky:true})
             }));
           }
           if (gis?.track?.features?.length) {
+            gis.track.features.forEach(f => { f._stormName = storm.name || id; f._stormColor = color; nhcTrackFeatures.push(f); });
             layers.push(L.geoJSON(gis.track, {
               style: { color, weight: 2.5, opacity: 0.9 }
             }));
           }
           if (gis?.points?.features?.length) {
+            gis.points.features.forEach(function(f) { f._stormName = storm.name || id; f._stormColor = color; nhcPointFeatures.push(f); });
             gis.points.features.forEach(function(f) {
               var coords = f.geometry?.coordinates;
               if (!coords) return;
@@ -7566,9 +7577,74 @@ var MAP_REGIONS = {
   conus:    [-125.5, 23.0, -65.5, 50.5],
   alaska:   [-172.0, 50.5, -128.0, 72.0],
   hawaii:   [-161.5, 18.0, -154.0, 23.5],
+  pacific:  [-173.0, 10.0, -137.0, 34.0],
   atlantic: [ -99.0,  5.0,   -7.0, 46.0],
-  epac:     [-162.0,  5.0,  -92.0, 36.0]
+  caribbean:[ -90.0, 10.0,  -58.0, 28.0]
 };
+var REGION_LABEL = { conus:'', alaska:'Alaska', hawaii:'Hawaii', pacific:'Central Pacific', atlantic:'Atlantic Basin', caribbean:'Caribbean' };
+
+// Bounding box of a GeoJSON feature, used to decide which regional panels a
+// hazard actually belongs on instead of rendering empty maps.
+function _featBBox(f) {
+  var b = [180, 90, -180, -90];
+  _watchRings(f.geometry).forEach(function (ring) {
+    ring.forEach(function (p) {
+      if (p[0] < b[0]) b[0] = p[0];
+      if (p[1] < b[1]) b[1] = p[1];
+      if (p[0] > b[2]) b[2] = p[0];
+      if (p[1] > b[3]) b[3] = p[1];
+    });
+  });
+  return b;
+}
+function _bboxHits(b, r) {
+  return !(b[2] < r[0] || b[0] > r[2] || b[3] < r[1] || b[1] > r[3]);
+}
+// Fit a frame to the things actually being shown, with padding and a floor on
+// span, so a storm near Hawaii does not render inside an empty ocean basin.
+function _autoBounds(featureSets, tracks, sites, minSpan, fallback) {
+  var b = [180, 90, -180, -90], any = false;
+  function grow(lon, lat) {
+    if (typeof lon !== 'number' || typeof lat !== 'number') return;
+    any = true;
+    if (lon < b[0]) b[0] = lon;
+    if (lat < b[1]) b[1] = lat;
+    if (lon > b[2]) b[2] = lon;
+    if (lat > b[3]) b[3] = lat;
+  }
+  (featureSets || []).forEach(function (f) {
+    _watchRings(f.geometry).forEach(function (r) { r.forEach(function (p) { grow(p[0], p[1]); }); });
+  });
+  (tracks || []).forEach(function (f) {
+    if (!f.geometry) return;
+    var cs = f.geometry.coordinates || [];
+    var lines = (f.geometry.type === 'MultiLineString') ? cs : [cs];
+    lines.forEach(function (ln) { (ln || []).forEach(function (p) { grow(p[0], p[1]); }); });
+  });
+  (sites || []).forEach(function (s) { if (s.label) grow(s.lon, s.lat); });
+  if (!any) return fallback;
+  var padX = Math.max((b[2] - b[0]) * 0.18, 2.0);
+  var padY = Math.max((b[3] - b[1]) * 0.18, 1.5);
+  b = [b[0] - padX, b[1] - padY, b[2] + padX, b[3] + padY];
+  var ms = minSpan || 10;
+  if (b[2] - b[0] < ms) { var cx = (b[0] + b[2]) / 2; b[0] = cx - ms / 2; b[2] = cx + ms / 2; }
+  if (b[3] - b[1] < ms * 0.6) { var cy = (b[1] + b[3]) / 2; b[1] = cy - ms * 0.3; b[3] = cy + ms * 0.3; }
+  b[0] = Math.max(-179, b[0]); b[2] = Math.min(179, b[2]);
+  b[1] = Math.max(-80, b[1]);  b[3] = Math.min(80, b[3]);
+  return b;
+}
+
+function _featsInRegion(feats, regionKey) {
+  var r = MAP_REGIONS[regionKey];
+  return (feats || []).filter(function (f) { return f.geometry && _bboxHits(_featBBox(f), r); });
+}
+function _codesInRegion(codes, regionKey) {
+  var r = MAP_REGIONS[regionKey];
+  return (codes || []).filter(function (c) {
+    var xy = COORDS[c];
+    return xy && xy[1] >= r[0] && xy[1] <= r[2] && xy[0] >= r[1] && xy[0] <= r[3];
+  });
+}
 
 function _mercX(lon) { return lon * Math.PI / 180; }
 
@@ -7693,8 +7769,39 @@ function _watchRenderHazardMap(opts) {
     ctx.restore();
   });
 
-  // Site markers
+  // Forecast track lines
+  (opts.tracks || []).forEach(function (f) {
+    if (!f.geometry) return;
+    var cs = f.geometry.coordinates || [];
+    var lines = (f.geometry.type === 'MultiLineString') ? cs : [cs];
+    ctx.save();
+    ctx.strokeStyle = f._stormColor || '#b91c1c';
+    ctx.lineWidth = 2.2;
+    lines.forEach(function (ln) {
+      ctx.beginPath();
+      (ln || []).forEach(function (pt, i) {
+        if (!pt || pt.length < 2) return;
+        var q = proj(pt[0], pt[1]);
+        if (i === 0) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
+      });
+      ctx.stroke();
+    });
+    ctx.restore();
+  });
+
+  // Site markers. Labels are placed adjacent to their own dot, trying a few
+  // offsets so that dense clusters do not stack text on top of text. A label is
+  // dropped rather than drawn detached if nothing fits near its dot.
   var sites = opts.sites || [];
+  var taken = [];
+  function _free(r) {
+    for (var i = 0; i < taken.length; i++) {
+      var q = taken[i];
+      if (!(r[2] < q[0] || r[0] > q[2] || r[3] < q[1] || r[1] > q[3])) return false;
+    }
+    return true;
+  }
+  var drawn = [];
   sites.forEach(function (s) {
     if (s.lat == null || s.lon == null) return;
     var p = proj(s.lon, s.lat);
@@ -7708,13 +7815,32 @@ function _watchRenderHazardMap(opts) {
     ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
     ctx.fillStyle = s.color || '#334155';
     ctx.fill();
-    if (s.color && s.code) {
-      ctx.font = '700 10px Arial, sans-serif';
-      var tw = ctx.measureText(s.code).width;
-      ctx.fillStyle = 'rgba(255,255,255,0.88)';
-      ctx.fillRect(p[0] + 6, p[1] - 12, tw + 6, 13);
+    if (s.label && s.code) drawn.push({ s: s, p: p, r: r });
+  });
+  // Labels after all dots so no dot is drawn over a label.
+  ctx.font = '700 10px Arial, sans-serif';
+  drawn.forEach(function (d) {
+    var tw = ctx.measureText(d.s.code).width, th = 12;
+    var bw = tw + 6;
+    var cands = [
+      [d.r + 4, -th / 2], [-d.r - 4 - bw, -th / 2],
+      [-bw / 2, -d.r - th - 3], [-bw / 2, d.r + 3],
+      [d.r + 4, -th - 4], [-d.r - 4 - bw, -th - 4]
+    ];
+    for (var i = 0; i < cands.length; i++) {
+      var bx = d.p[0] + cands[i][0], by = d.p[1] + cands[i][1];
+      var rect = [bx, by, bx + bw, by + th];
+      if (rect[0] < 2 || rect[2] > W - 2 || rect[1] < HEAD + 2 || rect[3] > H - FOOT - 2) continue;
+      if (!_free(rect)) continue;
+      taken.push(rect);
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(bx, by, bw, th);
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx, by, bw, th);
       ctx.fillStyle = '#0E2841';
-      ctx.fillText(s.code, p[0] + 9, p[1] - 2);
+      ctx.fillText(d.s.code, bx + 3, by + th - 3);
+      return;
     }
   });
   ctx.restore();
@@ -7774,22 +7900,46 @@ function _watchMapSites(codes, colorFn) {
   (codes || []).forEach(function (c) {
     var xy = COORDS[c];
     if (!xy) return;
-    out.push({ code: c, lat: xy[0], lon: xy[1], color: colorFn ? colorFn(c) : null });
+    var col = colorFn ? colorFn(c) : null;
+    out.push({ code: c, lat: xy[0], lon: xy[1], color: col, label: !!col });
   });
   return out;
 }
 
-// Build the set of maps that apply right now. One map per hazard, the way NWS
-// publishes them, because stacking every product on one frame is unreadable.
+// Build the set of maps that apply right now. One map per hazard per region,
+// the way NWS publishes them. Alaska and Hawaii get their own panels instead of
+// being dropped, because a national frame cannot show them at a usable scale.
 function _watchBuildHazardMaps(codes) {
   var maps = [];
-  var region = _watchPickRegion(codes);
+  var LAND_REGIONS = ['conus', 'alaska', 'hawaii'];
 
-  function push(spec) { if (spec) maps.push(spec); }
+  // Emit one panel per region that actually has something to show.
+  function pushRegional(base, allFeatsByTier, siteColorFn) {
+    LAND_REGIONS.forEach(function (rk) {
+      var layers = [], legend = [];
+      allFeatsByTier.forEach(function (t) {
+        var feats = _featsInRegion(t.feats, rk);
+        if (!feats.length) return;
+        layers.push({ features: feats, color: t.color, alpha: t.alpha, weight: t.weight, dash: t.dash });
+        legend.push({ color: t.color, label: t.label });
+      });
+      var regionCodes = _codesInRegion(codes, rk);
+      var flagged = regionCodes.filter(function (c) { return siteColorFn && siteColorFn(c); });
+      // Skip a panel with no polygons and no impacted sites.
+      if (!layers.length && !flagged.length) return;
+      maps.push({
+        key: base.key + '_' + rk,
+        title: base.title + (REGION_LABEL[rk] ? ' \u2014 ' + REGION_LABEL[rk] : ''),
+        subtitle: base.subtitle,
+        region: rk, layers: layers, legend: legend,
+        sites: _watchMapSites(regionCodes, siteColorFn)
+      });
+    });
+  }
 
   // SPC convective
   if (spcPolygons && spcPolygons.features && spcPolygons.features.length) {
-    var spcLayers = [], spcLegend = [];
+    var spcTiers = [];
     ['TSTM', 'MRGL', 'SLGT', 'ENH', 'MDT', 'HIGH'].forEach(function (t) {
       var feats = spcPolygons.features.filter(function (f) {
         var lbl = String((f.properties && (f.properties.label || f.properties.LABEL)) || '').toUpperCase();
@@ -7797,54 +7947,50 @@ function _watchBuildHazardMaps(codes) {
       });
       if (!feats.length) return;
       var st = SPC_POLY_STYLE[t] || {};
-      spcLayers.push({ features: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight });
-      spcLegend.push({ color: st.color, label: t });
+      spcTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: t });
     });
-    if (spcLayers.length) push({
-      key: 'spc', title: 'SPC Convective Outlook \u2014 Day 1',
-      subtitle: 'Categorical severe thunderstorm risk',
-      region: region, layers: spcLayers, legend: spcLegend,
-      sites: _watchMapSites(codes, function (c) {
+    if (spcTiers.length) pushRegional(
+      { key: 'spc', title: 'SPC Convective Outlook \u2014 Day 1', subtitle: 'Categorical severe thunderstorm risk' },
+      spcTiers,
+      function (c) {
         var s = spcData[1] && spcData[1][c];
         return s && s.label && s.label !== 'No Risk' ? (SPC_MARKER_COLOR[s.label] || null) : null;
-      })
-    });
+      });
   }
 
   // WPC excessive rainfall
   if (wpcPolygons && wpcPolygons.features && wpcPolygons.features.length) {
-    var eroLayers = [], eroLegend = [];
+    var eroTiers = [];
     [['MRGL', 'MARGINAL'], ['SLGT', 'SLIGHT'], ['MDT', 'MODERATE'], ['HIGH', 'HIGH']].forEach(function (pair) {
       var feats = wpcPolygons.features.filter(function (f) { return _eroTierFromProps(f.properties) === pair[0]; });
       if (!feats.length) return;
       var st = WPC_POLY_STYLE[pair[1]] || {};
-      eroLayers.push({ features: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight });
-      eroLegend.push({ color: st.color, label: pair[1] });
+      eroTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: pair[1] });
     });
-    if (eroLayers.length) push({
-      key: 'ero', title: 'WPC Excessive Rainfall Outlook \u2014 Day 1',
-      subtitle: 'Risk of rainfall exceeding flash flood guidance',
-      region: region, layers: eroLayers, legend: eroLegend,
-      sites: _watchMapSites(codes, null)
-    });
+    if (eroTiers.length) pushRegional(
+      { key: 'ero', title: 'WPC Excessive Rainfall Outlook \u2014 Day 1', subtitle: 'Risk of rainfall exceeding flash flood guidance' },
+      eroTiers,
+      function (c) {
+        if (typeof getEroInfoForCode !== 'function') return null;
+        var e = getEroInfoForCode(c);
+        if (!e || !e.tier) return null;
+        var m = { HIGH:'#dc2626', MDT:'#eab308', SLGT:'#22c55e', MRGL:'#38a800' };
+        return m[String(e.tier).toUpperCase()] || '#38a800';
+      });
   }
 
   // Fire weather
   if (firePolygons && firePolygons.features && firePolygons.features.length) {
-    var fLayers = [], fLegend = [];
+    var fireTiers = [];
     ['ELEVATED', 'CRITICAL', 'EXTREME'].forEach(function (t) {
       var feats = firePolygons.features.filter(function (f) { return _fireTier(f.properties) === t; });
       if (!feats.length) return;
       var st = FIRE_POLY_STYLE[t] || {};
-      fLayers.push({ features: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight });
-      fLegend.push({ color: st.color, label: t });
+      fireTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: t });
     });
-    if (fLayers.length) push({
-      key: 'fire', title: 'SPC Fire Weather Outlook \u2014 Day 1',
-      subtitle: 'Critical fire weather risk areas',
-      region: region, layers: fLayers, legend: fLegend,
-      sites: _watchMapSites(codes, null)
-    });
+    if (fireTiers.length) pushRegional(
+      { key: 'fire', title: 'SPC Fire Weather Outlook \u2014 Day 1', subtitle: 'Critical fire weather risk areas' },
+      fireTiers, null);
   }
 
   // Active NWS alerts with geometry
@@ -7852,48 +7998,79 @@ function _watchBuildHazardMaps(codes) {
     .reduce(function (a, d) { return a.concat(d.features || []); }, [])
     .filter(function (f) { return f.geometry; });
   if (nwsFeats.length) {
-    var nLayers = [], nLegend = [];
+    var nwsTiers = [];
     ['EXTREME', 'SEVERE', 'MODERATE', 'LOW'].forEach(function (b) {
       var feats = nwsFeats.filter(function (f) { return getBucket((f.properties && f.properties.event) || '') === b; });
       if (!feats.length) return;
       var st = NWS_POLY_STYLE[b] || {};
-      nLayers.push({ features: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight });
-      nLegend.push({ color: st.color, label: b });
+      nwsTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: b });
     });
-    if (nLayers.length) push({
-      key: 'nws', title: 'Active NWS Watches, Warnings and Advisories',
-      subtitle: 'Polygon-based alerts in effect at issuance time',
-      region: region, layers: nLayers, legend: nLegend,
-      sites: _watchMapSites(codes, function (c) {
+    if (nwsTiers.length) pushRegional(
+      { key: 'nws', title: 'Active NWS Watches, Warnings and Advisories', subtitle: 'Polygon-based alerts in effect at issuance time' },
+      nwsTiers,
+      function (c) {
         var r = results[c];
         if (!r || !r.alerts || !r.alerts.length) return null;
         return NWS_MARKER_COLOR[topBucket(r.alerts)] || null;
-      })
-    });
+      });
   }
 
-  // Tropical outlook areas
-  if (typeof nhcDisturbances !== 'undefined' && nhcDisturbances && nhcDisturbances.length) {
-    var areas = nhcDisturbances.filter(function (f) { return (f.properties || {})._kind !== 'point' && f.geometry; });
-    if (areas.length) {
-      var tLayers = [], seen = {};
-      areas.forEach(function (f) {
-        var p = f.properties || {};
-        var pr = parseInt(String(p.prob7day || p.prob2day || '0').replace('%', ''), 10) || 0;
-        var col = pr >= 70 ? '#dc2626' : pr >= 40 ? '#ea580c' : '#eab308';
-        var lab = pr >= 70 ? 'High (70%+)' : pr >= 40 ? 'Medium (40-60%)' : 'Low (<40%)';
-        tLayers.push({ features: [f], color: col, alpha: 0.22, weight: 2, dash: [6, 4] });
-        seen[lab] = col;
+  // Tropical. Cones and tracks belong on whichever basin they sit in, so the
+  // Pacific gets its own panel whenever a storm threatens the Hawaii sites.
+  var cones  = (typeof nhcConeFeatures  !== 'undefined' ? nhcConeFeatures  : []) || [];
+  var tracks = (typeof nhcTrackFeatures !== 'undefined' ? nhcTrackFeatures : []) || [];
+  var gtwo   = (typeof nhcDisturbances  !== 'undefined' ? nhcDisturbances  : []) || [];
+  var gtwoAreas = gtwo.filter(function (f) { return (f.properties || {})._kind !== 'point' && f.geometry; });
+
+  ['atlantic', 'pacific'].forEach(function (rk) {
+    var rCones = _featsInRegion(cones, rk);
+    var rAreas = _featsInRegion(gtwoAreas, rk);
+    var rTracks = (tracks || []).filter(function (f) {
+      if (!f.geometry) return false;
+      var b = [180, 90, -180, -90], cs = f.geometry.coordinates || [];
+      var flat = (f.geometry.type === 'MultiLineString') ? [].concat.apply([], cs) : cs;
+      flat.forEach(function (p) {
+        if (!p || p.length < 2) return;
+        if (p[0] < b[0]) b[0] = p[0];
+        if (p[1] < b[1]) b[1] = p[1];
+        if (p[0] > b[2]) b[2] = p[0];
+        if (p[1] > b[3]) b[3] = p[1];
       });
-      push({
-        key: 'tropical', title: 'NHC Tropical Weather Outlook \u2014 7 Day',
-        subtitle: 'Areas of potential tropical development',
-        bounds: MAP_REGIONS.atlantic, layers: tLayers,
-        legend: Object.keys(seen).map(function (k) { return { color: seen[k], label: k }; }),
-        sites: _watchMapSites(codes, null)
-      });
-    }
-  }
+      return _bboxHits(b, MAP_REGIONS[rk]);
+    });
+    if (!rCones.length && !rAreas.length) return;
+
+    var layers = [], legend = [], seenLg = {};
+    rAreas.forEach(function (f) {
+      var p = f.properties || {};
+      var pr = parseInt(String(p.prob7day || p.prob2day || '0').replace('%', ''), 10) || 0;
+      var col = pr >= 70 ? '#dc2626' : pr >= 40 ? '#ea580c' : '#eab308';
+      var lab = pr >= 70 ? 'Development: High (70%+)' : pr >= 40 ? 'Development: Medium (40-60%)' : 'Development: Low (<40%)';
+      layers.push({ features: [f], color: col, alpha: 0.20, weight: 2, dash: [6, 4] });
+      seenLg[lab] = col;
+    });
+    rCones.forEach(function (f) {
+      var col = f._stormColor || '#ef4444';
+      layers.push({ features: [f], color: col, alpha: 0.16, weight: 2, dash: [7, 3] });
+      seenLg[(f._stormName || 'Active storm') + ' \u2014 forecast cone'] = col;
+    });
+    Object.keys(seenLg).forEach(function (k) { legend.push({ color: seenLg[k], label: k }); });
+
+    var regionCodes = _codesInRegion(codes, rk === 'pacific' ? 'pacific' : 'atlantic');
+    var tSites = _watchMapSites(regionCodes, function (c) {
+      var n = (typeof isInTropicalCone === 'function') ? isInTropicalCone(c) : null;
+      return n ? '#dc2626' : null;
+    });
+    var tBounds = _autoBounds(rCones.concat(rAreas), rTracks, tSites, 14, MAP_REGIONS[rk]);
+    maps.push({
+      key: 'tropical_' + rk,
+      title: 'NHC Tropical Outlook \u2014 ' + (rk === 'pacific' ? 'Central Pacific' : 'Atlantic Basin'),
+      subtitle: rCones.length ? 'Active storm forecast cones and areas of potential development'
+                              : 'Areas of potential tropical development',
+      bounds: tBounds, layers: layers, legend: legend,
+      tracks: rTracks, sites: tSites
+    });
+  });
 
   return maps;
 }
