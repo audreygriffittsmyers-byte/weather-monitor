@@ -5081,33 +5081,6 @@ function _watchDownloadDocx(codes, notes, sections) {
 
   if (notes) { add('Shift Notes: '+notes, ppr({fill:'F0F4F7', after:'120'}), rpr({sz:20})); sp(); }
 
-  _mapParas.forEach(function(p){ paras.push(p); });
-  _renderBriefDocx(secs, add, ppr, rpr, sp, function(sid){
-    (_mapParaBySection[sid] || []).forEach(function(p){ paras.push(p); });
-  });
-
-  // Extreme temp section
-  // Supervisor note
-  add('Supervisors: Brief your team on all active hazards covered in this alert before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and heat safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.',
-      ppr({fill:'F2F4F6',after:'100'}), rpr({sz:22}));
-
-  // Safety tagline
-  add('Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.',
-      ppr({fill:NAVY,jc:'center',after:'80'}), rpr({b:true,sz:22,color:'FFFFFF'}));
-
-  // Disclaimer
-  add('DISCLAIMER: This alert is intended for internal use only. It is based on information available at the time of issuance and is subject to change. This alert does not supersede official National Weather Service watches, warnings, or advisories. All operational decisions remain the responsibility of local management.',
-      ppr({after:'80'}), rpr({i:true,sz:18,color:'666666'}));
-
-  // Build XML
-  var NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
-    + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
-    + ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
-    + ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
-    + ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
-
-  // Hazard maps as an appendix. Each PNG becomes its own package part with a
-  // relationship, referenced by an inline w:drawing run.
   var _mediaFiles = {}, _mediaRels = [], _mapParas = [], _mapParaBySection = {};
   try {
     var _mg = _watchMapsBySection(codes, collectBriefSections(codes, sections));
@@ -5143,6 +5116,35 @@ function _watchDownloadDocx(codes, notes, sections) {
     }
   } catch (e) { console.warn('DOCX hazard maps skipped', e); _mediaFiles = {}; _mediaRels = []; _mapParas = []; _mapParaBySection = {}; }
   if (_mapParas.length) _mapParas.unshift(P('HAZARD MAPS', ppr({after:'160'}), rpr({b:true, sz:26, color:NAVY})));
+
+  _mapParas.forEach(function(p){ paras.push(p); });
+  _renderBriefDocx(secs, add, ppr, rpr, sp, function(sid){
+    (_mapParaBySection[sid] || []).forEach(function(p){ paras.push(p); });
+  });
+
+  // Extreme temp section
+  // Supervisor note
+  add('Supervisors: Brief your team on all active hazards covered in this alert before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and heat safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.',
+      ppr({fill:'F2F4F6',after:'100'}), rpr({sz:22}));
+
+  // Safety tagline
+  add('Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.',
+      ppr({fill:NAVY,jc:'center',after:'80'}), rpr({b:true,sz:22,color:'FFFFFF'}));
+
+  // Disclaimer
+  add('DISCLAIMER: This alert is intended for internal use only. It is based on information available at the time of issuance and is subject to change. This alert does not supersede official National Weather Service watches, warnings, or advisories. All operational decisions remain the responsibility of local management.',
+      ppr({after:'80'}), rpr({i:true,sz:18,color:'666666'}));
+
+  // Build XML
+  var NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    + ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+    + ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+    + ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+
+  // Hazard maps as an appendix. Each PNG becomes its own package part with a
+  // relationship, referenced by an inline w:drawing run.
+
   var SECT = '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
   var docXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document '+NS+'><w:body>'+paras.join('')+SECT+'</w:body></w:document>';
 
@@ -8055,7 +8057,7 @@ function _watchBuildHazardMaps(codes) {
       fireTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: t });
     });
     if (fireTiers.length) pushRegional(
-      { key: 'fire', title: 'SPC Fire Weather Outlook \u2014 Day 1', subtitle: 'Critical fire weather risk areas', sectionIds: ['dust','otheralerts'] },
+      { key: 'fire', title: 'SPC Fire Weather Outlook \u2014 Day 1', subtitle: 'Critical fire weather risk areas', sectionIds: ['windfcstsus','windfcstgust','windcur','windalerts','feelfcst','heatcur','heatalerts','dust','otheralerts'] },
       fireTiers,
       function (c) {
         if (typeof getFireTierForCode !== 'function') return null;
