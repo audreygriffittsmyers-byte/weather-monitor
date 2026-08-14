@@ -7672,6 +7672,16 @@ function _mapPeakWind(c) {
   if (dp && dp.mph != null && (gst == null || dp.mph > gst)) gst = dp.mph;
   return { sus: sus, gust: gst };
 }
+// Current AQI if it is at advisory level, otherwise the 24h forecast. Same
+// precedence the AIR QUALITY ADVISORY table uses, so the two cannot disagree.
+function _mapAqi(c) {
+  var a = (typeof aqiData !== 'undefined' && aqiData) ? aqiData[c] : null;
+  if (a && a.aqi != null && a.aqi >= 101) return a.aqi;
+  var f = (typeof aqiForecastData !== 'undefined' && aqiForecastData) ? aqiForecastData[c] : null;
+  if (f && f.aqi != null && f.aqi >= 101) return f.aqi;
+  return null;
+}
+
 // Graduated colour from an ascending band table [[threshold,colour,label],...]
 function _band(v, bands) {
   if (v == null) return null;
@@ -8194,6 +8204,23 @@ function _watchBuildHazardMaps(codes) {
     [],
     function (c) { var b = _band(windVal(c), WIND_BANDS); return b ? b[1] : null; },
     windLegend);
+
+  // Air quality. EPA standard AQI colours and category names so the map reads
+  // the same way as any public AirNow product.
+  var AQI_BANDS = [
+    [101, '#ff7e00', 'AQI 101-150 Unhealthy for Sensitive Groups'],
+    [151, '#ff0000', 'AQI 151-200 Unhealthy'],
+    [201, '#8f3f97', 'AQI 201-300 Very Unhealthy'],
+    [301, '#7e0023', 'AQI 301+ Hazardous']
+  ];
+  var aqiLegend = _legendFor(AQI_BANDS, codes, _mapAqi);
+  if (aqiLegend.length) pushRegional(
+    { key: 'aqi', title: 'Air Quality Index \u2014 Current and 24h Forecast',
+      subtitle: 'Locations at or above Unhealthy for Sensitive Groups',
+      sectionIds: ['aqi'] },
+    [],
+    function (c) { var b = _band(_mapAqi(c), AQI_BANDS); return b ? b[1] : null; },
+    aqiLegend);
 
   // Tropical. Cones and tracks belong on whichever basin they sit in, so the
   // Pacific gets its own panel whenever a storm threatens the Hawaii sites.
