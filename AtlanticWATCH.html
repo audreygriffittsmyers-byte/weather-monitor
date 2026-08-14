@@ -7601,9 +7601,10 @@ var MAP_REGIONS = {
   hawaii:   [-161.5, 18.0, -154.0, 23.5],
   pacific:  [-173.0, 10.0, -137.0, 34.0],
   atlantic: [ -99.0,  5.0,   -7.0, 46.0],
-  caribbean:[ -90.0, 10.0,  -58.0, 28.0]
+  caribbean:[ -90.0, 10.0,  -58.0, 28.0],
+  offshore: [ -85.0, 15.0,  -58.0, 35.0]
 };
-var REGION_LABEL = { conus:'', alaska:'Alaska', hawaii:'Hawaii', pacific:'Central Pacific', atlantic:'Atlantic Basin', caribbean:'Caribbean' };
+var REGION_LABEL = { conus:'', alaska:'Alaska', hawaii:'Hawaii', pacific:'Central Pacific', atlantic:'Atlantic Basin', caribbean:'Caribbean', offshore:'Caribbean & Bermuda' };
 
 // Bounding box of a GeoJSON feature, used to decide which regional panels a
 // hazard actually belongs on instead of rendering empty maps.
@@ -7791,10 +7792,12 @@ function _watchRenderHazardMap(opts) {
   ctx.fillStyle = '#dce9f2';
   ctx.fillRect(0, HEAD, W, H - HEAD - FOOT);
 
-  // Land. World rings first as a coarse backdrop, states over the top.
-  var wide = (bounds[2] - bounds[0]) > 70;
-  var landRings = wide ? (typeof BASEMAP_WORLD !== 'undefined' ? BASEMAP_WORLD : [])
-                       : (typeof BASEMAP_STATES !== 'undefined' ? BASEMAP_STATES : []);
+  // Land. Always fill the coarse world layer first, then the state layer over
+  // the top. Picking only one of them left non-US land (Bermuda, the Caymans,
+  // Turks & Caicos, Sint Maarten) invisible on narrow offshore frames.
+  var landRings = [];
+  if (typeof BASEMAP_WORLD !== 'undefined') landRings = landRings.concat(BASEMAP_WORLD);
+  if (typeof BASEMAP_STATES !== 'undefined') landRings = landRings.concat(BASEMAP_STATES);
   ctx.save();
   ctx.beginPath(); ctx.rect(0, HEAD, W, H - HEAD - FOOT); ctx.clip();
 
@@ -7978,7 +7981,9 @@ function _watchMapSites(codes, colorFn) {
 // being dropped, because a national frame cannot show them at a usable scale.
 function _watchBuildHazardMaps(codes) {
   var maps = [];
-  var LAND_REGIONS = ['conus', 'alaska', 'hawaii'];
+  // Bermuda, Grand Cayman, Turks & Caicos and Sint Maarten sit outside every
+  // continental frame, so they get their own panel rather than being dropped.
+  var LAND_REGIONS = ['conus', 'alaska', 'hawaii', 'offshore'];
 
   // Emit one panel per region that actually has something to show.
   function pushRegional(base, allFeatsByTier, siteColorFn, legendOverride) {
@@ -7994,14 +7999,21 @@ function _watchBuildHazardMaps(codes) {
       var flagged = regionCodes.filter(function (c) { return siteColorFn && siteColorFn(c); });
       // Skip a panel with no polygons and no impacted sites.
       if (!layers.length && !flagged.length) return;
-      maps.push({
+      var rSites = _watchMapSites(regionCodes, siteColorFn);
+      var spec = {
         key: base.key + '_' + rk,
         title: base.title + (REGION_LABEL[rk] ? ' \u2014 ' + REGION_LABEL[rk] : ''),
         subtitle: base.subtitle,
         sectionIds: base.sectionIds || [],
         region: rk, layers: layers, legend: legendOverride || legend,
-        sites: _watchMapSites(regionCodes, siteColorFn)
-      });
+        sites: rSites
+      };
+      // The offshore sites are scattered across open ocean, so frame to them
+      // instead of a fixed box that would render mostly empty water.
+      if (rk === 'offshore') {
+        spec.bounds = _autoBounds([], [], rSites.filter(function (s) { return s.label; }), 16, MAP_REGIONS.offshore);
+      }
+      maps.push(spec);
     });
   }
 
