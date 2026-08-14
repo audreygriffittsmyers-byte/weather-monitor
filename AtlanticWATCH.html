@@ -2696,11 +2696,10 @@ function buildBriefNarrative(secs){
     var d = s.data;
     if (d.html) return;
     var n = d.groups ? d.groups.reduce(function(a,g){return a+g.rows.length;},0) : d.rows.length;
-    var codesList = d.groups
-      ? d.groups.reduce(function(a,g){return a.concat(g.rows.map(function(r){return r.code;}));},[])
-      : d.rows.map(function(r){return r.code;});
-    var shown = codesList.slice(0,12).join(', ') + (codesList.length>12 ? ' and '+(codesList.length-12)+' more' : '');
-    bits.push(s.def.title.charAt(0)+s.def.title.slice(1).toLowerCase()+' affects '+n+' location'+(n!==1?'s':'')+': '+shown+'.');
+    // Counts only. Listing the first twelve codes made the summary look like a
+    // roster while silently omitting the rest, so people at unlisted stations
+    // could read it as an all-clear. The tables are the authoritative list.
+    bits.push(s.def.title.charAt(0)+s.def.title.slice(1).toLowerCase()+' affects '+n+' location'+(n!==1?'s':'')+'.');
   });
   return 'The following hazards are active or forecast for Atlantic Aviation locations today. '
     + bits.join(' ')
