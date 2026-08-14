@@ -2722,11 +2722,13 @@ function _bActionRuns(secs){
 }
 
 // ── Live BRIEFING tab: cards only, no narrative / supervisor / disclaimer ────
-function _renderBriefLive(secs){
+function _renderBriefLive(secs, mapsBySection){
   if (!secs.length) return '<div style="padding:30px;text-align:center;color:#16a34a;font-size:13px">No active weather hazards across the selected locations.</div>';
   var html='';
+  mapsBySection = mapsBySection || {};
   secs.forEach(function(s){
     var d=s.data, def=s.def;
+    (mapsBySection[def.id] || []).forEach(function(m){ html += _watchMapImgHTML(m); });
     if (d.html) {
       html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;overflow:hidden;margin-bottom:12px">'
         + '<div style="background:'+def.bg+';padding:10px 14px"><div style="font-size:12px;font-weight:700;color:'+def.tc+';letter-spacing:.04em">'+def.icon+' '+def.title+'</div></div>'
@@ -2771,10 +2773,12 @@ function _renderBriefLive(secs){
 }
 
 // ── Generate Brief popup: tables + actionables below each hazard family ─────
-function _renderBriefHTML(secs){
+function _renderBriefHTML(secs, mapsBySection){
   var runs=_bActionRuns(secs), html='';
+  mapsBySection = mapsBySection || {};
   secs.forEach(function(s,i){
     var d=s.data, def=s.def;
+    (mapsBySection[def.id] || []).forEach(function(m){ html += _watchMapImgHTML(m); });
     if (d.html) {
       html += '<div style="margin-bottom:14px">'
         + '<div style="background:'+def.bg+';color:'+def.tc+';font-size:11px;font-weight:700;padding:6px 10px;letter-spacing:.04em">'+def.title+'</div>'
@@ -2815,9 +2819,10 @@ function _renderBriefHTML(secs){
 }
 
 // ── DOCX: same order, same sections, same actionable placement ──────────────
-function _renderBriefDocx(secs, add, ppr, rpr, sp){
+function _renderBriefDocx(secs, add, ppr, rpr, sp, emitMap){
   var runs=_bActionRuns(secs);
   secs.forEach(function(s,i){
+    if (emitMap) emitMap(s.def.id);
     var d=s.data, def=s.def;
     add(def.title, ppr({fill:def.docxBg, after:'40'}), rpr({b:true, sz:24, color:'FFFFFF'}));
     if (def.sub) add(def.sub, ppr({after:'60'}), rpr({sz:19, i:true}));
@@ -2893,10 +2898,11 @@ function _generateSummaryInner(content, ts, status) {
     else if (d.rows) d.rows.forEach(function(r){ impacted.add(r.code); });
   });
 
-  var html = _renderBriefLive(secs);
-  try {
-    html = _watchHazardMapsHTML(fboList.map(function(f){ return f.code; })) + html;
-  } catch (e) { console.warn('live hazard maps failed', e); }
+  var _mg = _watchMapsBySection(fboList.map(function(f){ return f.code; }), secs);
+  var html = _renderBriefLive(secs, _mg.bySection);
+  if (_mg.leftover.length) {
+    html = '<div style="margin-bottom:12px">' + _mg.leftover.map(_watchMapImgHTML).join('') + '</div>' + html;
+  }
 
   var clear = codes.filter(function(c){ return !impacted.has(c); });
   if (clear.length) {
@@ -5075,7 +5081,10 @@ function _watchDownloadDocx(codes, notes, sections) {
 
   if (notes) { add('Shift Notes: '+notes, ppr({fill:'F0F4F7', after:'120'}), rpr({sz:20})); sp(); }
 
-  _renderBriefDocx(secs, add, ppr, rpr, sp);
+  _mapParas.forEach(function(p){ paras.push(p); });
+  _renderBriefDocx(secs, add, ppr, rpr, sp, function(sid){
+    (_mapParaBySection[sid] || []).forEach(function(p){ paras.push(p); });
+  });
 
   // Extreme temp section
   // Supervisor note
@@ -5099,11 +5108,15 @@ function _watchDownloadDocx(codes, notes, sections) {
 
   // Hazard maps as an appendix. Each PNG becomes its own package part with a
   // relationship, referenced by an inline w:drawing run.
-  var _mediaFiles = {}, _mediaRels = [], _mapParas = [];
+  var _mediaFiles = {}, _mediaRels = [], _mapParas = [], _mapParaBySection = {};
   try {
-    var _maps = _watchRenderAllMaps(codes);
+    var _mg = _watchMapsBySection(codes, collectBriefSections(codes, sections));
+    var _maps = [];
+    Object.keys(_mg.bySection).forEach(function (sid) {
+      _mg.bySection[sid].forEach(function (m) { m._sectionId = sid; _maps.push(m); });
+    });
+    _mg.leftover.forEach(function (m) { m._sectionId = null; _maps.push(m); });
     if (_maps.length) {
-      _mapParas.push(P('HAZARD MAPS', ppr({after:'160'}), rpr({b:true, sz:26, color:NAVY})));
       _maps.forEach(function (m, idx) {
         var n = idx + 1;
         var rid = 'rIdImg' + n;
@@ -5111,10 +5124,11 @@ function _watchDownloadDocx(codes, notes, sections) {
         _mediaRels.push('<Relationship Id="' + rid
           + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"'
           + ' Target="media/hazard' + n + '.png"/>');
-        _mapParas.push(P(m.title, ppr({after:'60'}), rpr({b:true, sz:20, color:NAVY})));
+        var _bucket = m._sectionId ? (_mapParaBySection[m._sectionId] = _mapParaBySection[m._sectionId] || []) : _mapParas;
+        _bucket.push(P(m.title, ppr({after:'60'}), rpr({b:true, sz:20, color:NAVY})));
         // 6.5in wide, matching the renderer's 1100x700 aspect ratio
         var cx = 5943600, cy = Math.round(cx * 700 / 1100);
-        _mapParas.push('<w:p>' + ppr({after:'240'}) + '<w:r><w:drawing>'
+        _bucket.push('<w:p>' + ppr({after:'240'}) + '<w:r><w:drawing>'
           + '<wp:inline distT="0" distB="0" distL="0" distR="0">'
           + '<wp:extent cx="' + cx + '" cy="' + cy + '"/>'
           + '<wp:docPr id="' + (900 + n) + '" name="HazardMap' + n + '"/>'
@@ -5127,9 +5141,10 @@ function _watchDownloadDocx(codes, notes, sections) {
           + '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>');
       });
     }
-  } catch (e) { console.warn('DOCX hazard maps skipped', e); _mediaFiles = {}; _mediaRels = []; _mapParas = []; }
+  } catch (e) { console.warn('DOCX hazard maps skipped', e); _mediaFiles = {}; _mediaRels = []; _mapParas = []; _mapParaBySection = {}; }
+  if (_mapParas.length) _mapParas.unshift(P('HAZARD MAPS', ppr({after:'160'}), rpr({b:true, sz:26, color:NAVY})));
   var SECT = '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
-  var docXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document '+NS+'><w:body>'+paras.join('')+_mapParas.join('')+SECT+'</w:body></w:document>';
+  var docXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document '+NS+'><w:body>'+paras.join('')+SECT+'</w:body></w:document>';
 
   var CT = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>';
   var RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>';
@@ -6364,8 +6379,13 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px;font-size:11px"><strong>Shift Notes:</strong> '+notes+'</div>';
   }
 
-  html += _watchHazardMapsHTML(codes);
-  html += _renderBriefHTML(secs);
+  var _mg = _watchMapsBySection(codes, secs);
+  if (_mg.leftover.length) {
+    html += '<div style="margin-bottom:14px">'
+      + '<div style="background:#0E2841;color:#fff;font-weight:700;font-size:12px;padding:6px 12px;letter-spacing:.05em">HAZARD MAPS</div>'
+      + _mg.leftover.map(_watchMapImgHTML).join('') + '</div>';
+  }
+  html += _renderBriefHTML(secs, _mg.bySection);
 
   html += '<div style="background:#f2f4f6;padding:10px 12px;margin-top:16px;font-size:11px"><strong>Supervisors:</strong> Brief your team on all active hazards covered in this briefing before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.</div>';
   html += '<div style="background:#0E2841;color:#fff;text-align:center;font-weight:700;padding:8px;margin-top:8px;font-size:11px">Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.</div>';
@@ -7600,6 +7620,51 @@ function _featBBox(f) {
 function _bboxHits(b, r) {
   return !(b[2] < r[0] || b[0] > r[2] || b[3] < r[1] || b[1] > r[3]);
 }
+// Peak forecast values per location, mirroring the logic the matching briefing
+// sections already use so map and table never disagree.
+function _mapPeakFeels(c) {
+  var best = null;
+  (typeof _bHourly === 'function' ? _bHourly(c) : []).forEach(function (p) {
+    var t = p.temperature; if (t == null) return;
+    var rh = p.relativeHumidity && p.relativeHumidity.value;
+    if (rh == null && p.dewpoint && p.dewpoint.value != null) rh = _bRH(t, p.dewpoint.value * 9 / 5 + 32);
+    var hi = (rh != null && typeof calcHeatIndex === 'function') ? calcHeatIndex(t, rh) : null;
+    if (p._vcxFeels != null && p._vcxFeels > t) hi = Math.max(hi == null ? -999 : hi, p._vcxFeels);
+    var v = Math.max(t, hi != null ? hi : t);
+    if (best == null || v > best) best = v;
+  });
+  return best;
+}
+function _mapPeakCold(c) {
+  var best = null;
+  (typeof _bHourly === 'function' ? _bHourly(c) : []).forEach(function (p) {
+    var t = p.temperature; if (t == null) return;
+    var wc = (typeof calcWindChill === 'function') ? calcWindChill(t, _bWindMph(p)) : null;
+    var v = Math.min(t, wc != null ? wc : t);
+    if (best == null || v < best) best = v;
+  });
+  return best;
+}
+function _mapPeakWind(c) {
+  var sus = null, gst = null;
+  (typeof _bHourly === 'function' ? _bHourly(c) : []).forEach(function (p) {
+    var w = _bWindMph(p);
+    if (w != null && (sus == null || w > sus)) sus = w;
+    var g = (typeof _gustForHour === 'function') ? _gustForHour(c, p.startTime) : null;
+    if (g != null && (gst == null || g > gst)) gst = g;
+  });
+  var dp = (typeof _dayPeakGust === 'function') ? _dayPeakGust(c) : null;
+  if (dp && dp.mph != null && (gst == null || dp.mph > gst)) gst = dp.mph;
+  return { sus: sus, gust: gst };
+}
+// Graduated colour from an ascending band table [[threshold,colour,label],...]
+function _band(v, bands) {
+  if (v == null) return null;
+  var hit = null;
+  for (var i = 0; i < bands.length; i++) if (v >= bands[i][0]) hit = bands[i];
+  return hit;
+}
+
 // Fit a frame to the things actually being shown, with padding and a floor on
 // span, so a storm near Hawaii does not render inside an empty ocean basin.
 function _autoBounds(featureSets, tracks, sites, minSpan, fallback) {
@@ -7914,7 +7979,7 @@ function _watchBuildHazardMaps(codes) {
   var LAND_REGIONS = ['conus', 'alaska', 'hawaii'];
 
   // Emit one panel per region that actually has something to show.
-  function pushRegional(base, allFeatsByTier, siteColorFn) {
+  function pushRegional(base, allFeatsByTier, siteColorFn, legendOverride) {
     LAND_REGIONS.forEach(function (rk) {
       var layers = [], legend = [];
       allFeatsByTier.forEach(function (t) {
@@ -7931,7 +7996,8 @@ function _watchBuildHazardMaps(codes) {
         key: base.key + '_' + rk,
         title: base.title + (REGION_LABEL[rk] ? ' \u2014 ' + REGION_LABEL[rk] : ''),
         subtitle: base.subtitle,
-        region: rk, layers: layers, legend: legend,
+        sectionIds: base.sectionIds || [],
+        region: rk, layers: layers, legend: legendOverride || legend,
         sites: _watchMapSites(regionCodes, siteColorFn)
       });
     });
@@ -7950,7 +8016,7 @@ function _watchBuildHazardMaps(codes) {
       spcTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: t });
     });
     if (spcTiers.length) pushRegional(
-      { key: 'spc', title: 'SPC Convective Outlook \u2014 Day 1', subtitle: 'Categorical severe thunderstorm risk' },
+      { key: 'spc', title: 'SPC Convective Outlook \u2014 Day 1', subtitle: 'Categorical severe thunderstorm risk', sectionIds: ['spc'] },
       spcTiers,
       function (c) {
         var s = spcData[1] && spcData[1][c];
@@ -7968,7 +8034,7 @@ function _watchBuildHazardMaps(codes) {
       eroTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: pair[1] });
     });
     if (eroTiers.length) pushRegional(
-      { key: 'ero', title: 'WPC Excessive Rainfall Outlook \u2014 Day 1', subtitle: 'Risk of rainfall exceeding flash flood guidance' },
+      { key: 'ero', title: 'WPC Excessive Rainfall Outlook \u2014 Day 1', subtitle: 'Risk of rainfall exceeding flash flood guidance', sectionIds: ['ero'] },
       eroTiers,
       function (c) {
         if (typeof getEroInfoForCode !== 'function') return null;
@@ -7989,8 +8055,15 @@ function _watchBuildHazardMaps(codes) {
       fireTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: t });
     });
     if (fireTiers.length) pushRegional(
-      { key: 'fire', title: 'SPC Fire Weather Outlook \u2014 Day 1', subtitle: 'Critical fire weather risk areas' },
-      fireTiers, null);
+      { key: 'fire', title: 'SPC Fire Weather Outlook \u2014 Day 1', subtitle: 'Critical fire weather risk areas', sectionIds: ['dust','otheralerts'] },
+      fireTiers,
+      function (c) {
+        if (typeof getFireTierForCode !== 'function') return null;
+        var t = getFireTierForCode(c);
+        if (!t) return null;
+        var st = FIRE_POLY_STYLE[String(t).toUpperCase()];
+        return st ? st.color : '#f97316';
+      });
   }
 
   // Active NWS alerts with geometry
@@ -8006,7 +8079,7 @@ function _watchBuildHazardMaps(codes) {
       nwsTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: b });
     });
     if (nwsTiers.length) pushRegional(
-      { key: 'nws', title: 'Active NWS Watches, Warnings and Advisories', subtitle: 'Polygon-based alerts in effect at issuance time' },
+      { key: 'nws', title: 'Active NWS Watches, Warnings and Advisories', subtitle: 'Polygon-based alerts in effect at issuance time', sectionIds: ['tsalerts','floodalerts','windalerts','winteralerts','heatalerts','otheralerts'] },
       nwsTiers,
       function (c) {
         var r = results[c];
@@ -8014,6 +8087,69 @@ function _watchBuildHazardMaps(codes) {
         return NWS_MARKER_COLOR[topBucket(r.alerts)] || null;
       });
   }
+
+  // Heat and wind are station forecasts, not polygons, so they render as
+  // graduated site dots with a value legend. Same peak values the tables use.
+  var HEAT_BANDS = [
+    [90,  '#fde047', 'Feels like 90-99\u00B0F'],
+    [100, '#fb923c', 'Feels like 100-104\u00B0F'],
+    [105, '#ef4444', 'Feels like 105-109\u00B0F'],
+    [110, '#7f1d1d', 'Feels like 110\u00B0F+']
+  ];
+  var COLD_BANDS = [
+    [-999,'#1e3a8a', 'Feels like below 15\u00B0F'],
+    [15,  '#2563eb', 'Feels like 15-29\u00B0F'],
+    [30,  '#7dd3fc', 'Feels like 30-39\u00B0F']
+  ];
+  var WIND_BANDS = [
+    [15, '#fde047', 'Peak 15-24 mph'],
+    [25, '#fb923c', 'Peak 25-38 mph'],
+    [39, '#ef4444', 'Peak 39-57 mph'],
+    [58, '#7f1d1d', 'Peak 58 mph+']
+  ];
+  function _legendFor(bands, codes, valFn) {
+    var used = {};
+    (codes || []).forEach(function (c) {
+      var b = _band(valFn(c), bands);
+      if (b) used[b[2]] = b[1];
+    });
+    return bands.filter(function (b) { return used[b[2]]; })
+                .map(function (b) { return { color: b[1], label: b[2] }; });
+  }
+
+  var heatVal = function (c) { var v = _mapPeakFeels(c); return (v != null && v >= 90) ? v : null; };
+  var heatLegend = _legendFor(HEAT_BANDS, codes, heatVal);
+  if (heatLegend.length) pushRegional(
+    { key: 'heat', title: 'Forecast Real Feel Temperature \u2014 Next 24h',
+      subtitle: 'Peak heat index or air temperature by location',
+      sectionIds: ['feelfcst','heatcur','heatalerts'] },
+    [],
+    function (c) { var b = _band(heatVal(c), HEAT_BANDS); return b ? b[1] : null; },
+    heatLegend);
+
+  var coldVal = function (c) { var v = _mapPeakCold(c); return (v != null && v <= 39) ? v : null; };
+  var coldLegend = _legendFor(COLD_BANDS, codes, coldVal);
+  if (coldLegend.length) pushRegional(
+    { key: 'cold', title: 'Forecast Wind Chill / Cold \u2014 Next 24h',
+      subtitle: 'Lowest apparent temperature by location',
+      sectionIds: ['chillalerts'] },
+    [],
+    function (c) { var b = _band(coldVal(c), COLD_BANDS); return b ? b[1] : null; },
+    coldLegend);
+
+  var windVal = function (c) {
+    var w = _mapPeakWind(c);
+    var v = Math.max(w.sus == null ? -1 : w.sus, w.gust == null ? -1 : w.gust);
+    return v >= 15 ? v : null;
+  };
+  var windLegend = _legendFor(WIND_BANDS, codes, windVal);
+  if (windLegend.length) pushRegional(
+    { key: 'wind', title: 'Forecast Wind \u2014 Next 24h',
+      subtitle: 'Peak sustained wind or gust by location',
+      sectionIds: ['windfcstsus','windfcstgust','windcur','windalerts'] },
+    [],
+    function (c) { var b = _band(windVal(c), WIND_BANDS); return b ? b[1] : null; },
+    windLegend);
 
   // Tropical. Cones and tracks belong on whichever basin they sit in, so the
   // Pacific gets its own panel whenever a storm threatens the Hawaii sites.
@@ -8050,20 +8186,36 @@ function _watchBuildHazardMaps(codes) {
       seenLg[lab] = col;
     });
     rCones.forEach(function (f) {
-      var col = f._stormColor || '#ef4444';
-      layers.push({ features: [f], color: col, alpha: 0.16, weight: 2, dash: [7, 3] });
-      seenLg[(f._stormName || 'Active storm') + ' \u2014 forecast cone'] = col;
+      var cls = f._stormClass || '';
+      var col = (typeof NHC_COLORS !== 'undefined' && NHC_COLORS[cls]) ? NHC_COLORS[cls] : (f._stormColor || '#ef4444');
+      var clsName = (typeof NHC_LABELS !== 'undefined' && NHC_LABELS[cls]) ? NHC_LABELS[cls] : 'Tropical system';
+      layers.push({ features: [f], color: col, alpha: 0.16, weight: 2.4, dash: [7, 3] });
+      seenLg[(f._stormName || 'Active storm') + ' \u2014 ' + clsName + ' cone'] = col;
     });
     Object.keys(seenLg).forEach(function (k) { legend.push({ color: seenLg[k], label: k }); });
+    if (rCones.length) {
+      legend.push({ color: '#dc2626', label: 'Site under Hurricane product' });
+      legend.push({ color: '#f59e0b', label: 'Site under Tropical Storm product' });
+    }
 
     var regionCodes = _codesInRegion(codes, rk === 'pacific' ? 'pacific' : 'atlantic');
+    // Label anything inside a cone OR carrying a tropical product, matching the
+    // TROPICAL STORM IMPACTS table rather than cone geometry alone.
     var tSites = _watchMapSites(regionCodes, function (c) {
+      var a = (typeof _bAlerts === 'function') ? _bAlerts(c, /tropical|hurricane|storm surge|typhoon/i) : [];
+      if (a && a.length) {
+        var txt = a.map(function (x) { return x.event || ''; }).join(' ');
+        if (/Hurricane/i.test(txt)) return '#dc2626';
+        if (/Tropical Storm/i.test(txt)) return '#f59e0b';
+        return '#7c3aed';
+      }
       var n = (typeof isInTropicalCone === 'function') ? isInTropicalCone(c) : null;
-      return n ? '#dc2626' : null;
+      return n ? '#7c3aed' : null;
     });
     var tBounds = _autoBounds(rCones.concat(rAreas), rTracks, tSites, 14, MAP_REGIONS[rk]);
     maps.push({
       key: 'tropical_' + rk,
+      sectionIds: ['tropical','nhc'],
       title: 'NHC Tropical Outlook \u2014 ' + (rk === 'pacific' ? 'Central Pacific' : 'Atlantic Basin'),
       subtitle: rCones.length ? 'Active storm forecast cones and areas of potential development'
                               : 'Areas of potential tropical development',
@@ -8099,7 +8251,7 @@ function _watchRenderAllMaps(codes) {
   specs.forEach(function (s) {
     try {
       var url = _watchRenderHazardMap(s);
-      if (url) out.push({ key: s.key, title: s.title, dataUrl: url });
+      if (url) out.push({ key: s.key, title: s.title, sectionIds: s.sectionIds || [], dataUrl: url });
     } catch (e) { console.warn('hazard map failed: ' + s.key, e); }
   });
   return out;
@@ -8114,6 +8266,30 @@ function _watchDataUrlToBytes(dataUrl) {
   return u;
 }
 
+
+// Group rendered maps by the briefing section they illustrate, so each map sits
+// directly above the table and action list it covers. Maps whose section is not
+// in this brief fall into the leftover bucket and are shown up front.
+function _watchMapsBySection(codes, secs) {
+  var present = {};
+  (secs || []).forEach(function (s) { if (s && s.def && s.def.id) present[s.def.id] = true; });
+  var maps = [];
+  try { maps = _watchRenderAllMaps(codes); } catch (e) { console.warn('hazard maps failed', e); return { bySection: {}, leftover: [] }; }
+  var bySection = {}, leftover = [];
+  maps.forEach(function (m) {
+    var ids = m.sectionIds || [];
+    var target = null;
+    for (var i = 0; i < ids.length; i++) { if (present[ids[i]]) { target = ids[i]; break; } }
+    if (target) { (bySection[target] = bySection[target] || []).push(m); }
+    else leftover.push(m);
+  });
+  return { bySection: bySection, leftover: leftover };
+}
+
+function _watchMapImgHTML(m) {
+  return '<div style="margin:8px 0"><img src="' + m.dataUrl + '" alt="' + m.title
+       + '" style="width:100%;max-width:780px;border:1px solid #c8d0d8;display:block"/></div>';
+}
 
 // Renders every applicable hazard map and returns an embedded-image block.
 function _watchHazardMapsHTML(codes) {
