@@ -2689,6 +2689,19 @@ function collectBriefSections(codes, sel){
 }
 
 // Narrative that covers every active section, not just SPC.
+// Section titles are stored in caps for headers. Running prose needs sentence
+// case, but blind lowercasing turns SPC into Spc, so acronyms are restored.
+var HAZARD_ACRONYMS = ['SPC','WPC','NHC','NWS','CPHC','ERO','AQI','UV','METAR','TAF','FBO','GSE'];
+function _hazardPhrase(title) {
+  // Lowercase everything first. Capitalising the first letter before restoring
+  // acronyms leaves 'Spc', which then no longer matches the acronym pattern.
+  var t = String(title || '').toLowerCase();
+  HAZARD_ACRONYMS.forEach(function (a) {
+    t = t.replace(new RegExp('\\b' + a.toLowerCase() + '\\b', 'g'), a);
+  });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 function buildBriefNarrative(secs){
   if (!secs.length) return 'No active weather hazards are affecting Atlantic Aviation locations at this time.';
   var bits = [];
@@ -2699,7 +2712,7 @@ function buildBriefNarrative(secs){
     // Counts only. Listing the first twelve codes made the summary look like a
     // roster while silently omitting the rest, so people at unlisted stations
     // could read it as an all-clear. The tables are the authoritative list.
-    bits.push(s.def.title.charAt(0)+s.def.title.slice(1).toLowerCase()+' affects '+n+' location'+(n!==1?'s':'')+'.');
+    bits.push(_hazardPhrase(s.def.title)+' affects '+n+' location'+(n!==1?'s':'')+'.');
   });
   return 'The following hazards are active or forecast for Atlantic Aviation locations today. '
     + bits.join(' ')
@@ -5673,7 +5686,7 @@ function _briefSelCodes(){
   return WATCH_BRIEF_SECTIONS.map(function(def){
     var d=null; try { d = def.collect(all); } catch(e) { d=null; }
     var active = !!(d && (d.html || (d.groups&&d.groups.length) || (d.rows&&d.rows.length)));
-    var label = def.title.charAt(0)+def.title.slice(1).toLowerCase();
+    var label = _hazardPhrase(def.title);
     return {id:def.id, def:def, label:label, active:active};
   });
 }
@@ -7706,6 +7719,21 @@ function _featsInRegion(feats, regionKey) {
   return (feats || []).filter(function (f) { return f.geometry && _bboxHits(_featBBox(f), r); });
 }
 function _codesInRegion(codes, regionKey) {
+  // 'offshore' is a membership list, not a box. A box around Bermuda and the
+  // Caribbean also swallows Florida, Georgia and the Carolinas, which puts a
+  // dozen mainland FBOs on a map captioned Caribbean & Bermuda.
+  if (regionKey === 'offshore') {
+    var CONT = ['conus', 'alaska', 'hawaii'];
+    return (codes || []).filter(function (c) {
+      var xy = COORDS[c];
+      if (!xy) return false;
+      for (var i = 0; i < CONT.length; i++) {
+        var b = MAP_REGIONS[CONT[i]];
+        if (xy[1] >= b[0] && xy[1] <= b[2] && xy[0] >= b[1] && xy[0] <= b[3]) return false;
+      }
+      return true;
+    });
+  }
   var r = MAP_REGIONS[regionKey];
   return (codes || []).filter(function (c) {
     var xy = COORDS[c];
@@ -7988,7 +8016,10 @@ function _watchBuildHazardMaps(codes) {
   function pushRegional(base, allFeatsByTier, siteColorFn, legendOverride) {
     LAND_REGIONS.forEach(function (rk) {
       var layers = [], legend = [];
-      allFeatsByTier.forEach(function (t) {
+      // Offshore sites sit outside every US forecast product. SPC, WPC, fire
+      // and NWS polygons only reach that frame by overlapping Florida, so
+      // drawing them there would imply coverage that does not exist.
+      if (rk !== 'offshore') allFeatsByTier.forEach(function (t) {
         var feats = _featsInRegion(t.feats, rk);
         if (!feats.length) return;
         layers.push({ features: feats, color: t.color, alpha: t.alpha, weight: t.weight, dash: t.dash });
