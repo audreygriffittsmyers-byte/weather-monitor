@@ -8256,7 +8256,7 @@ function _watchBuildHazardMaps(codes) {
   if (coldLegend.length) pushRegional(
     { key: 'cold', title: 'Forecast Wind Chill / Cold \u2014 Next 24h',
       subtitle: 'Lowest apparent temperature by location',
-      sectionIds: ['chillalerts'] },
+      sectionIds: ['chillalerts','feelfcst','heatcur','heatalerts'] },
     [],
     function (c) { var b = _band(coldVal(c), COLD_BANDS); return b ? b[1] : null; },
     coldLegend);
