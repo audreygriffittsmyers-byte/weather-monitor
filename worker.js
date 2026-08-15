@@ -50,33 +50,6 @@ export default {
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
-    if (type === 'tstmprobe') {
-      // Diagnostic only. spc.noaa.gov blocks the assistant's tooling, so ask the
-      // Worker to list what the experimental Thunderstorm Outlook page actually
-      // publishes instead of guessing at filenames.
-      const PAGES = [
-        'https://www.spc.noaa.gov/products/exper/enhtstm/',
-        'https://www.spc.noaa.gov/gis/'
-      ];
-      const out = {};
-      for (const p of PAGES) {
-        try {
-          const r = await fetch(p, { headers: { 'User-Agent': UA } });
-          const body = r.ok ? await r.text() : '';
-          const hrefs = [];
-          const re = /href\s*=\s*["']([^"']+)["']/gi;
-          let m;
-          while ((m = re.exec(body)) !== null) hrefs.push(m[1]);
-          const gis = hrefs.filter(function (h) {
-            return /\.(zip|kml|kmz|geojson|json|shp|nc)(\?|$)/i.test(h)
-                || /tstm|thunder|enhtstm/i.test(h) && /gis|shape|kml|download/i.test(h);
-          });
-          out[p] = { status: r.status, totalLinks: hrefs.length, gisLinks: gis.slice(0, 40) };
-        } catch (e) { out[p] = { error: String(e) }; }
-      }
-      return new Response(JSON.stringify(out, null, 1), { headers: GEOJSON });
-    }
-
     if (type === 'spcpoly') {
       const day = url.searchParams.get('day') || '1';
       const LAYER = { '1':1, '2':9, '3':17 };
