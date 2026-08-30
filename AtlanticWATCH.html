@@ -3304,8 +3304,17 @@ function initMap() {
   if (typeof L === 'undefined') return;
   mapInitialized = true;
   leafletMap = L.map('leaflet-map', { zoomControl:true, preferCanvas:false }).setView([39,-96], 4);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution:'&copy; OpenStreetMap &copy; CARTO', subdomains:'abcd', maxZoom:18,
+  // CARTO began watermarking unauthenticated raster tiles and is retiring that
+  // service, so the basemap is Esri Light Gray Canvas: no API key, similar look.
+  // Note the {y}/{x} order, which is the reverse of the usual XYZ convention.
+  var ESRI_CANVAS = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+  var ESRI_ATTR = 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors, and the GIS user community';
+  L.tileLayer(ESRI_CANVAS + 'World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    attribution: ESRI_ATTR, maxZoom: 18, maxNativeZoom: 16, zIndex: 1
+  }).addTo(leafletMap);
+  // The base carries no place names; the Reference layer supplies the labels.
+  L.tileLayer(ESRI_CANVAS + 'World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '', maxZoom: 18, maxNativeZoom: 16, zIndex: 2
   }).addTo(leafletMap);
 }
 
