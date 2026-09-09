@@ -4775,26 +4775,26 @@ function renderNASCard(code) {
 // ── Ops Grid ──────────────────────────────────────────────────────────────────
 var GRID_REGIONS = {
   'All':         null,
-  // Regions follow the NWS/WPC forecast-discussion naming used in the SPC and
-  // WPC narrative text, so a tab name matches what the forecaster wrote.
-  'Northeast':         ['6N5','BAF','BDL','BDR','BED','ELM','FRG','HPN','HYA','MMU','ORH','OXC','PVD','SWF','TEB'],
-  'Mid-Atlantic':      ['AGC','IAD','ILG','PHF','PHL','PIT','PNE','RDU'],
-  'Southeast':         ['CHS','JZI','PDK','SGJ'],
-  'Florida':           ['BCT','DTS','FXE','DJT','MCO','OPF','ORL','SRQ','SUA'],
-  'Gulf Coast':        ['BHM','CRP','HOU','IAH','JAN','MSY'],
-  'Ohio Valley':       ['BNA','CLE','SBN','SDF'],
-  'Corn Belt':         ['ANE','MDW','MKC','PWK','UES'],
-  'Central Plains':    ['LIT','LNK','OKC','OMA','PWA','TUL'],
-  'Southern Plains':   ['ADS','AUS','DAL','EAS(Corp)','ELP','SKF'],
-  'Northern Rockies':  ['CPR','GPI','SUN'],
-  'Southern Rockies':  ['ABQ','ASE','FMN','HDN','MTJ','RIL','SAF'],
-  'Great Basin':       ['LAS','RNO','SLC'],
-  'Desert Southwest':  ['PSP','SDL','TRM','TUS'],
-  'Pacific Northwest': ['EUG','PDX','UAO'],
-  'California':        ['APC','BFL','BUR','CRQ','FAT','LAX','LGB','SBA','SCK','SJC','SMO'],
-  'Alaska':            ['ANC','FAI','JNU','KTN','SIT'],
-  'Hawaii':            ['HNL','ITO','KOA','LIH','LNY','OGG'],
-  'International':     ['BDA','GCM','SXM','PLS'],
+  // Areas follow Atlantic Aviation regional manager assignments.
+  // EAS(Corp) is intentionally unassigned: it has no regional manager, so it
+  // appears under 'All' only. 6N5 stands on its own for the same reason.
+  'Wheeler':     ['RNO','LAS','APC','SJC','FAT','BFL','SCK'],
+  'Broderick':   ['SBA','BUR','LGB','SMO','LAX','CRQ','PSP','TRM'],
+  'Read':        ['ITO','HNL','OGG','KOA','LIH','LNY'],
+  'Archuleta':   ['AUS','CRP','HOU','IAH','SKF','DAL','ADS','LIT'],
+  'Hill':        ['SIT','JNU','ANC','FAI','KTN'],
+  'Carver':      ['GPI','ASE','CPR','RIL','HDN','MTJ'],
+  'Strhol':      ['EUG','PDX','UAO','SLC','SUN'],
+  'Morse':       ['ABQ','FMN','ELP','SDL','TUS','SAF'],
+  'Kurgan':      ['OKC','MKC','PWA','TUL','MDW','UES','PWK','LNK','OMA','SBN','ANE'],
+  'Neds':        ['PIT','AGC','MMU','SDF','CLE'],
+  'Butterworth': ['PHL','PNE','PHF','ILG'],
+  'Rose':        ['BDA','ELM','SWF','HPN','IAD','FRG','OXC'],
+  'Phillips':    ['HYA','BDR','BAF','BDL','PVD','ORH','BED','TEB'],
+  'Mayle':       ['RDU','BNA','PDK','BHM','CHS','JZI','JAN','MSY'],
+  'Hartman':     ['DTS','SGJ','MCO','ORL','SRQ'],
+  'Therrien':    ['OPF','SUA','DJT','BCT','FXE','PLS','GCM','SXM'],
+  '6N5':         ['6N5'],
 };
 
 var gridRegion   = 'All';
