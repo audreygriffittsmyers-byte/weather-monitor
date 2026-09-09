@@ -5143,7 +5143,7 @@ function _watchDownloadDocx(codes, notes, sections) {
   var secs = collectBriefSections(codes, sections);
 
   add('ATLANTIC AVIATION', ppr({fill:NAVY, after:'40'}), rpr({b:true, sz:26, color:'FFFFFF'}));
-  add('OPERATIONAL WEATHER BRIEFING \u2014 '+dateStr, ppr({fill:NAVY, after:'80'}), rpr({b:true, sz:30, color:'FFFFFF'}));
+  add('OPERATIONAL WEATHER BRIEFING \u2014 '+dateStr+(_briefScopeLabel?' \u2014 '+_briefScopeLabel:''), ppr({fill:NAVY, after:'80'}), rpr({b:true, sz:30, color:'FFFFFF'}));
   sp();
   add('Team,', ppr({after:'80'}), rpr({sz:22}));
   add(buildBriefNarrative(secs), ppr({after:'100'}), rpr({sz:22}));
@@ -5821,6 +5821,7 @@ function openPrintBriefing() {
     +(selected?'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="location" '+(defaultScope==='location'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">'+selected+' only</span></label>':'')
     +'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="area" '+(defaultScope==='area'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">Area</span> <select id="bo-area" style="flex:1;font-size:12px;padding:3px 4px;border:1px solid #c8d0d8;border-radius:4px;cursor:pointer">'+_areaOpts+'</select></label>'
     +'</div>'
+    +'<button id="bo-docx-all" style="width:100%;background:#2a7a4a;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 DOCX for every area (one file each)</button>'
     +'<div style="display:flex;gap:8px">'
     +'<button id="bo-generate" style="flex:1;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">Generate Brief</button>'
     +'<button id="bo-docx" style="background:#1a6ba0;color:#fff;border:none;border-radius:4px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer">↓ DOCX</button>'
@@ -5835,6 +5836,58 @@ function openPrintBriefing() {
     if (r) r.checked = true;
   });
   modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+  // Bulk export: one DOCX per area, using the same section checkboxes and shift
+  // notes as a single-area export. Areas with nothing to report are skipped
+  // rather than producing an empty file.
+  document.getElementById('bo-docx-all').addEventListener('click', async function() {
+    var btn = this, orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+    await fetchWPCPolygons();
+    if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText) await fetchNWSNarrativeProducts();
+
+    var sects = {};
+    WATCH_BRIEF_SECTIONS.forEach(function(d){ var el=document.getElementById('bo-'+d.id); sects[d.id] = !!(el && el.checked); });
+    var notesEl = document.getElementById('shift-notes');
+    var notes = notesEl ? notesEl.value.trim() : '';
+
+    var areas = Object.keys(GRID_REGIONS).filter(function(r){ return r !== 'All'; });
+
+    // Prefetch hourly data once across every area rather than per area, so the
+    // same location is never fetched twice.
+    var allCodes = [];
+    areas.forEach(function(a){
+      (GRID_REGIONS[a]||[]).forEach(function(c){ if (allCodes.indexOf(c) === -1) allCodes.push(c); });
+    });
+    await _prefetchHourly(allCodes, btn);
+
+    var made = [], skipped = [], failed = [];
+    for (var i = 0; i < areas.length; i++) {
+      var a = areas[i];
+      var list = GRID_REGIONS[a] || [];
+      var codes = COVERED.filter(function(f){ return list.indexOf(f.code) !== -1; }).map(function(f){ return f.code; });
+      btn.textContent = 'Building ' + (i+1) + '/' + areas.length + ' \u2014 ' + a;
+      var secs = [];
+      try { secs = collectBriefSections(codes, sects); } catch(e) { secs = []; }
+      if (!codes.length || !secs.length) { skipped.push(a); continue; }
+      _briefScopeLabel = a + ' Area';
+      try { _watchDownloadDocx(codes, notes, sects); made.push(a); }
+      catch(e) { failed.push(a + ' (' + e.message + ')'); }
+      // Browsers drop downloads fired back to back, so space them out.
+      await new Promise(function(r){ setTimeout(r, 900); });
+    }
+    _briefScopeLabel = '';
+    btn.disabled = false;
+    btn.textContent = orig;
+    modal.remove();
+
+    var msg = made.length + ' area briefing' + (made.length===1?'':'s') + ' downloaded';
+    if (made.length) msg += ':\n' + made.join(', ');
+    if (skipped.length) msg += '\n\nSkipped, nothing active to report:\n' + skipped.join(', ');
+    if (failed.length) msg += '\n\nFailed:\n' + failed.join('\n');
+    alert(msg);
+  });
+
   document.getElementById('bo-docx').addEventListener('click', async function() {
     await fetchWPCPolygons();
     if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText) await fetchNWSNarrativeProducts();
