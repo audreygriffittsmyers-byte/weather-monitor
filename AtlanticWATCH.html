@@ -2206,6 +2206,7 @@ async function generateSummary() {
 // the Generate Brief popup and the DOCX all read from this, so they cannot
 // show different hazards or a different order again.
 
+var _briefScopeLabel = '';     // area/scope name printed on brief + DOCX
 var BRIEF_WIND_SUS_MPH = 15;   // current + forecast sustained threshold
 var BRIEF_WIND_GST_MPH = 25;   // current + forecast gust threshold
 var BRIEF_HEAT_F       = 95;
@@ -2933,8 +2934,18 @@ function _generateSummaryInner(content, ts, status) {
   ts.textContent = 'Updated ' + now.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 
   var scopeEl = document.getElementById('summary-scope');
-  var useMyStations = scopeEl && scopeEl.value === 'mine' && myLocations.size > 0;
-  var fboList = useMyStations ? COVERED_ALL.filter(function(f){ return myLocations.has(f.code); }) : COVERED_ALL;
+  var scopeVal = scopeEl ? scopeEl.value : 'all';
+  var fboList;
+  if (scopeVal === 'mine' && myLocations.size > 0) {
+    fboList = COVERED_ALL.filter(function(f){ return myLocations.has(f.code); });
+  } else if (scopeVal.indexOf('area:') === 0) {
+    // Area codes come from GRID_REGIONS so the briefing can never drift from
+    // the Overview tabs -- one list drives both.
+    var _ac = GRID_REGIONS[scopeVal.slice(5)] || null;
+    fboList = _ac ? COVERED_ALL.filter(function(f){ return _ac.indexOf(f.code) !== -1; }) : COVERED_ALL;
+  } else {
+    fboList = COVERED_ALL;
+  }
 
   var spcLoaded   = fboList.some(function(f){ return spcData[1][f.code]&&spcData[1][f.code].st==='ok'; });
   var alertLoaded = fboList.some(function(f){ return results[f.code]&&results[f.code].st==='ok'; });
@@ -5240,7 +5251,7 @@ function _watchDownloadDocx(codes, notes, sections) {
   var files = {'[Content_Types].xml':CT, '_rels/.rels':RELS, 'word/document.xml':docXml,
                'word/_rels/document.xml.rels':WRELS, 'docProps/core.xml':CORE, 'docProps/app.xml':APP};
   Object.keys(_mediaFiles).forEach(function(k){ files[k] = _mediaFiles[k]; });
-  _watchBuildZip(files, 'WATCH_Briefing_'+dateStr.replace(/[^a-zA-Z0-9]/g,'_')+'.docx');
+  _watchBuildZip(files, 'WATCH_Briefing_'+dateStr.replace(/[^a-zA-Z0-9]/g,'_')+(_briefScopeLabel?'_'+_briefScopeLabel.replace(/[^a-zA-Z0-9]/g,'_'):'')+'.docx');
 }
 
 // ZIP builder -- validated DataView approach
@@ -5769,7 +5780,7 @@ function openPrintBriefing() {
   var defaultScope = 'all';
   if (selected) { defaultScope = 'location'; }
   else if (stationFilter === 'mine' && myLocations.size > 0) { defaultScope = 'mine'; }
-  else if (activeTab === 'grid' && gridRegion !== 'All') { defaultScope = 'region'; }
+  else if (gridRegion !== 'All') { defaultScope = 'area'; }
 
   var hasSPC    = COVERED.some(function(f){ return spcData[1]&&spcData[1][f.code]&&spcData[1][f.code].label&&spcData[1][f.code].label!=='No Risk'; });
   var hasNHC    = typeof nhcLayer !== 'undefined' && nhcLayer !== null;
@@ -5778,6 +5789,11 @@ function openPrintBriefing() {
   var hasWind   = COVERED.some(function(f){ return !!getWindStatus(f.code); });
   var hasTemp   = COVERED.some(function(f){ var obs=obsData[f.code]; return obs&&(obs.tempF>=95||obs.tempF<=15); });
   var hasAlerts = COVERED.some(function(f){ return results[f.code]&&results[f.code].alerts&&results[f.code].alerts.length>0; });
+
+  var _areaNames = Object.keys(GRID_REGIONS).filter(function(r){ return r !== 'All'; });
+  var _areaOpts = _areaNames.map(function(r){
+    return '<option value="'+r+'"'+(gridRegion===r?' selected':'')+'>'+r+'</option>';
+  }).join('');
 
   var ex = document.getElementById('brief-options-modal');
   if (ex) ex.remove();
@@ -5803,6 +5819,7 @@ function openPrintBriefing() {
     +'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="all" '+(defaultScope==='all'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">All Locations</span></label>'
     +(myLocations.size>0?'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="mine" '+(defaultScope==='mine'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">My Stations</span></label>':'')
     +(selected?'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="location" '+(defaultScope==='location'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">'+selected+' only</span></label>':'')
+    +'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="area" '+(defaultScope==='area'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">Area</span> <select id="bo-area" style="flex:1;font-size:12px;padding:3px 4px;border:1px solid #c8d0d8;border-radius:4px;cursor:pointer">'+_areaOpts+'</select></label>'
     +'</div>'
     +'<div style="display:flex;gap:8px">'
     +'<button id="bo-generate" style="flex:1;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">Generate Brief</button>'
@@ -5812,6 +5829,11 @@ function openPrintBriefing() {
 
   document.body.appendChild(modal);
   document.getElementById('bo-cancel').addEventListener('click', function(){ modal.remove(); });
+  var _areaSel = document.getElementById('bo-area');
+  if (_areaSel) _areaSel.addEventListener('change', function(){
+    var r = document.querySelector('input[name="bo-scope"][value="area"]');
+    if (r) r.checked = true;
+  });
   modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
   document.getElementById('bo-docx').addEventListener('click', async function() {
     await fetchWPCPolygons();
@@ -5824,6 +5846,14 @@ function openPrintBriefing() {
     if(scope==='mine'&&myLocations.size>0) codes=COVERED.filter(function(f){return myLocations.has(f.code);}).map(function(f){return f.code;});
     else if(scope==='location'&&selected) codes=[selected];
     else codes=COVERED.map(function(f){return f.code;});
+    _briefScopeLabel = '';
+    if (scope === 'area') {
+      var _an = (document.getElementById('bo-area')||{}).value || '';
+      var _ac = GRID_REGIONS[_an] || [];
+      codes = COVERED.filter(function(f){ return _ac.indexOf(f.code) !== -1; }).map(function(f){ return f.code; });
+      _briefScopeLabel = _an + ' Area';
+    } else if (scope === 'mine') { _briefScopeLabel = 'My Stations'; }
+    if (!codes.length) { alert('No locations in that scope.'); return; }
     var notesEl=document.getElementById('shift-notes');
     var notes=notesEl?notesEl.value.trim():'';
     var _docxBtn = document.getElementById('bo-docx');
@@ -5851,6 +5881,14 @@ function openPrintBriefing() {
     if (scope === 'mine' && myLocations.size > 0) codes = COVERED.filter(function(f){ return myLocations.has(f.code); }).map(function(f){ return f.code; });
     else if (scope === 'location' && selected) codes = [selected];
     else codes = COVERED.map(function(f){ return f.code; });
+    _briefScopeLabel = '';
+    if (scope === 'area') {
+      var _an = (document.getElementById('bo-area')||{}).value || '';
+      var _ac = GRID_REGIONS[_an] || [];
+      codes = COVERED.filter(function(f){ return _ac.indexOf(f.code) !== -1; }).map(function(f){ return f.code; });
+      _briefScopeLabel = _an + ' Area';
+    } else if (scope === 'mine') { _briefScopeLabel = 'My Stations'; }
+    if (!codes.length) { alert('No locations in that scope.'); return; }
     var notesEl = document.getElementById('shift-notes');
     var notes = notesEl ? notesEl.value.trim() : '';
     var _genBtn = document.getElementById('bo-generate');
@@ -6457,7 +6495,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
 
   html += '<table class="wx-hdr" style="border:none;margin-bottom:12px;width:100%"><tr><td style="background:#0E2841;padding:12px 16px;border:none">'
     +'<div style="color:#ffffff;font-size:13px;font-weight:700;letter-spacing:.04em">ATLANTIC AVIATION</div>'
-    +'<div class="wx-hdr-title" style="color:#ffffff;font-size:15px;font-weight:700;overflow-wrap:anywhere">OPERATIONAL WEATHER BRIEFING \u2014 '+dateStr+'</div>'
+    +'<div class="wx-hdr-title" style="color:#ffffff;font-size:15px;font-weight:700;overflow-wrap:anywhere">OPERATIONAL WEATHER BRIEFING \u2014 '+dateStr+(_briefScopeLabel?' \u2014 '+_briefScopeLabel:'')+'</div>'
     +'<div style="color:#c8d0d8;font-size:11px;margin-top:2px;overflow-wrap:anywhere">'+secs.map(function(s){return s.def.title;}).join(' \u00B7 ')+'</div>'
     +'</td></tr></table>';
 
@@ -8456,6 +8494,20 @@ function _watchHazardMapsHTML(codes) {
   return h;
 }
 
+// Area options on the BRIEFING scope picker are generated from GRID_REGIONS
+// rather than typed into the HTML, so renaming an area updates both places.
+function _populateAreaScope() {
+  var sel = document.getElementById('summary-scope');
+  if (!sel) return;
+  Object.keys(GRID_REGIONS).forEach(function(r) {
+    if (r === 'All') return;
+    var o = document.createElement('option');
+    o.value = 'area:' + r;
+    o.textContent = r + ' area';
+    sel.appendChild(o);
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadMyLocations();
   loadShiftNotes();
@@ -8464,6 +8516,7 @@ loadMyLocations();
   setInterval(tickZuluClock, 1000);
 loadDismissed();
 updateLocFilterBtn();
+_populateAreaScope();
 fetchNAS();
 renderSidebar();
 updateHeader();
