@@ -6908,9 +6908,20 @@ function getDeiceStatus(obs) {
 function getRampStressStatus(obs) {
   if (!obs) return null;
   var temp = obs.tempF;
-  var hi   = obs.heatIndex;   // already calculated
-  var wc   = obs.windChill;   // already calculated
   if (temp == null) return null;
+
+  // obs.heatIndex / obs.windChill are never populated by the METAR decoder, so
+  // these are computed here from the raw obs. Reading the properties directly
+  // silently fell back to dry-bulb temp and under-rated every windy cold site.
+  var hi = (obs.heatIndex != null) ? obs.heatIndex : null;
+  if (hi == null && typeof calcHeatIndex === 'function' && typeof calcRelativeHumidity === 'function') {
+    var _rh = calcRelativeHumidity(temp, obs.dewpointF);
+    hi = (_rh != null) ? calcHeatIndex(temp, _rh) : null;
+  }
+  var wc = (obs.windChill != null) ? obs.windChill : null;
+  if (wc == null && typeof calcWindChill === 'function') {
+    wc = calcWindChill(temp, obs.windMph);   // null above 50F or under 3 mph
+  }
 
   // Heat stress -- use heat index if available, else temp
   var effectiveHeat = (hi != null && hi > temp) ? hi : temp;
