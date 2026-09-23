@@ -21,7 +21,11 @@ export default {
       const lon = parseFloat(url.searchParams.get('lon'));
       const day = url.searchParams.get('day') || '1';
       if (isNaN(lat) || isNaN(lon)) return new Response(JSON.stringify({}), { headers: GEOJSON });
+      // Days 4-8 are probabilistic-only and have no categorical layer. Falling
+      // back to ||1 here would hand back Day 1 data labelled as day 4+, so the
+      // point endpoint refuses instead; use type=spcpoly&day=N for days 4-8.
       const LAYER = { '1':1, '2':9, '3':17 };
+      if (!LAYER[day]) return new Response(JSON.stringify({ cat:{}, torn:{}, hail:{}, wind:{}, note:'categorical outlook is days 1-3 only' }), { headers: GEOJSON });
       const TORN  = { '1':3, '2':11 };
       const HAIL  = { '1':5, '2':13 };
       const WIND  = { '1':7, '2':15 };
@@ -52,9 +56,12 @@ export default {
 
     if (type === 'spcpoly') {
       const day = url.searchParams.get('day') || '1';
-      const LAYER = { '1':1, '2':9, '3':17 };
+      // Days 1-3 are categorical outlooks; days 4-8 are probabilistic (field dn
+      // = 15 or 30 percent). Both live in the same MapServer, so one endpoint
+      // covers the whole 8-day convective picture.
+      const LAYER = { '1':1, '2':9, '3':17, '4':21, '5':22, '6':23, '7':24, '8':25 };
       try {
-        const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${LAYER[day]||1}/query?where=1%3D1&outFields=LABEL,LABEL2,DN&returnGeometry=true&outSR=4326&f=geojson`,
+        const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${LAYER[day]||1}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
