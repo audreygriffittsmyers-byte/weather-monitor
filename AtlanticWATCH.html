@@ -2201,6 +2201,258 @@ async function generateSummary() {
   }
 }
 
+
+// ══ EXTENDED OUTLOOK -- DAYS 2 THROUGH 7 ═══════════════════════════════════
+// Lead-time hazard scan. Everything below reads forecast data the app has
+// ALREADY downloaded -- forecastData holds 14 NWS periods (7 days) per
+// location and spcData[2]/[3] are already cached -- plus at most five shared
+// SPC day-4..8 polygon fetches for the whole network. No new per-location
+// requests, which matters because the per-location path is already the
+// heaviest thing this app does.
+
+var EXT_MAX_LEAD   = 7;          // days ahead to scan
+var extOutlook     = {};         // code -> [{dateKey, lead, label, hazards:[]}]
+var spcExtPolys    = {};         // spc day 4..8 -> geojson
+var extScanStamp   = null;
+var _extScanBusy   = false;
+
+var EXT_RANK  = { MONITOR:1, ADVISORY:2, WARNING:3 };
+var EXT_COLOR = { MONITOR:'#0891b2', ADVISORY:'#d97706', WARNING:'#dc2626' };
+
+// Named systems get called out verbatim -- a forecaster writing "nor'easter"
+// is the strongest lead signal there is, and no polygon carries it.
+function _extStormName(txt){
+  var m = String(txt||'').match(/\b(nor[’']?easter|blizzard|ice storm|winter storm|tropical storm|hurricane|derecho|atmospheric river)\b/i);
+  if (!m) return null;
+  var s = m[1].replace(/’/, "'");
+  return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase();
+}
+
+function _extMph(s){
+  if (!s) return 0;
+  var n = String(s).match(/\d+/g);
+  return n ? Math.max.apply(null, n.map(Number)) : 0;
+}
+
+function _extDateKey(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function _extLeadOf(dateKey){
+  var t = new Date(); t.setHours(0,0,0,0);
+  var p = dateKey.split('-');
+  var d = new Date(+p[0], +p[1]-1, +p[2]);
+  return Math.round((d - t) / 86400000);
+}
+
+// SPC categorical (days 1-3, already cached) or probabilistic (days 4-8, from
+// the shared polygons). Returns a hazard object or null.
+function _extSpcFor(code, spcDay){
+  if (spcDay <= 3) {
+    var s = spcData[spcDay] && spcData[spcDay][code];
+    if (!s || s.st !== 'ok' || !s.label || s.label === 'No Risk') return null;
+    var lab = s.label;
+    if (lab === 'TSTM') return {kind:'SEVERE', sev:'MONITOR', detail:'SPC general thunderstorm area'};
+    var sev = (lab==='HIGH'||lab==='MDT') ? 'WARNING' : (lab==='ENH' ? 'ADVISORY' : 'MONITOR');
+    var nice = (SPC_LABEL_MAP[lab] && SPC_LABEL_MAP[lab].label) || lab;
+    return {kind:'SEVERE', sev:sev, detail:'SPC '+nice+' risk'};
+  }
+  var gj = spcExtPolys[spcDay];
+  var c = COORDS[code];
+  if (!gj || !gj.features || !c) return null;
+  var pt = [c[1], c[0]], best = 0;
+  gj.features.forEach(function(f){
+    if (!_pointInPolygonGeom(pt, f.geometry)) return;
+    var p = f.properties || {};
+    var dn = Number(p.dn != null ? p.dn : p.DN);
+    if (!isNaN(dn) && dn > best) best = dn;
+  });
+  if (!best) return null;
+  return {kind:'SEVERE', sev: best>=30?'ADVISORY':'MONITOR',
+          detail:'SPC Day '+spcDay+' severe probability '+best+'%'};
+}
+
+// Per-location 7-day hazard picture, built from the NWS periods already held.
+function buildExtOutlook(code){
+  // International sites have no NWS gridpoint; Visual Crossing supplies hourly
+  // records with the same field names, so the same bucketing works on both.
+  var periods = (forecastData[code] && forecastData[code].length)
+    ? forecastData[code]
+    : ((vcxData[code] && vcxData[code].hours) || []);
+  var byDay = {};
+
+  periods.forEach(function(p){
+    if (!p || !p.startTime) return;
+    var d = new Date(p.startTime);
+    if (isNaN(d)) return;
+    var key = _extDateKey(d);
+    var lead = _extLeadOf(key);
+    if (lead < 1 || lead > EXT_MAX_LEAD) return;   // day-of is covered elsewhere
+    if (!byDay[key]) byDay[key] = {dateKey:key, lead:lead, label:'', sus:0, gust:0, pop:0,
+                                   hi:-999, lo:999, txt:'', names:{}};
+    var b = byDay[key];
+    if (!b.label) b.label = (p.isDaytime !== false && p.name)
+      ? p.name
+      : d.toLocaleDateString('en-US',{weekday:'long'});   // VCX hours carry no period name
+    b.sus  = Math.max(b.sus,  _extMph(p.windSpeed));
+    b.gust = Math.max(b.gust, _extMph(p.windGust), _extMph(p._vcxGust));
+    var pop = p.probabilityOfPrecipitation && p.probabilityOfPrecipitation.value;
+    if (pop != null) b.pop = Math.max(b.pop, Number(pop)||0);
+    if (p.temperature != null) { b.hi = Math.max(b.hi, p.temperature); b.lo = Math.min(b.lo, p.temperature); }
+    var t = (p.shortForecast||'')+' '+(p.detailedForecast||'');
+    b.txt += ' '+t;
+    var nm = _extStormName(t);
+    if (nm) b.names[nm] = 1;
+  });
+
+  var out = [];
+  Object.keys(byDay).sort().forEach(function(key){
+    var b = byDay[key], hz = [];
+    var txt = b.txt;
+
+    // Wind -- the dominant ramp hazard and the clearest nor'easter signal
+    var w = Math.max(b.gust, b.sus);
+    if (b.gust >= 46 || b.sus >= 40) hz.push({kind:'WIND', sev:'WARNING',  detail:'Forecast wind to '+w+' mph'});
+    else if (b.gust >= 35 || b.sus >= 25) hz.push({kind:'WIND', sev:'ADVISORY', detail:'Forecast wind to '+w+' mph'});
+    else if (b.gust >= BRIEF_WIND_GST_MPH || b.sus >= BRIEF_WIND_SUS_MPH) hz.push({kind:'WIND', sev:'MONITOR', detail:'Forecast wind to '+w+' mph'});
+
+    if (/blizzard|ice storm|freezing rain/i.test(txt))
+      hz.push({kind:'WINTER', sev:'WARNING', detail:'Snow, ice or freezing rain in forecast'});
+    else if (/snow|sleet|wintry|freezing/i.test(txt))
+      hz.push({kind:'WINTER', sev: b.pop>=60?'ADVISORY':'MONITOR', detail:'Winter precipitation in forecast'+(b.pop?' ('+b.pop+'% PoP)':'')});
+
+    if (/tropical storm|hurricane/i.test(txt))
+      hz.push({kind:'TROPICAL', sev:'WARNING', detail:'Tropical system referenced in forecast'});
+
+    if (b.pop >= 70 && /rain|shower|storm/i.test(txt))
+      hz.push({kind:'RAIN', sev: b.pop>=80?'ADVISORY':'MONITOR', detail:'Heavy rain likely ('+b.pop+'% PoP)'});
+
+    if (/thunder/i.test(txt))
+      hz.push({kind:'TSTM', sev: b.pop>=60?'ADVISORY':'MONITOR', detail:'Thunderstorms in forecast'+(b.pop?' ('+b.pop+'% PoP)':'')});
+
+    if (b.hi >= BRIEF_HEAT_F) hz.push({kind:'HEAT', sev: b.hi>=103?'WARNING':'ADVISORY', detail:'Forecast high '+b.hi+'°F'});
+    if (b.lo <= 15 && b.lo !== 999) hz.push({kind:'COLD', sev: b.lo<=0?'WARNING':'ADVISORY', detail:'Forecast low '+b.lo+'°F'});
+    else if (b.lo <= BRIEF_COLD_F && b.lo !== 999 && b.sus >= 15)
+      hz.push({kind:'COLD', sev:'MONITOR', detail:'Forecast low '+b.lo+'°F with wind'});
+
+    var spc = _extSpcFor(code, b.lead + 1);   // SPC day N == lead N-1
+    if (spc) hz.push(spc);
+
+    var names = Object.keys(b.names);
+    if (names.length) {
+      hz.forEach(function(h){ h.storm = names[0]; });
+      if (!hz.length) hz.push({kind:'SYSTEM', sev:'MONITOR', detail:names[0]+' referenced in forecast', storm:names[0]});
+    }
+
+    if (hz.length) out.push({dateKey:key, lead:b.lead, label:b.label || key, hazards:hz, storm:names[0]||null});
+  });
+  return out;
+}
+
+// Five shared fetches cover days 4-8 for all 109 locations.
+async function fetchSpcExtPolys(){
+  for (var d = 4; d <= 8; d++) {
+    if (spcExtPolys[d]) continue;
+    try {
+      var r = await fetchWithTimeout(PROXY+'?type=spcpoly&day='+d, 12000);
+      spcExtPolys[d] = r.ok ? await r.json() : {features:[]};
+    } catch(e) { spcExtPolys[d] = {features:[]}; }
+  }
+}
+
+async function scanExtendedOutlook(){
+  if (_extScanBusy) return;
+  _extScanBusy = true;
+  try {
+    await fetchSpcExtPolys();
+    var next = {};
+    COVERED_ALL.forEach(function(f){
+      var o = buildExtOutlook(f.code);
+      if (o.length) next[f.code] = o;
+    });
+    extOutlook = next;
+    extScanStamp = new Date();
+    notifyExtendedOutlook();
+    // The briefing tab's id is 'build' -- the 'summary'/'brief' comparisons
+    // elsewhere in this file are stale and never match.
+    if (activeTab === 'build') { try { generateSummary(); } catch(e){} }
+  } catch(e) {
+    console.warn('extended outlook scan failed:', e);
+  } finally {
+    _extScanBusy = false;
+  }
+}
+
+// ── Lead-time notifications ─────────────────────────────────────────────────
+// Fires when a hazard FIRST appears at range, and again only if it escalates.
+// Keyed by location + calendar day + hazard so a storm three days out is
+// announced once, not re-announced on every refresh.
+var extNotified = {};
+function loadExtNotified(){
+  try {
+    var s = localStorage.getItem('watch_ext_notified');
+    if (!s) return;
+    var o = JSON.parse(s), today = _extDateKey(new Date());
+    Object.keys(o).forEach(function(k){
+      if ((k.split('|')[1] || '') >= today) extNotified[k] = o[k];   // drop past days
+    });
+  } catch(e) {}
+}
+function saveExtNotified(){
+  try { localStorage.setItem('watch_ext_notified', JSON.stringify(extNotified)); } catch(e) {}
+}
+
+function notifyExtendedOutlook(){
+  var fresh = [];
+  Object.keys(extOutlook).forEach(function(code){
+    extOutlook[code].forEach(function(day){
+      day.hazards.forEach(function(h){
+        var key  = code+'|'+day.dateKey+'|'+h.kind;
+        var rank = EXT_RANK[h.sev] || 1;
+        var prev = extNotified[key] || 0;
+        if (rank <= prev) return;                 // seen, and no worse than before
+        if (rank < 2 && !prev) { extNotified[key] = rank; return; }  // MONITOR: record, stay quiet
+        extNotified[key] = rank;
+        fresh.push({code:code, day:day, h:h, rank:rank, escalated: prev > 0});
+      });
+    });
+  });
+  if (!fresh.length) { saveExtNotified(); return; }
+  saveExtNotified();
+
+  // Group by hazard + day so one system does not produce 30 banners.
+  var groups = {};
+  fresh.forEach(function(x){
+    var g = x.h.kind+'|'+x.day.dateKey;
+    if (!groups[g]) groups[g] = {kind:x.h.kind, day:x.day, rank:0, storm:null, codes:[], escalated:false};
+    groups[g].codes.push(x.code);
+    groups[g].rank = Math.max(groups[g].rank, x.rank);
+    if (x.h.storm) groups[g].storm = x.h.storm;
+    if (x.escalated) groups[g].escalated = true;
+  });
+
+  Object.keys(groups)
+    .sort(function(a,b){ return groups[b].rank - groups[a].rank || groups[a].day.lead - groups[b].day.lead; })
+    .slice(0, 6)
+    .forEach(function(g){
+      var G = groups[g];
+      var sev = G.rank>=3?'WARNING':(G.rank>=2?'ADVISORY':'MONITOR');
+      var when = G.day.label || G.day.dateKey;
+      var lead = G.day.lead === 1 ? 'tomorrow' : G.day.lead+' days out';
+      var head = (G.escalated ? 'UPGRADED — ' : 'LEAD TIME — ')
+        + (G.storm ? G.storm+': ' : '') + _extKindLabel(G.kind) + ' ' + when;
+      var list = G.codes.slice(0,12).join(', ') + (G.codes.length>12 ? ' +'+(G.codes.length-12)+' more' : '');
+      showAlertBanner(head, lead + ' · ' + G.codes.length + ' location' + (G.codes.length===1?'':'s') + ' · ' + list,
+                      EXT_COLOR[sev], false, G.codes[0]);
+    });
+}
+
+function _extKindLabel(k){
+  return ({WIND:'High wind', WINTER:'Winter weather', TROPICAL:'Tropical threat', RAIN:'Heavy rain',
+           TSTM:'Thunderstorms', HEAT:'Extreme heat', COLD:'Extreme cold', SEVERE:'Severe weather',
+           SYSTEM:'Developing system'})[k] || k;
+}
+
 // ══ SHARED BRIEFING HAZARD MODEL ═══════════════════════════════════════════
 // Single ordered definition of every briefing section. The live BRIEFING tab,
 // the Generate Brief popup and the DOCX all read from this, so they cannot
@@ -2321,7 +2573,47 @@ var WATCH_BRIEF_SECTIONS = [
     return groups.length ? {groups:groups} : null;
   }},
 
-// 2 ── 24h thunderstorm forecast ─────────────────────────────────────────────
+// 2 -- Extended outlook, days 2-7 ---------------------------------------------
+// Placed straight after the day-1 convective outlook because lead time is the
+// whole point: this is what is coming, not what is happening.
+{ id:'outlook', title:'EXTENDED OUTLOOK — DAYS 2 THROUGH 7', sub:'Forecast hazards beyond today, grouped by lead time',
+  icon:'📅', bg:'#1E3A8A', tc:'#fff', docxBg:'1E3A8A', actions:'universal',
+  collect:function(codes){
+    var byDay = {};
+    codes.forEach(function(c){
+      (extOutlook[c] || []).forEach(function(day){
+        var top = null;
+        day.hazards.forEach(function(h){
+          if (!top || (EXT_RANK[h.sev]||1) > (EXT_RANK[top.sev]||1)) top = h;
+        });
+        if (!top) return;
+        if (!byDay[day.dateKey]) byDay[day.dateKey] = {lead:day.lead, label:day.label, rows:[], rank:0};
+        var b = byDay[day.dateKey];
+        b.rank = Math.max(b.rank, EXT_RANK[top.sev]||1);
+        var kinds = {}; day.hazards.forEach(function(h){ kinds[_extKindLabel(h.kind)] = 1; });
+        b.rows.push(_bRow(c,
+          (day.storm ? day.storm+' — ' : '') + Object.keys(kinds).join(', '),
+          top.detail));
+      });
+    });
+    var keys = Object.keys(byDay).sort();
+    if (!keys.length) return null;
+    var groups = keys.map(function(k){
+      var b = byDay[k];
+      var sev = b.rank>=3?'WARNING':(b.rank>=2?'ADVISORY':'MONITOR');
+      var bg  = EXT_COLOR[sev];
+      return {
+        label: (b.label||k) + '  (' + (b.lead===1?'tomorrow':'+'+b.lead+' days') + ')',
+        bg: bg, docxBg: bg.replace('#','').toUpperCase(),
+        action: sev==='WARNING'?'Plan Now':(sev==='ADVISORY'?'Prepare':'Monitor'),
+        cols:['FBO','City / State','Hazards','Detail'],
+        rows: b.rows
+      };
+    });
+    return {groups:groups};
+  }},
+
+// 3 ── 24h thunderstorm forecast ─────────────────────────────────────────────
 { id:'tsfcst', title:'24-HOUR THUNDERSTORM FORECAST', sub:'Thunderstorms in the next 24 hours',
   icon:'\u26A1', bg:'#c05928', tc:'#fff', docxBg:'C05928', actions:'thunderstorm',
   collect:function(codes){
@@ -3889,6 +4181,10 @@ function startAutoRefresh() {
   // NAS status: every 5 minutes
   setInterval(() => fetchNAS(), 5 * 60 * 1000);
 
+  // Extended outlook: refresh every 30 minutes. Guarded by _extScanBusy so a
+  // slow cycle can never stack on top of itself.
+  setInterval(() => { scanExtendedOutlook(); }, 30 * 60 * 1000);
+
   // SPC polygon cache: clear every 30 minutes
   setInterval(() => {
     spcPolygons = null;
@@ -5376,6 +5672,8 @@ async function _startupHourlyLoad() {
     }));
     await new Promise(function(r){ setTimeout(r, 2000); });
   }
+  // Forecast data is now in memory -- build the 2-7 day picture from it.
+  scanExtendedOutlook();
 }
 
 
@@ -8579,6 +8877,7 @@ loadMyLocations();
   tickZuluClock();
   setInterval(tickZuluClock, 1000);
 loadDismissed();
+loadExtNotified();
 updateLocFilterBtn();
 _populateAreaScope();
 fetchNAS();
@@ -9071,4 +9370,3 @@ function updatePickerFooter() {
 </body>
 </html>
           <button id="btn-wind" onclick="setFilter('wind')" style="flex:1;padding:7px 4px;border:1px solid #c8d0d8;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;background:transparent;color:#556070">WIND</button>
-          
