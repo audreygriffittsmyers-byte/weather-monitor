@@ -220,6 +220,7 @@
     <button class="tab active" data-tab="map" style="background:transparent;border:none;border-bottom:2px solid #ffffff;color:#ffffff;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Map</button>
     <button class="tab" data-tab="monitor" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Live Monitor</button>
     <button class="tab" data-tab="grid" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Overview</button>
+    <button class="tab" data-tab="outlook" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Extended Risk</button>
     <button class="tab" data-tab="build" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Briefing</button>
   </div>
 
@@ -291,7 +292,7 @@
         <div style="background:#0E2841;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:10">
           <div>
             <div style="font-size:13px;font-weight:700;color:#ffffff;letter-spacing:.04em">ATLANTIC AVIATION — WATCH — OPERATIONAL WEATHER SUMMARY</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><div id="summary-timestamp" style="font-size:10px;color:#7a9ab8"></div><select id="summary-scope" onchange="generateSummary()" style="background:#1a3a5c;color:#7a9ab8;border:1px solid #2a5a8c;border-radius:3px;font-size:10px;padding:1px 6px;cursor:pointer"><option value="all">All Locations</option><option value="mine">My Stations</option></select></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><div id="summary-timestamp" style="font-size:10px;color:#7a9ab8"></div><div id="brief-day-btns" style="display:flex;gap:1px;background:#1a3a5c;border-radius:3px;padding:2px"><button class="brief-day-btn" data-briefday="1" onclick="setBriefDay('1')" style="background:#ffffff;color:#0E2841;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 1</button><button class="brief-day-btn" data-briefday="2" onclick="setBriefDay('2')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 2</button><button class="brief-day-btn" data-briefday="3" onclick="setBriefDay('3')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 3</button><button class="brief-day-btn" data-briefday="47" onclick="setBriefDay('47')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 4-7</button></div><select id="summary-scope" onchange="generateSummary()" style="background:#1a3a5c;color:#7a9ab8;border:1px solid #2a5a8c;border-radius:3px;font-size:10px;padding:1px 6px;cursor:pointer"><option value="all">All Locations</option><option value="mine">My Stations</option></select></div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="summary-status" style="font-size:10px;color:#7a9ab8"></span>
@@ -359,6 +360,7 @@
               <button class="sat-product-btn" data-product="global_water_vapor_imagery_mosaic" onclick="setSatProduct('global_water_vapor_imagery_mosaic')" style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 5px;font-size:8px;font-weight:700;cursor:pointer">WV</button>
             </div>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="spc-poly-toggle" onchange="toggleSPCPolygons(this.checked)" checked style="cursor:pointer"/> SPC Conv</label>
+            <div id="spc-day-btns" style="display:flex;gap:1px;background:#E8E8E8;border-radius:3px;padding:2px"><button class="spc-day-btn" data-spcday="1" onclick="setMapSpcDay('1')" style="background:#0E2841;color:#fff;border:none;border-radius:2px;padding:2px 6px;font-size:8px;font-weight:700;cursor:pointer">D1</button><button class="spc-day-btn" data-spcday="2" onclick="setMapSpcDay('2')" style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 6px;font-size:8px;font-weight:700;cursor:pointer">D2</button><button class="spc-day-btn" data-spcday="3" onclick="setMapSpcDay('3')" style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 6px;font-size:8px;font-weight:700;cursor:pointer">D3</button><button class="spc-day-btn" data-spcday="47" onclick="setMapSpcDay('47')" style="background:transparent;color:#556070;border:none;border-radius:2px;padding:2px 6px;font-size:8px;font-weight:700;cursor:pointer">D4-7</button></div>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="fire-poly-toggle" onchange="toggleFirePolygons(this.checked)" checked style="cursor:pointer"/> Fire Wx</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="wpc-poly-toggle" onchange="toggleWPCPolygons(this.checked)" checked style="cursor:pointer"/> WPC Rain</label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:#556070;font-weight:600"><input type="checkbox" id="nws-poly-toggle" onchange="toggleNWSPolygons(this.checked)" checked style="cursor:pointer"/> Watches/Warnings</label>
@@ -407,6 +409,21 @@
       <!-- Ops Grid panel -->
       <div id="panel-grid" style="display:none;height:100%;overflow-y:auto;background:#E8E8E8">
         <div id="grid-inner" style="padding:16px"></div>
+      </div>
+
+      <!-- Extended forecast risk panel -->
+      <div id="panel-outlook" style="display:none;height:100%;overflow-y:auto;background:#E8E8E8">
+        <div style="background:#0E2841;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:10">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:#ffffff;letter-spacing:.04em">EXTENDED FORECAST RISK &mdash; DAYS 2 THROUGH 7</div>
+            <div id="outlook-stamp" style="font-size:10px;color:#7a9ab8;margin-top:4px"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="outlook-scope" onchange="renderOutlookTab()" style="background:#1a3a5c;color:#7a9ab8;border:1px solid #2a5a8c;border-radius:3px;font-size:10px;padding:2px 6px;cursor:pointer"></select>
+            <button onclick="scanExtendedOutlook()" style="background:#1a6ba0;color:#fff;border:none;border-radius:4px;padding:6px 12px;font-size:10px;font-weight:700;cursor:pointer">Refresh</button>
+          </div>
+        </div>
+        <div id="outlook-inner" style="padding:16px"></div>
       </div>
 
     </div><!-- /main -->
@@ -1801,8 +1818,10 @@ function switchTab(tab) {
   document.getElementById('panel-map').style.display     = tab === 'map'     ? 'flex' : 'none';
   document.getElementById('panel-build').style.display   = tab === 'build'   ? '' : 'none';
   document.getElementById('panel-grid').style.display    = tab === 'grid'    ? '' : 'none';
+  document.getElementById('panel-outlook').style.display = tab === 'outlook' ? '' : 'none';
   if (tab === 'build') generateSummary();
   if (tab === 'grid')  renderOpsGrid();
+  if (tab === 'outlook') renderOutlookTab();
   if (tab === 'map') {
     setTimeout(() => {
       initMap();
@@ -2375,7 +2394,8 @@ async function scanExtendedOutlook(){
     notifyExtendedOutlook();
     // The briefing tab's id is 'build' -- the 'summary'/'brief' comparisons
     // elsewhere in this file are stale and never match.
-    if (activeTab === 'build') { try { generateSummary(); } catch(e){} }
+    if (activeTab === 'build')   { try { generateSummary(); } catch(e){} }
+    if (activeTab === 'outlook') { try { renderOutlookTab(); } catch(e){} }
   } catch(e) {
     console.warn('extended outlook scan failed:', e);
   } finally {
@@ -2451,6 +2471,206 @@ function _extKindLabel(k){
   return ({WIND:'High wind', WINTER:'Winter weather', TROPICAL:'Tropical threat', RAIN:'Heavy rain',
            TSTM:'Thunderstorms', HEAT:'Extreme heat', COLD:'Extreme cold', SEVERE:'Severe weather',
            SYSTEM:'Developing system'})[k] || k;
+}
+
+
+// ══ EXTENDED FORECAST RISK TAB ═════════════════════════════════════════════
+// Reads extOutlook, which scanExtendedOutlook() has already built from forecast
+// data in memory. Rendering here costs no fetches.
+
+function _populateOutlookScope(){
+  var sel = document.getElementById('outlook-scope');
+  if (!sel || sel.options.length) return;
+  var html = '<option value="all">All Locations</option><option value="mine">My Stations</option>';
+  Object.keys(GRID_REGIONS).forEach(function(r){
+    if (r !== 'All') html += '<option value="area:'+r+'">'+r+' area</option>';
+  });
+  sel.innerHTML = html;
+}
+
+function _outlookCodes(){
+  var sel = document.getElementById('outlook-scope');
+  var v = sel ? sel.value : 'all';
+  if (v === 'mine' && myLocations.size > 0) return COVERED_ALL.filter(function(f){ return myLocations.has(f.code); }).map(function(f){ return f.code; });
+  if (v.indexOf('area:') === 0) {
+    var a = GRID_REGIONS[v.slice(5)] || [];
+    return COVERED_ALL.filter(function(f){ return a.indexOf(f.code) !== -1; }).map(function(f){ return f.code; });
+  }
+  return COVERED_ALL.map(function(f){ return f.code; });
+}
+
+function renderOutlookTab(){
+  _populateOutlookScope();
+  var host = document.getElementById('outlook-inner');
+  if (!host) return;
+  var stamp = document.getElementById('outlook-stamp');
+  if (stamp) stamp.textContent = extScanStamp
+    ? 'Updated ' + extScanStamp.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})
+    : 'Waiting on forecast data...';
+
+  var codes = _outlookCodes();
+  var byDay = {};
+  codes.forEach(function(c){
+    (extOutlook[c] || []).forEach(function(day){
+      if (!byDay[day.dateKey]) byDay[day.dateKey] = {lead:day.lead, label:day.label, entries:[]};
+      byDay[day.dateKey].entries.push({code:c, day:day});
+    });
+  });
+  var keys = Object.keys(byDay).sort();
+  if (!keys.length) {
+    host.innerHTML = '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:30px;text-align:center;color:#16a34a;font-size:13px">'
+      + (extScanStamp ? 'No forecast hazards on days 2 through 7 for the selected locations.'
+                      : 'Forecast data still loading. This fills in shortly after the app opens.')
+      + '</div>';
+    return;
+  }
+
+  var html = '';
+  keys.forEach(function(k){
+    var b = byDay[k];
+    var worst = 0;
+    b.entries.forEach(function(e){ e.day.hazards.forEach(function(h){ worst = Math.max(worst, EXT_RANK[h.sev]||1); }); });
+    var sev = worst>=3?'WARNING':(worst>=2?'ADVISORY':'MONITOR');
+    var bg  = EXT_COLOR[sev];
+    // Worst-first so the locations that matter are at the top of each day.
+    b.entries.sort(function(x,y){
+      var rx=0, ry=0;
+      x.day.hazards.forEach(function(h){ rx=Math.max(rx,EXT_RANK[h.sev]||1); });
+      y.day.hazards.forEach(function(h){ ry=Math.max(ry,EXT_RANK[h.sev]||1); });
+      return ry-rx || x.code.localeCompare(y.code);
+    });
+    var storms = {};
+    b.entries.forEach(function(e){ if (e.day.storm) storms[e.day.storm]=1; });
+    var stormTxt = Object.keys(storms).length ? ' — ' + Object.keys(storms).join(', ') : '';
+
+    html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;overflow:hidden;margin-bottom:12px">'
+      + '<div style="background:'+bg+';color:#fff;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'
+      + '<div style="font-size:12px;font-weight:700">' + _esc(b.label||k) + stormTxt + '</div>'
+      + '<div style="font-size:10px;opacity:.9">' + (b.lead===1?'tomorrow':'+'+b.lead+' days') + ' · ' + b.entries.length + ' location' + (b.entries.length===1?'':'s') + '</div>'
+      + '</div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:11px">'
+      + '<tr style="background:#f4f6f8"><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e0e0e0">FBO</th>'
+      + '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e0e0e0">City / State</th>'
+      + '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e0e0e0">Hazards</th>'
+      + '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e0e0e0">Detail</th></tr>';
+    b.entries.forEach(function(e){
+      var f = _bFbo(e.code);
+      var top = null;
+      e.day.hazards.forEach(function(h){ if (!top || (EXT_RANK[h.sev]||1) > (EXT_RANK[top.sev]||1)) top = h; });
+      var chips = e.day.hazards.map(function(h){
+        return '<span style="display:inline-block;background:'+EXT_COLOR[h.sev]+';color:#fff;border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700;margin:1px 2px 1px 0">'
+          + _esc(_extKindLabel(h.kind)) + '</span>';
+      }).join('');
+      html += '<tr style="border-bottom:1px solid #f0f0f0">'
+        + '<td style="padding:5px 8px;font-weight:700;cursor:pointer;color:#1a6ba0" onclick="switchTab(\'monitor\');setTimeout(function(){selectFBO(\''+e.code+'\');},80)">' + _esc(e.code) + '</td>'
+        + '<td style="padding:5px 8px;color:#556070">' + _esc((f.city||'')+(f.state?', '+f.state:'')) + '</td>'
+        + '<td style="padding:5px 8px">' + chips + '</td>'
+        + '<td style="padding:5px 8px;color:#556070">' + _esc(top?top.detail:'') + '</td>'
+        + '</tr>';
+    });
+    html += '</table></div>';
+  });
+  host.innerHTML = html;
+}
+
+function _esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
+
+
+// ══ BRIEFING DAY SELECTOR ══════════════════════════════════════════════════
+// Day 1 keeps the existing briefing untouched. Days 2+ are built from the
+// forecast outlook only. Current observations and active NWS alerts are
+// deliberately NOT carried forward -- a Day 3 page showing today's live
+// warnings would be wrong in an operational brief.
+
+var briefDay = '1';
+var BRIEF_DAY_LABEL = { '1':'Day 1', '2':'Day 2', '3':'Day 3', '47':'Days 4-7' };
+
+// Briefing "Day N" means N-1 days out. Day 4-7 spans leads 3 through 6.
+function _briefDayLeads(day){
+  if (day === '2')  return [1];
+  if (day === '3')  return [2];
+  if (day === '47') return [3,4,5,6];
+  return [];
+}
+
+var EXT_KIND_ORDER = ['SEVERE','TSTM','WIND','WINTER','TROPICAL','RAIN','HEAT','COLD','SYSTEM'];
+var EXT_KIND_STYLE = {
+  SEVERE:  {icon:'⛈',            bg:'#0E2841', docxBg:'0E2841', actions:'thunderstorm'},
+  TSTM:    {icon:'⚡',            bg:'#c05928', docxBg:'C05928', actions:'thunderstorm'},
+  WIND:    {icon:'💨',      bg:'#1a6ba0', docxBg:'1A6BA0', actions:'wind'},
+  WINTER:  {icon:'❄',            bg:'#1E40AF', docxBg:'1E40AF', actions:'winter'},
+  TROPICAL:{icon:'🌀',      bg:'#7c3aed', docxBg:'7C3AED', actions:'universal'},
+  RAIN:    {icon:'🌧',      bg:'#0891b2', docxBg:'0891B2', actions:'flood'},
+  HEAT:    {icon:'🌡',      bg:'#be123c', docxBg:'BE123C', actions:'heat'},
+  COLD:    {icon:'❄',            bg:'#2563eb', docxBg:'2563EB', actions:'cold'},
+  SYSTEM:  {icon:'📅',      bg:'#556070', docxBg:'556070', actions:'universal'}
+};
+
+function _collectExtSections(codes, day){
+  var leads = _briefDayLeads(day);
+  var byKind = {};
+  codes.forEach(function(c){
+    (extOutlook[c] || []).forEach(function(d){
+      if (leads.indexOf(d.lead) === -1) return;
+      d.hazards.forEach(function(h){
+        if (!byKind[h.kind]) byKind[h.kind] = {};
+        var k = d.dateKey;
+        if (!byKind[h.kind][k]) byKind[h.kind][k] = {lead:d.lead, label:d.label, rank:0, rows:[]};
+        var g = byKind[h.kind][k];
+        g.rank = Math.max(g.rank, EXT_RANK[h.sev]||1);
+        g.rows.push(_bRow(c, (d.storm ? d.storm + ' — ' : '') + h.sev, h.detail));
+      });
+    });
+  });
+
+  var out = [];
+  EXT_KIND_ORDER.forEach(function(kind){
+    if (!byKind[kind]) return;
+    var st = EXT_KIND_STYLE[kind] || EXT_KIND_STYLE.SYSTEM;
+    var groups = Object.keys(byKind[kind]).sort().map(function(k){
+      var g = byKind[kind][k];
+      var sev = g.rank>=3?'WARNING':(g.rank>=2?'ADVISORY':'MONITOR');
+      var bg  = EXT_COLOR[sev];
+      return {
+        label: (g.label||k) + '  (' + (g.lead===1?'tomorrow':'+'+g.lead+' days') + ')',
+        bg: bg, docxBg: bg.replace('#','').toUpperCase(),
+        action: sev==='WARNING'?'Plan Now':(sev==='ADVISORY'?'Prepare':'Monitor'),
+        cols:['FBO','City / State','Severity','Detail'],
+        rows: g.rows
+      };
+    });
+    if (!groups.length) return;
+    out.push({
+      def:{ id:'ext_'+kind, title:_extKindLabel(kind).toUpperCase() + ' — ' + BRIEF_DAY_LABEL[day].toUpperCase(),
+            sub:'Forecast hazard, not a current observation',
+            icon:st.icon, bg:st.bg, tc:'#fff', docxBg:st.docxBg, actions:st.actions },
+      data:{ groups: groups }
+    });
+  });
+  return out;
+}
+
+// Single entry point so the live tab, the popup brief and the DOCX can never
+// disagree about which day they are showing.
+function collectSectionsForDay(codes, sel){
+  if (briefDay === '1') return collectBriefSections(codes, sel);
+  return _collectExtSections(codes, briefDay);
+}
+
+function setBriefDay(d){
+  briefDay = String(d);
+  document.querySelectorAll('.brief-day-btn').forEach(function(b){
+    var on = b.dataset.briefday === briefDay;
+    b.style.background = on ? '#ffffff' : 'transparent';
+    b.style.color = on ? '#0E2841' : '#7a9ab8';
+  });
+  var so = document.getElementById('brief-section-note');
+  if (so) so.remove();
+  generateSummary();
 }
 
 // ══ SHARED BRIEFING HAZARD MODEL ═══════════════════════════════════════════
@@ -3250,7 +3470,7 @@ function _generateSummaryInner(content, ts, status) {
   var codes = fboList.map(function(f){ return f.code; });
   // The briefing page always shows every hazard -- section selection applies
   // only to the Generate Brief / DOCX outputs.
-  var secs = collectBriefSections(codes, null);
+  var secs = collectSectionsForDay(codes, null);
 
   var impacted = new Set();
   secs.forEach(function(s){
@@ -3488,14 +3708,67 @@ async function fetchWithTimeout(url, ms=10000) {
   });
 }
 
+// Per-day polygon cache. spcPolygons stays pinned to Day 1 because the briefing
+// map builder filters it by categorical label, which days 4-7 do not carry.
+var spcPolyCache = {};
+var mapSpcDay = '1';
+
+async function fetchSPCPolyDay(day) {
+  if (spcPolyCache[day]) return spcPolyCache[day];
+  if (day === '47') {
+    // SPC publishes days 4-8 as separate probabilistic layers with no combined
+    // product, so the union is built here and each feature keeps its own day.
+    var feats = [];
+    for (var d = 4; d <= 7; d++) {
+      try {
+        var rr = await fetchWithTimeout(`${PROXY}?type=spcpoly&day=${d}`, 12000);
+        if (!rr.ok) continue;
+        var gj = await rr.json();
+        (gj.features || []).forEach(function(f){
+          f.properties = f.properties || {};
+          f.properties._spcDay = d;
+          feats.push(f);
+        });
+      } catch(e) { console.warn('SPC day '+d+' poly failed:', e.message); }
+    }
+    spcPolyCache[day] = { type:'FeatureCollection', features: feats };
+    return spcPolyCache[day];
+  }
+  try {
+    const r = await fetchWithTimeout(`${PROXY}?type=spcpoly&day=${day}`, 12000);
+    spcPolyCache[day] = r.ok ? await r.json() : { features:[] };
+  } catch(e) { console.warn('SPC poly day '+day+' failed:', e.message); spcPolyCache[day] = {features:[]}; }
+  return spcPolyCache[day];
+}
+
 async function fetchSPCPolygons() {
   if (spcPolygons !== null) return spcPolygons;
-  try {
-    const r = await fetchWithTimeout(`${PROXY}?type=spcpoly&day=1`);
-    spcPolygons = r.ok ? await r.json() : { features:[] };
-    console.log('SPC poly:', spcPolygons?.features?.length, 'features');
-  } catch(e) { console.warn('SPC poly failed:', e.message); spcPolygons = {features:[]}; }
+  spcPolygons = await fetchSPCPolyDay('1');
+  console.log('SPC poly:', spcPolygons?.features?.length, 'features');
   return spcPolygons;
+}
+
+// Days 4-7 carry dn = probability, not a categorical label.
+var SPC_PROB_STYLE = [
+  [30, { color:'#E97132', fillColor:'#E97132', fillOpacity:0.26, weight:1.5 }],
+  [15, { color:'#FFC000', fillColor:'#FFC000', fillOpacity:0.20, weight:1.5 }],
+  [ 5, { color:'#196B24', fillColor:'#196B24', fillOpacity:0.16, weight:1.5 }]
+];
+function _spcProbStyle(dn){
+  for (var i=0;i<SPC_PROB_STYLE.length;i++) if (dn >= SPC_PROB_STYLE[i][0]) return SPC_PROB_STYLE[i][1];
+  return { color:'#888', fillColor:'#888', fillOpacity:0.08, weight:1 };
+}
+
+function setMapSpcDay(day) {
+  mapSpcDay = String(day);
+  document.querySelectorAll('.spc-day-btn').forEach(function(b){
+    var on = b.dataset.spcday === mapSpcDay;
+    b.style.background = on ? '#0E2841' : 'transparent';
+    b.style.color = on ? '#fff' : '#556070';
+  });
+  var t = document.getElementById('spc-poly-toggle');
+  if (t && !t.checked) { t.checked = true; showSPCPolys = true; }
+  drawSPCPolygons();
 }
 
 async function fetchFirePolygons() {
@@ -3640,19 +3913,45 @@ async function refreshMapLayers() {
 async function drawSPCPolygons() {
   if (spcPolyLayer) { leafletMap.removeLayer(spcPolyLayer); spcPolyLayer = null; }
   if (!showSPCPolys) return;
-  const data = await fetchSPCPolygons();
-  if (!data?.features?.length) return;
-  const sorted = [...data.features].sort((a,b) => (b.properties?.dn||b.properties?.DN||0) - (a.properties?.dn||a.properties?.DN||0));
+  const isProb = mapSpcDay === '47';
+  const data = await fetchSPCPolyDay(mapSpcDay);
+  if (!data?.features?.length) {
+    _setSpcDayNote(isProb ? 'No SPC severe probability areas on days 4-7.'
+                          : 'No SPC convective areas on Day ' + mapSpcDay + '.');
+    return;
+  }
+  _setSpcDayNote('');
+  // Draw strongest last so the highest risk sits on top.
+  const sorted = [...data.features].sort((a,b) => (a.properties?.dn||a.properties?.DN||0) - (b.properties?.dn||b.properties?.DN||0));
   spcPolyLayer = L.geoJSON({type:'FeatureCollection',features:sorted}, {
     style: f => {
+      if (isProb) return _spcProbStyle(Number(f.properties?.dn ?? f.properties?.DN ?? 0));
       const lbl = (f.properties?.label||f.properties?.LABEL||f.properties?.LABEL2||'').toUpperCase();
       return SPC_POLY_STYLE[lbl] || {color:'#888',fillColor:'#888',fillOpacity:0.06,weight:1};
     },
     onEachFeature: (f,layer) => {
-      const lbl2 = f.properties?.label2 || f.properties?.LABEL2 || f.properties?.label || '';
-      layer.bindTooltip(`⛈ SPC Day 1: ${lbl2}`, {sticky:true});
+      const p = f.properties || {};
+      if (isProb) {
+        layer.bindTooltip('\u26C8 SPC Day ' + (p._spcDay||'4-7') + ': ' + (p.dn ?? p.DN ?? '?') + '% severe', {sticky:true});
+      } else {
+        const lbl2 = p.label2 || p.LABEL2 || p.label || '';
+        layer.bindTooltip('\u26C8 SPC Day ' + mapSpcDay + ': ' + lbl2, {sticky:true});
+      }
     }
   }).addTo(leafletMap);
+}
+
+function _setSpcDayNote(msg){
+  var el = document.getElementById('spc-day-note');
+  if (!el) {
+    var host = document.getElementById('spc-day-btns');
+    if (!host || !host.parentNode) return;
+    el = document.createElement('span');
+    el.id = 'spc-day-note';
+    el.style.cssText = 'font-size:9px;color:#8a6d3b;font-weight:600';
+    host.parentNode.insertBefore(el, host.nextSibling);
+  }
+  el.textContent = msg || '';
 }
 
 function _fireTier(p) {
@@ -5436,10 +5735,10 @@ function _watchDownloadDocx(codes, notes, sections) {
   function add(text,pp,rp){ paras.push(P(text,pp,rp)); }
   function sp(){ paras.push('<w:p><w:pPr><w:spacing w:after="80"/></w:pPr></w:p>'); }
 
-  var secs = collectBriefSections(codes, sections);
+  var secs = collectSectionsForDay(codes, sections);
 
   add('ATLANTIC AVIATION', ppr({fill:NAVY, after:'40'}), rpr({b:true, sz:26, color:'FFFFFF'}));
-  add('OPERATIONAL WEATHER BRIEFING \u2014 '+dateStr+(_briefScopeLabel?' \u2014 '+_briefScopeLabel:''), ppr({fill:NAVY, after:'80'}), rpr({b:true, sz:30, color:'FFFFFF'}));
+  add('OPERATIONAL WEATHER BRIEFING \u2014 '+dateStr+(_briefScopeLabel?' \u2014 '+_briefScopeLabel:'')+(briefDay!=='1'?' \u2014 '+BRIEF_DAY_LABEL[briefDay]:''), ppr({fill:NAVY, after:'80'}), rpr({b:true, sz:30, color:'FFFFFF'}));
   sp();
   add('Team,', ppr({after:'80'}), rpr({sz:22}));
   add(buildBriefNarrative(secs), ppr({after:'100'}), rpr({sz:22}));
@@ -5457,7 +5756,7 @@ function _watchDownloadDocx(codes, notes, sections) {
 
   var _mediaFiles = {}, _mediaRels = [], _mapParas = [], _mapParaBySection = {};
   try {
-    var _mg = _watchMapsBySection(codes, collectBriefSections(codes, sections));
+    var _mg = _watchMapsBySection(codes, collectSectionsForDay(codes, sections));
     var _maps = [];
     Object.keys(_mg.bySection).forEach(function (sid) {
       _mg.bySection[sid].forEach(function (m) { m._sectionId = sid; _maps.push(m); });
@@ -5547,7 +5846,7 @@ function _watchDownloadDocx(codes, notes, sections) {
   var files = {'[Content_Types].xml':CT, '_rels/.rels':RELS, 'word/document.xml':docXml,
                'word/_rels/document.xml.rels':WRELS, 'docProps/core.xml':CORE, 'docProps/app.xml':APP};
   Object.keys(_mediaFiles).forEach(function(k){ files[k] = _mediaFiles[k]; });
-  _watchBuildZip(files, 'WATCH_Briefing_'+dateStr.replace(/[^a-zA-Z0-9]/g,'_')+(_briefScopeLabel?'_'+_briefScopeLabel.replace(/[^a-zA-Z0-9]/g,'_'):'')+'.docx');
+  _watchBuildZip(files, 'WATCH_Briefing_'+dateStr.replace(/[^a-zA-Z0-9]/g,'_')+(_briefScopeLabel?'_'+_briefScopeLabel.replace(/[^a-zA-Z0-9]/g,'_'):'')+(briefDay!=='1'?'_'+BRIEF_DAY_LABEL[briefDay].replace(/[^a-zA-Z0-9]/g,'_'):'')+'.docx');
 }
 
 // ZIP builder -- validated DataView approach
@@ -6166,7 +6465,7 @@ function openPrintBriefing() {
       var codes = COVERED.filter(function(f){ return list.indexOf(f.code) !== -1; }).map(function(f){ return f.code; });
       btn.textContent = 'Building ' + (i+1) + '/' + areas.length + ' \u2014 ' + a;
       var secs = [];
-      try { secs = collectBriefSections(codes, sects); } catch(e) { secs = []; }
+      try { secs = collectSectionsForDay(codes, sects); } catch(e) { secs = []; }
       if (!codes.length || !secs.length) { skipped.push(a); continue; }
       _briefScopeLabel = a + ' Area';
       try { _watchDownloadDocx(codes, notes, sects); made.push(a); }
@@ -6841,12 +7140,12 @@ function _doPrint(codes, notes, sections) {
 }
 
 function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES, sections) {
-  var secs = collectBriefSections(codes, sections);
+  var secs = collectSectionsForDay(codes, sections);
   var html = '';
 
   html += '<table class="wx-hdr" style="border:none;margin-bottom:12px;width:100%"><tr><td style="background:#0E2841;padding:12px 16px;border:none">'
     +'<div style="color:#ffffff;font-size:13px;font-weight:700;letter-spacing:.04em">ATLANTIC AVIATION</div>'
-    +'<div class="wx-hdr-title" style="color:#ffffff;font-size:15px;font-weight:700;overflow-wrap:anywhere">OPERATIONAL WEATHER BRIEFING \u2014 '+dateStr+(_briefScopeLabel?' \u2014 '+_briefScopeLabel:'')+'</div>'
+    +'<div class="wx-hdr-title" style="color:#ffffff;font-size:15px;font-weight:700;overflow-wrap:anywhere">OPERATIONAL WEATHER BRIEFING \u2014 '+dateStr+(_briefScopeLabel?' \u2014 '+_briefScopeLabel:'')+(briefDay!=='1'?' \u2014 '+BRIEF_DAY_LABEL[briefDay]:'')+'</div>'
     +'<div style="color:#c8d0d8;font-size:11px;margin-top:2px;overflow-wrap:anywhere">'+secs.map(function(s){return s.def.title;}).join(' \u00B7 ')+'</div>'
     +'</td></tr></table>';
 
@@ -8821,6 +9120,11 @@ function _watchDataUrlToBytes(dataUrl) {
 // directly above the table and action list it covers. Maps whose section is not
 // in this brief fall into the leftover bucket and are shown up front.
 function _watchMapsBySection(codes, secs) {
+  // Every hazard map is rendered from current polygons and observations, so on a
+  // forward-day brief they would be day-1 pictures sitting under a day-3 heading.
+  // Unmatched maps fall into 'leftover' and get shown up front, so they have to
+  // be suppressed here rather than filtered downstream.
+  if (typeof briefDay !== 'undefined' && briefDay !== '1') return { bySection: {}, leftover: [] };
   var present = {};
   (secs || []).forEach(function (s) { if (s && s.def && s.def.id) present[s.def.id] = true; });
   var maps = [];
@@ -8878,6 +9182,7 @@ loadMyLocations();
   setInterval(tickZuluClock, 1000);
 loadDismissed();
 loadExtNotified();
+_populateOutlookScope();
 updateLocFilterBtn();
 _populateAreaScope();
 fetchNAS();
