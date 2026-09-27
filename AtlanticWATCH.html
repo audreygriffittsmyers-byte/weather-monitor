@@ -8446,6 +8446,13 @@ var MAP_REGIONS = {
   alaska:   [-172.0, 50.5, -128.0, 72.0],
   hawaii:   [-161.5, 18.0, -154.0, 23.5],
   pacific:  [-173.0, 10.0, -137.0, 34.0],
+  // East Pacific. Without this, everything between -137 and -99 had no tropical
+  // panel at all -- which is where EP storms and the US Southwest both sit, so a
+  // location could be listed as inside a cone with no map showing it.
+  // Reaches lat 49 so the whole western CONUS is covered: EP remnants regularly
+  // run up into the Great Basin and Rockies. Only impacted sites grow the map
+  // frame (see _autoBounds), so the extra context dots cost nothing visually.
+  eastpacific: [-142.0, 5.0, -96.0, 49.0],
   atlantic: [ -99.0,  5.0,   -7.0, 46.0],
   caribbean:[ -90.0, 10.0,  -58.0, 28.0],
   offshore: [ -85.0, 15.0,  -58.0, 35.0]
@@ -9063,7 +9070,7 @@ function _watchBuildHazardMaps(codes) {
   var gtwo   = (typeof nhcDisturbances  !== 'undefined' ? nhcDisturbances  : []) || [];
   var gtwoAreas = gtwo.filter(function (f) { return (f.properties || {})._kind !== 'point' && f.geometry; });
 
-  ['atlantic', 'pacific'].forEach(function (rk) {
+  ['atlantic', 'eastpacific', 'pacific'].forEach(function (rk) {
     var rCones = _featsInRegion(cones, rk);
     var rAreas = _featsInRegion(gtwoAreas, rk);
     var rTracks = (tracks || []).filter(function (f) {
@@ -9103,7 +9110,7 @@ function _watchBuildHazardMaps(codes) {
       legend.push({ color: '#f59e0b', label: 'Site under Tropical Storm product' });
     }
 
-    var regionCodes = _codesInRegion(codes, rk === 'pacific' ? 'pacific' : 'atlantic');
+    var regionCodes = _codesInRegion(codes, rk);
     // Label anything inside a cone OR carrying a tropical product, matching the
     // TROPICAL STORM IMPACTS table rather than cone geometry alone.
     var tSites = _watchMapSites(regionCodes, function (c) {
@@ -9121,7 +9128,7 @@ function _watchBuildHazardMaps(codes) {
     maps.push({
       key: 'tropical_' + rk,
       sectionIds: ['tropical','nhc'],
-      title: 'NHC Tropical Outlook \u2014 ' + (rk === 'pacific' ? 'Central Pacific' : 'Atlantic Basin'),
+      title: 'NHC Tropical Outlook \u2014 ' + ({atlantic:'Atlantic Basin', eastpacific:'East Pacific', pacific:'Central Pacific'}[rk] || rk),
       subtitle: rCones.length ? 'Active storm forecast cones and areas of potential development'
                               : 'Areas of potential tropical development',
       bounds: tBounds, layers: layers, legend: legend,
