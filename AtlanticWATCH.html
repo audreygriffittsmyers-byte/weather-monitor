@@ -2696,7 +2696,12 @@ function _bRow(code, detail, detail2){
   return {code:code, city:f.city||'', state:f.state||'', detail:detail||'', detail2:detail2||''};
 }
 function _bAlerts(code, re){
-  return ((results[code]&&results[code].alerts)||[]).filter(function(a){ return re.test(a.event||''); });
+  var nowMs = Date.now();
+  return ((results[code]&&results[code].alerts)||[]).filter(function(a){
+    if (!re.test(a.event||'')) return false;
+    // a cached alert can outlive its expiry between refreshes
+    return !(a.expires && new Date(a.expires).getTime() < nowMs);
+  });
 }
 function _bAlertTxt(list){
   return list.map(function(a){ return a.event + (a.expires ? ' until '+fmtTime(a.expires) : ''); }).join('; ');
@@ -2712,11 +2717,18 @@ function _bHourly(code){
   var p = hourlyData[code];
   if ((!p || !p.length) && vcxData[code] && vcxData[code].hours) p = vcxData[code].hours;
   if (!p || !p.length) return [];
-  var now = new Date();
-  return p.slice(0,24).filter(function(x){ return new Date(x.startTime) >= now; });
+  // Keep the hour currently in progress, drop anything already over, and only then
+  // take 24 -- slicing first shrank the window as the cached data aged.
+  var nowMs = Date.now();
+  return p.filter(function(x){ return new Date(x.startTime).getTime() + 3600000 > nowMs; }).slice(0,24);
 }
 function _bHrLabel(iso){
-  return new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+  var d = new Date(iso), n = new Date();
+  var t = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+  // The forecast window runs 24h, so a bare "10:00 AM" read at 3 PM looks like a
+  // time that already passed. Name the day whenever it is not today.
+  if (d.toDateString() !== n.toDateString()) t = d.toLocaleDateString('en-US',{weekday:'short'}) + ' ' + t;
+  return t;
 }
 function _bWindMph(p){
   if (!p || !p.windSpeed) return 0;
@@ -2935,9 +2947,6 @@ var WATCH_BRIEF_SECTIONS = [
         var g=_gustForHour(c, p.startTime);
         if (g!=null && g>=BRIEF_WIND_GST_MPH && (!best || g>best.g)) best={g:g, t:p.startTime};
       });
-      // whole-day peak covers gusts that already occurred earlier today
-      var dp = (typeof _dayPeakGust==='function') ? _dayPeakGust(c) : null;
-      if (dp && dp.mph>=BRIEF_WIND_GST_MPH && (!best || dp.mph>best.g)) best={g:dp.mph, label:dp.time};
       if (best) rows.push(_bRow(c, 'G'+best.g+' mph', best.label || ('Peak at '+_bHrLabel(best.t))));
     });
     return {rows:rows, cols:['FBO','City / State','Peak Gust','Time']};
@@ -3862,6 +3871,8 @@ function getEroInfoForCode(code) {
     if (!_pointInPolygonGeom(pt, f.geometry)) return;
     var tier = _eroTierFromProps(f.properties);
     if (!tier) return;
+    var _pe = f.properties && f.properties.end_time;
+    if (_pe) { var _ed = new Date(String(_pe).replace(' ', 'T') + (String(_pe).includes('Z') ? '' : 'Z')); if (!isNaN(_ed.getTime()) && _ed.getTime() < Date.now()) return; }
     var rank = ERO_TIER_ORDER.indexOf(tier);
     if (rank >= 0 && rank < bestRank) { bestRank = rank; best = tier; bestProps = f.properties || {}; }
   });
@@ -4687,27 +4698,6 @@ function _parseGridGust(gridProps) {
     var mph = _uomToMph(v.value, uom);
     return { start: start, durationISO: parts[1]||'', mph: mph != null ? Math.round(mph) : null };
   }).filter(function(x){ return x.mph != null; });
-}
-
-// The NWS hourly endpoint only returns hours from "now" forward, so a gust peak that
-// occurred earlier today is invisible to a briefing generated at midday. The raw
-// gridpoint series covers the whole day, which is what a daily alert product needs.
-function _dayPeakGust(code) {
-  var series = gridData[code] && gridData[code].windGust;
-  if (!series || !series.length) return null;
-  var now = new Date();
-  var dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  var dayEnd = dayStart + 24*3600000;
-  var best = null;
-  for (var i = 0; i < series.length; i++) {
-    var t = new Date(series[i].start).getTime();
-    if (isNaN(t) || t < dayStart || t >= dayEnd) continue;
-    if (series[i].mph == null) continue;
-    if (!best || series[i].mph > best.mph) best = { mph: series[i].mph, t: t };
-  }
-  if (!best) return null;
-  return { mph: best.mph,
-           time: new Date(best.t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}) };
 }
 
 function _gustForHour(code, hourStartTime) {
@@ -6302,7 +6292,7 @@ async function openAlertGenerator() {
     if(w){ if(w.level==='protocol') wc0.push(f.code); else wc1.push(f.code); return; }
     if(tafW){ wc2.push(f.code); return; }
     // A location can be calm now but forecast to exceed the briefing thresholds
-    // (15 mph sustained / 25 mph gust). Those appear in the brief, so they must
+    // (BRIEF_WIND_SUS_MPH sustained / BRIEF_WIND_GST_MPH gust). Those appear in the brief, so they must
     // appear on a card too, otherwise the card set understates the day.
     var fcSus=0, fcGst=0;
     _bHourly(f.code).forEach(function(p){
@@ -6310,8 +6300,6 @@ async function openAlertGenerator() {
       var g = _gustForHour(f.code, p.startTime);
       if (g!=null) fcGst = Math.max(fcGst, g);
     });
-    var dp = _dayPeakGust(f.code);
-    if (dp && dp.mph > fcGst) fcGst = dp.mph;
     if (fcSus>=BRIEF_WIND_SUS_MPH || fcGst>=BRIEF_WIND_GST_MPH) wc2.push(f.code);
   });
   addCard('high_wind', 0, wc0);
@@ -6780,8 +6768,9 @@ function parseSPCTiming(zoneLabel) {
 function _getForecastHazards(code) {
   var periods = hourlyData[code];
   if (!periods || !periods.length) return null;
-  var next24 = periods.slice(0, 24);
   var now = new Date();
+  // in-progress hour kept, past hours dropped, then 24 taken (same window as _bHourly)
+  var next24 = periods.filter(function(p){ return new Date(p.startTime).getTime() + 3600000 > now.getTime(); }).slice(0, 24);
 
   var windEvents = [];   // {time, speed, dir, forecast}
   var heatPeaks  = [];   // {time, temp}
@@ -6791,7 +6780,6 @@ function _getForecastHazards(code) {
 
   next24.forEach(function(p) {
     var t = new Date(p.startTime);
-    if (t < now) return;
     var hr = t.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:p.startTime.includes('Z')?'UTC':undefined});
 
     // Wind -- parse "15 mph" or "10 to 20 mph" -- take highest number
@@ -6803,7 +6791,7 @@ function _getForecastHazards(code) {
     var gust = _gustForHour(code, p.startTime);
     var alertGustMph = (typeof results!=='undefined' && results[code]) ? _parseAlertGustMph(results[code].alerts) : null;
     if (alertGustMph != null && (gust == null || alertGustMph > gust)) gust = alertGustMph;
-    if (wspd >= 25 || (gust != null && gust >= 30)) windEvents.push({time:hr, speed:wspd, gust:gust, dir:p.windDirection||'', forecast:p.shortForecast||''});
+    if (wspd >= BRIEF_WIND_SUS_MPH || (gust != null && gust >= BRIEF_WIND_GST_MPH)) windEvents.push({time:hr, speed:wspd, gust:gust, dir:p.windDirection||'', forecast:p.shortForecast||''});
 
     // Temperature
     var temp = p.temperature;
@@ -6819,13 +6807,6 @@ function _getForecastHazards(code) {
     // Thunderstorms
     if (/thunder|tstm/i.test(p.shortForecast||'')) tsEvents.push({time:hr, forecast:p.shortForecast||''});
   });
-
-  // Fold in the whole-day gust peak so a morning peak still reports at midday.
-  var dayGust = _dayPeakGust(code);
-  if (dayGust && dayGust.mph >= 30) {
-    var covered = windEvents.some(function(w){ return (w.gust||0) >= dayGust.mph; });
-    if (!covered) windEvents.push({time:dayGust.time, speed:0, gust:dayGust.mph, dir:'', forecast:'', dayPeak:true});
-  }
 
   return { windEvents:windEvents, heatPeaks:heatPeaks, coldPeaks:coldPeaks, precipEvents:precipEvents, tsEvents:tsEvents };
 }
@@ -8486,6 +8467,8 @@ function _mapPeakFeels(c) {
     if (rh == null && p.dewpoint && p.dewpoint.value != null) rh = _bRH(t, p.dewpoint.value * 9 / 5 + 32);
     var hi = (rh != null && typeof calcHeatIndex === 'function') ? calcHeatIndex(t, rh) : null;
     if (p._vcxFeels != null && p._vcxFeels > t) hi = Math.max(hi == null ? -999 : hi, p._vcxFeels);
+    // same test as the FORECAST REAL FEEL table, so a dot never shows for a site the table omits
+    if (!(t >= BRIEF_HEAT_F || (hi != null && hi >= BRIEF_HEATIDX_F))) return;
     var v = Math.max(t, hi != null ? hi : t);
     if (best == null || v > best) best = v;
   });
@@ -8496,6 +8479,7 @@ function _mapPeakCold(c) {
   (typeof _bHourly === 'function' ? _bHourly(c) : []).forEach(function (p) {
     var t = p.temperature; if (t == null) return;
     var wc = (typeof calcWindChill === 'function') ? calcWindChill(t, _bWindMph(p)) : null;
+    if (!(t <= BRIEF_COLD_F || (wc != null && wc <= BRIEF_CHILL_F))) return;
     var v = Math.min(t, wc != null ? wc : t);
     if (best == null || v < best) best = v;
   });
@@ -8509,8 +8493,6 @@ function _mapPeakWind(c) {
     var g = (typeof _gustForHour === 'function') ? _gustForHour(c, p.startTime) : null;
     if (g != null && (gst == null || g > gst)) gst = g;
   });
-  var dp = (typeof _dayPeakGust === 'function') ? _dayPeakGust(c) : null;
-  if (dp && dp.mph != null && (gst == null || dp.mph > gst)) gst = dp.mph;
   return { sus: sus, gust: gst };
 }
 // Current AQI if it is at advisory level, otherwise the 24h forecast. Same
@@ -8994,11 +8976,13 @@ function _watchBuildHazardMaps(codes) {
   var COLD_BANDS = [
     [-999,'#1e3a8a', 'Feels like below 15\u00B0F'],
     [15,  '#2563eb', 'Feels like 15-29\u00B0F'],
-    [30,  '#7dd3fc', 'Feels like 30-39\u00B0F']
+    [30,  '#7dd3fc', 'Feels like 30-' + BRIEF_COLD_F + '\u00B0F']
   ];
+  // Bands start at the briefing thresholds (20 sustained / 30 gust), so nothing
+  // below what the tables list can appear on the map.
   var WIND_BANDS = [
-    [15, '#fde047', 'Peak 15-24 mph'],
-    [25, '#fb923c', 'Peak 25-38 mph'],
+    [BRIEF_WIND_SUS_MPH, '#fde047', 'Peak ' + BRIEF_WIND_SUS_MPH + '-' + (BRIEF_WIND_GST_MPH - 1) + ' mph'],
+    [BRIEF_WIND_GST_MPH, '#fb923c', 'Peak ' + BRIEF_WIND_GST_MPH + '-38 mph'],
     [39, '#ef4444', 'Peak 39-57 mph'],
     [58, '#7f1d1d', 'Peak 58 mph+']
   ];
@@ -9022,7 +9006,7 @@ function _watchBuildHazardMaps(codes) {
     function (c) { var b = _band(heatVal(c), HEAT_BANDS); return b ? b[1] : null; },
     heatLegend);
 
-  var coldVal = function (c) { var v = _mapPeakCold(c); return (v != null && v <= 39) ? v : null; };
+  var coldVal = function (c) { var v = _mapPeakCold(c); return (v != null && v <= BRIEF_COLD_F) ? v : null; };
   var coldLegend = _legendFor(COLD_BANDS, codes, coldVal);
   if (coldLegend.length) pushRegional(
     { key: 'cold', title: 'Forecast Wind Chill / Cold \u2014 Next 24h',
@@ -9034,8 +9018,13 @@ function _watchBuildHazardMaps(codes) {
 
   var windVal = function (c) {
     var w = _mapPeakWind(c);
-    var v = Math.max(w.sus == null ? -1 : w.sus, w.gust == null ? -1 : w.gust);
-    return v >= 15 ? v : null;
+    // Sustained and gust are tested against their own thresholds, exactly as the
+    // FORECAST SUSTAINED WIND / FORECAST WIND GUST tables do. Taking max(sus, gust)
+    // first let a 17 mph sustained or a 24 mph gust through.
+    var s = (w.sus != null && w.sus >= BRIEF_WIND_SUS_MPH) ? w.sus : -1;
+    var g = (w.gust != null && w.gust >= BRIEF_WIND_GST_MPH) ? w.gust : -1;
+    var v = Math.max(s, g);
+    return v > 0 ? v : null;
   };
   var windLegend = _legendFor(WIND_BANDS, codes, windVal);
   if (windLegend.length) pushRegional(
