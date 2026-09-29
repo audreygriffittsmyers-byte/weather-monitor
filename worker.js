@@ -105,7 +105,9 @@ export default {
 
     if (type === 'firepoly') {
       const day = url.searchParams.get('day') || '1';
-      const LAYER = { '1':1, '2':4 };
+      // Day 1/2 are the 'Outlook' layers (dn 5/8/10). Days 3-8 are the 'Winds and Low
+      // Humidity' layers (label '0.40'/'0.70'); the dry-thunderstorm layers are not drawn.
+      const LAYER = { '1':1, '2':4, '3':8, '4':11, '5':14, '6':17, '7':20, '8':23 };
       try {
         const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/${LAYER[day]||1}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
@@ -114,16 +116,24 @@ export default {
     }
 
     if (type === 'wpcpoly') {
+      // ERO layers: 0..4 = Excessive Rainfall Day 1..5 (verified against the live MapServer)
+      const eroDay = url.searchParams.get('day') || '1';
+      const EROL = { '1':0, '2':1, '3':2, '4':3, '5':4 };
+      if (!(eroDay in EROL)) return new Response(JSON.stringify({features:[]}), { headers: GEOJSON });
       try {
-        const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
+        const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer/${EROL[eroDay]}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
     }
 
     if (type === 'winterpoly') {
+      // WSSI Overall Impact: layers 1/2/3 = Day 1/2/3 (verified). No Day 4+ product.
+      const wDay = url.searchParams.get('day') || '1';
+      const WSSIL = { '1':1, '2':2, '3':3 };
+      if (!(wDay in WSSIL)) return new Response(JSON.stringify({features:[]}), { headers: GEOJSON });
       try {
-        const res = await fetch('https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_wssi/MapServer/1/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson',
+        const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_wssi/MapServer/${WSSIL[wDay]}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
         return new Response(await res.text(), { headers: GEOJSON });
       } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
