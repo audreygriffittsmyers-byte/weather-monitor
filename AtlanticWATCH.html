@@ -3772,7 +3772,7 @@ function setMapSpcDay(day) {
   var t = document.getElementById('spc-poly-toggle');
   if (t && !t.checked) { t.checked = true; showSPCPolys = true; }
   _applyRadarForDay();
-  drawSPCPolygons().then(function(){ renderMapMarkers(); });
+  Promise.all([drawSPCPolygons(), drawFirePolygons(), drawWPCPolygons(), drawWinterPolygons()]).then(function(){ renderMapMarkers(); });
 }
 
 // Radar is a nowcast. It is meaningless over a day-2+ outlook and reads as if
@@ -3794,23 +3794,47 @@ function _applyRadarForDay() {
   }
 }
 
+// Per-day hazard polygon caches. firePolygons / wpcPolygons / winterPolygons stay
+// pinned to DAY 1 because briefings and Day 1 flags read them; the map reads the
+// per-day caches through the fetch*Day() helpers so it can follow the D1/D2/D3/D4-7 selector.
+var firePolyCache = {}, eroPolyCache = {}, winterPolyCache = {};
+async function _fetchHazardPolyDay(type, day, cache, days47) {
+  day = String(day);
+  if (cache[day]) return cache[day];
+  var days = (day === '47') ? days47 : [day];
+  var feats = [], failed = false;
+  for (var i = 0; i < days.length; i++) {
+    var d = days[i];
+    try {
+      var rr = await fetchWithTimeout(`${PROXY}?type=${type}&day=${d}`, 12000);
+      if (!rr.ok) { failed = true; continue; }
+      var gj = await rr.json();
+      (gj.features || []).forEach(function(f){
+        f.properties = f.properties || {};
+        f.properties._day = d;
+        feats.push(f);
+      });
+    } catch(e) { failed = true; console.warn(type + ' day ' + d + ' failed:', e.message); }
+  }
+  var out = { type:'FeatureCollection', features: feats };
+  if (!failed) cache[day] = out;   // a failed fetch is retried next draw instead of cached empty
+  return out;
+}
+function fetchFirePolyDay(day)   { return _fetchHazardPolyDay('firepoly',   day, firePolyCache,   [4,5,6,7]); }
+function fetchWPCPolyDay(day)    { return _fetchHazardPolyDay('wpcpoly',    day, eroPolyCache,    [4,5]); }
+function fetchWinterPolyDay(day) { return _fetchHazardPolyDay('winterpoly', day, winterPolyCache, []); }
+
 async function fetchFirePolygons() {
   if (firePolygons !== null) return firePolygons;
-  try {
-    const r = await fetchWithTimeout(`${PROXY}?type=firepoly&day=1`);
-    firePolygons = r.ok ? await r.json() : { features:[] };
-    console.log('Fire poly:', firePolygons?.features?.length, 'features');
-  } catch(e) { console.warn('Fire poly failed:', e.message); firePolygons = {features:[]}; }
+  firePolygons = await fetchFirePolyDay('1');
+  console.log('Fire poly:', firePolygons?.features?.length, 'features');
   return firePolygons;
 }
 
 async function fetchWPCPolygons() {
   if (wpcPolygons !== null) return wpcPolygons;
-  try {
-    const r = await fetchWithTimeout(`${PROXY}?type=wpcpoly`);
-    wpcPolygons = r.ok ? await r.json() : { features:[] };
-    console.log('WPC poly:', wpcPolygons?.features?.length, 'features');
-  } catch(e) { console.warn('WPC poly failed:', e.message); wpcPolygons = {features:[]}; }
+  wpcPolygons = await fetchWPCPolyDay('1');
+  console.log('WPC poly:', wpcPolygons?.features?.length, 'features');
   return wpcPolygons;
 }
 
@@ -3979,8 +4003,32 @@ function _setSpcDayNote(msg){
   el.textContent = msg || '';
 }
 
+var _layerNotes = {};
+function _setLayerNote(key, msg) {
+  _layerNotes[key] = msg || '';
+  var el = document.getElementById('layer-day-note');
+  if (!el) {
+    var host = document.getElementById('spc-day-btns');
+    if (!host || !host.parentNode) return;
+    el = document.createElement('span');
+    el.id = 'layer-day-note';
+    el.style.cssText = 'font-size:9px;color:#8a6d3b;font-weight:600;margin-left:6px';
+    host.parentNode.insertBefore(el, host.nextSibling);
+  }
+  el.textContent = Object.keys(_layerNotes).map(function(k){ return _layerNotes[k]; }).filter(Boolean).join(' · ');
+}
+
 function _fireTier(p) {
-  var dn = parseInt((p||{}).dn, 10);
+  p = p || {};
+  // Days 3-8 (Winds and Low Humidity layers): label is '0.40' (Marginal) or '0.70' (Critical);
+  // dn 0 / "Probability Too Low" is a placeholder polygon, not a risk area.
+  var lp = parseFloat(p.label);
+  if (!isNaN(lp) && String(p.label).indexOf('.') !== -1) {
+    if (lp >= 0.7) return 'CRITICAL';
+    if (lp >= 0.4) return 'ELEVATED';
+    return null;
+  }
+  var dn = parseInt(p.dn, 10);
   if (dn >= 10) return 'EXTREME';
   if (dn === 8) return 'CRITICAL';
   if (dn === 5) return 'ELEVATED';
@@ -4005,19 +4053,25 @@ function getFireTierForCode(code) {
 async function drawFirePolygons() {
   if (firePolyLayer) { leafletMap.removeLayer(firePolyLayer); firePolyLayer = null; }
   if (!showFirePolys) return;
-  const data = await fetchFirePolygons();
+  const _day = mapSpcDay;
+  const data = await fetchFirePolyDay(_day);
+  if (_day !== mapSpcDay) return;   // day changed while fetching
+  if (firePolyLayer) { leafletMap.removeLayer(firePolyLayer); firePolyLayer = null; }
+  _setLayerNote('fire', (!data?.features?.some(function(f){ return _fireTier(f.properties); })) ? 'No fire weather risk areas Day ' + (_day==='47'?'4-7':_day) : '');
   if (!data?.features?.length) return;
   firePolyLayer = L.geoJSON(data, {
     style: f => {
       const tier = _fireTier(f.properties);
+      if (!tier) return { stroke:false, fill:false };   // dn 0 placeholder
       if (tier === 'EXTREME')  return FIRE_POLY_STYLE.EXTREME;
       if (tier === 'CRITICAL') return FIRE_POLY_STYLE.CRITICAL;
       return FIRE_POLY_STYLE.ELEVATED;
     },
     onEachFeature: (f,layer) => {
       const tier = _fireTier(f.properties);
+      if (!tier) return;
       const label = tier ? tier.charAt(0) + tier.slice(1).toLowerCase() : 'Fire Weather';
-      layer.bindTooltip(`🔥 Fire Wx: ${label}`, {sticky:true});
+      layer.bindTooltip(`🔥 Fire Wx ${mapSpcDay==='47' ? 'Day '+(f.properties._day||'4-7') : 'Day '+mapSpcDay}: ${label}`, {sticky:true});
     }
   }).addTo(leafletMap);
 }
@@ -4025,7 +4079,11 @@ async function drawFirePolygons() {
 async function drawWPCPolygons() {
   if (wpcPolyLayer) { leafletMap.removeLayer(wpcPolyLayer); wpcPolyLayer = null; }
   if (!showWPCPolys) return;
-  const data = await fetchWPCPolygons();
+  const _day = mapSpcDay;
+  const data = await fetchWPCPolyDay(_day);
+  if (_day !== mapSpcDay) return;   // day changed while fetching
+  if (wpcPolyLayer) { leafletMap.removeLayer(wpcPolyLayer); wpcPolyLayer = null; }
+  _setLayerNote('ero', _day === '47' ? 'WPC rain outlook covers Days 4-5 only' : (!data?.features?.length ? 'No WPC excessive rainfall areas Day ' + _day : ''));
   if (!data?.features?.length) return;
   wpcPolyLayer = L.geoJSON(data, {
     style: f => {
@@ -4037,7 +4095,7 @@ async function drawWPCPolygons() {
     },
     onEachFeature: (f,layer) => {
       const tier = _eroTierFromProps(f.properties);
-      layer.bindTooltip(`🌊 WPC ERO: ${ERO_TIER_LABEL[tier] || 'Excessive Rainfall'}`, {sticky:true});
+      layer.bindTooltip(`🌊 WPC ERO ${mapSpcDay==='47' ? 'Day '+(f.properties._day||'4-5') : 'Day '+mapSpcDay}: ${ERO_TIER_LABEL[tier] || 'Excessive Rainfall'}`, {sticky:true});
     }
   }).addTo(leafletMap);
 }
@@ -4530,6 +4588,8 @@ function startAutoRefresh() {
       spcPolyCache = {};   // per-day outlook cache, or days 2-7 would never refresh
       firePolygons = null;
       wpcPolygons = null;
+      winterPolygons = null;
+      firePolyCache = {}; eroPolyCache = {}; winterPolyCache = {};
       nwsPolygons = {};
       refreshMapLayers();
     }
@@ -4551,6 +4611,8 @@ function startAutoRefresh() {
     spcPolyCache = {};
     firePolygons = null;
     wpcPolygons = null;
+    winterPolygons = null;
+    firePolyCache = {}; eroPolyCache = {}; winterPolyCache = {};
     if (mapInitialized && activeTab === 'map') refreshMapLayers();
   }, 30 * 60 * 1000);
 }
@@ -4873,27 +4935,30 @@ const WINTER_STYLE = {
 
 async function fetchWinterPolygons() {
   if (winterPolygons !== null) return winterPolygons;
-  try {
-    const r = await fetchWithTimeout(`${PROXY}?type=winterpoly`);
-    winterPolygons = r.ok ? await r.json() : { features:[] };
-  } catch(e) { winterPolygons = { features:[] }; }
+  winterPolygons = await fetchWinterPolyDay('1');
   return winterPolygons;
+}
+
+// WSSI "impact" values are 'Winter Weather Area', 'Minor Impacts', 'Moderate Impacts',
+// 'Major Impacts', 'Extreme Impacts' (verified). Strip the trailing word to match the style keys.
+function _winterImpactKey(p) {
+  return String((p && p.impact) || '').toUpperCase().replace(/\s+IMPACTS?$/, '').trim();
 }
 
 async function drawWinterPolygons() {
   if (winterPolyLayer) { leafletMap.removeLayer(winterPolyLayer); winterPolyLayer = null; }
   if (!showWinterPolys) return;
-  const data = await fetchWinterPolygons();
+  const _day = mapSpcDay;
+  const data = await fetchWinterPolyDay(_day);
+  if (_day !== mapSpcDay) return;   // day changed while fetching
+  if (winterPolyLayer) { leafletMap.removeLayer(winterPolyLayer); winterPolyLayer = null; }
+  _setLayerNote('winter', _day === '47' ? 'Winter Storm Severity Index covers Days 1-3 only' : (!data?.features?.length ? 'No WSSI areas Day ' + _day : ''));
   if (!data?.features?.length) return;
   winterPolyLayer = L.geoJSON(data, {
-    style: f => {
-      const impact = (f.properties?.impact || '').toUpperCase();
-      return WINTER_STYLE[impact] || WINTER_STYLE['WINTER WEATHER AREA'];
-    },
+    style: f => WINTER_STYLE[_winterImpactKey(f.properties)] || WINTER_STYLE['WINTER WEATHER AREA'],
     onEachFeature: (f, layer) => {
       const impact = f.properties?.impact || 'Winter Weather';
-      const label = impact.charAt(0) + impact.slice(1).toLowerCase();
-      layer.bindTooltip('❄ WPC Winter Storm Severity Index: ' + label, { sticky:true });
+      layer.bindTooltip('❄ WPC Winter Storm Severity Index Day ' + _day + ': ' + impact, { sticky:true });
     }
   }).addTo(leafletMap);
 }
