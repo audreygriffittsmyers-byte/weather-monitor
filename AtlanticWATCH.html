@@ -292,7 +292,7 @@
         <div style="background:#0E2841;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:10">
           <div>
             <div style="font-size:13px;font-weight:700;color:#ffffff;letter-spacing:.04em">ATLANTIC AVIATION — WATCH — OPERATIONAL WEATHER SUMMARY</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><div id="summary-timestamp" style="font-size:10px;color:#7a9ab8"></div><div id="brief-day-btns" style="display:flex;gap:1px;background:#1a3a5c;border-radius:3px;padding:2px"><button class="brief-day-btn" data-briefday="1" onclick="setBriefDay('1')" style="background:#ffffff;color:#0E2841;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 1</button><button class="brief-day-btn" data-briefday="2" onclick="setBriefDay('2')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 2</button><button class="brief-day-btn" data-briefday="3" onclick="setBriefDay('3')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 3</button><button class="brief-day-btn" data-briefday="47" onclick="setBriefDay('47')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 4-7</button></div><select id="summary-scope" onchange="generateSummary()" style="background:#1a3a5c;color:#7a9ab8;border:1px solid #2a5a8c;border-radius:3px;font-size:10px;padding:1px 6px;cursor:pointer"><option value="all">All Locations</option><option value="mine">My Stations</option></select></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><div id="summary-timestamp" style="font-size:10px;color:#7a9ab8"></div><div id="brief-day-btns" style="display:flex;gap:1px;background:#1a3a5c;border-radius:3px;padding:2px"><button class="brief-day-btn" data-briefday="1" onclick="setBriefDay('1')" style="background:#ffffff;color:#0E2841;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 1</button><button class="brief-day-btn" data-briefday="2" onclick="setBriefDay('2')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 2</button><button class="brief-day-btn" data-briefday="3" onclick="setBriefDay('3')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 3</button><button class="brief-day-btn" data-briefday="47" onclick="setBriefDay('47')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 4-7</button><button class="brief-day-btn" data-briefday="34" onclick="setBriefDay('34')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">3/4 DAY</button></div><select id="summary-scope" onchange="generateSummary()" style="background:#1a3a5c;color:#7a9ab8;border:1px solid #2a5a8c;border-radius:3px;font-size:10px;padding:1px 6px;cursor:pointer"><option value="all">All Locations</option><option value="mine">My Stations</option></select></div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="summary-status" style="font-size:10px;color:#7a9ab8"></span>
@@ -300,6 +300,7 @@
           </div>
         </div>
                 <!-- Summary content -->
+        <div id="outlook-due" style="padding:12px 20px 0;max-width:860px"></div>
         <div id="summary-content" style="padding:20px;max-width:860px">
           <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 0;color:#8a9aaa">
             <div style="font-size:32px;margin-bottom:10px">📋</div>
@@ -2591,13 +2592,16 @@ function _esc(s){
 // warnings would be wrong in an operational brief.
 
 var briefDay = '1';
-var BRIEF_DAY_LABEL = { '1':'Day 1', '2':'Day 2', '3':'Day 3', '47':'Days 4-7' };
+var BRIEF_DAY_LABEL = { '1':'Day 1', '2':'Day 2', '3':'Day 3', '47':'Days 4-7', '34':'3/4 Day Outlook' };
 
 // Briefing "Day N" means N-1 days out. Day 4-7 spans leads 3 through 6.
 function _briefDayLeads(day){
   if (day === '2')  return [1];
   if (day === '3')  return [2];
   if (day === '47') return [3,4,5,6];
+  // 3/4 Day Outlook: the two days that sit 3 and 4 days out from issue, i.e.
+  // Wed+Thu when sent Sunday, Sat+Sun when sent Wednesday.
+  if (day === '34') return [3,4];
   return [];
 }
 
@@ -2675,6 +2679,68 @@ function setBriefDay(d){
   var so = document.getElementById('brief-section-note');
   if (so) so.remove();
   generateSummary();
+}
+
+// ══ 3/4 DAY OUTLOOK: cadence, date range, reminder ═════════════════════════
+// Issued Sundays and Wednesdays. Both cover leads +3 and +4 from issue day.
+var OUTLOOK_DUE_DOWS = [0, 3];
+var OUTLOOK_SENT_KEY = 'watch_outlook_sent';
+
+function _outlookRange(from){
+  var base = from ? new Date(from) : new Date();
+  base.setHours(0,0,0,0);
+  var a = new Date(base); a.setDate(a.getDate()+3);
+  var b = new Date(base); b.setDate(b.getDate()+4);
+  return [a, b];
+}
+function _outlookRangeText(from){
+  var r = _outlookRange(from);
+  var f = function(d){ return d.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}); };
+  return f(r[0]) + ' and ' + f(r[1]);
+}
+function _briefIssuedLine(){
+  return briefDay === '34'
+    ? 'This outlook is issued Sundays and Wednesdays. The next one will follow the same schedule.'
+    : 'This is the only alert that will be issued today.';
+}
+function _outlookDueToday(now){
+  now = now || new Date();
+  return OUTLOOK_DUE_DOWS.indexOf(now.getDay()) !== -1;
+}
+function _outlookNextDue(now){
+  var d = new Date(now || new Date()); d.setHours(0,0,0,0);
+  for (var i = 1; i <= 7; i++) {
+    var t = new Date(d); t.setDate(t.getDate()+i);
+    if (OUTLOOK_DUE_DOWS.indexOf(t.getDay()) !== -1) return t;
+  }
+  return null;
+}
+function _outlookSentToday(){
+  try { return localStorage.getItem(OUTLOOK_SENT_KEY) === _extDateKey(new Date()); } catch(e){ return false; }
+}
+function markOutlookSent(){
+  try { localStorage.setItem(OUTLOOK_SENT_KEY, _extDateKey(new Date())); } catch(e){}
+  renderOutlookDue();
+}
+function renderOutlookDue(){
+  var el = document.getElementById('outlook-due');
+  if (!el) return;
+  var now = new Date();
+  var box = 'border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:12px;';
+  if (_outlookDueToday(now) && !_outlookSentToday()) {
+    el.innerHTML = '<div style="'+box+'background:#fff7e6;border:1px solid #d97706;color:#7a4a00">'
+      + '<div style="font-weight:700;margin-bottom:4px">\u{1F4C5} 3/4 Day Outlook is due today</div>'
+      + '<div style="margin-bottom:8px">Covers ' + _outlookRangeText() + '. Review it, then use Generate Briefing and the 3/4 day button to download one file per area.</div>'
+      + '<button onclick="setBriefDay(\'34\')" style="background:#0E2841;color:#fff;border:none;border-radius:4px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">View outlook</button>'
+      + '<button onclick="markOutlookSent()" style="background:#fff;color:#0E2841;border:1px solid #0E2841;border-radius:4px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">Mark as sent</button>'
+      + '</div>';
+  } else if (_outlookDueToday(now)) {
+    el.innerHTML = '<div style="'+box+'background:#eaf7ee;border:1px solid #16a34a;color:#14532d">✓ Today’s 3/4 Day Outlook is marked as sent.</div>';
+  } else {
+    var n = _outlookNextDue(now);
+    el.innerHTML = '<div style="'+box+'background:#f0f4f7;border:1px solid #c8d0d8;color:#556070">Next 3/4 Day Outlook: '
+      + (n ? n.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}) : '') + '</div>';
+  }
 }
 
 // ══ SHARED BRIEFING HAZARD MODEL ═══════════════════════════════════════════
@@ -3219,7 +3285,9 @@ function _hazardPhrase(title) {
 }
 
 function buildBriefNarrative(secs){
-  if (!secs.length) return 'No active weather hazards are affecting Atlantic Aviation locations at this time.';
+  if (briefDay === '34') {
+    if (!secs.length) return 'No significant weather hazards are forecast for these locations ' + _outlookRangeText() + '. Continue to monitor forecasts, as outlooks at this range can change.';
+  } else if (!secs.length) return 'No active weather hazards are affecting Atlantic Aviation locations at this time.';
   var bits = [];
   secs.forEach(function(s){
     var d = s.data;
@@ -3228,8 +3296,11 @@ function buildBriefNarrative(secs){
     // Counts only. Listing the first twelve codes made the summary look like a
     // roster while silently omitting the rest, so people at unlisted stations
     // could read it as an all-clear. The tables are the authoritative list.
-    bits.push(_hazardPhrase(s.def.title)+' affects '+n+' location'+(n!==1?'s':'')+'.');
+    bits.push(_hazardPhrase(briefDay==='34' ? s.def.title.replace(/\s*\u2014\s*3\/4 DAY OUTLOOK/i,'') : s.def.title)+' affects '+n+' location'+(n!==1?'s':'')+'.');
   });
+  if (briefDay === '34') return 'Outlook for ' + _outlookRangeText() + '. The following hazards are forecast for Atlantic Aviation locations. '
+    + bits.join(' ')
+    + ' This is an early look. Begin planning now and expect updates as the event gets closer.';
   return 'The following hazards are active or forecast for Atlantic Aviation locations today. '
     + bits.join(' ')
     + ' All impacted locations should complete preparations before conditions arrive rather than waiting for a formal watch or warning.';
@@ -3251,7 +3322,7 @@ function _bActionRuns(secs){
 
 // ── Live BRIEFING tab: cards only, no narrative / supervisor / disclaimer ────
 function _renderBriefLive(secs, mapsBySection){
-  if (!secs.length) return '<div style="padding:30px;text-align:center;color:#16a34a;font-size:13px">No active weather hazards across the selected locations.</div>';
+  if (!secs.length) return '<div style="padding:30px;text-align:center;color:#16a34a;font-size:13px">' + (briefDay==='34' ? 'No significant weather hazards forecast ' + _outlookRangeText() + '.' : 'No active weather hazards across the selected locations.') + '</div>';
   var html='';
   mapsBySection = mapsBySection || {};
   secs.forEach(function(s){
@@ -3445,6 +3516,7 @@ function _renderBriefDocx(secs, add, ppr, rpr, sp, emitMap, raw){
 }
 
 function _generateSummaryInner(content, ts, status) {
+  try { renderOutlookDue(); } catch(e){}
   var now = new Date();
   ts.textContent = 'Updated ' + now.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 
@@ -3491,7 +3563,7 @@ function _generateSummaryInner(content, ts, status) {
   var clear = codes.filter(function(c){ return !impacted.has(c); });
   if (clear.length) {
     html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:12px">'
-      + '<div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:6px">\u2713 NO ACTIVE HAZARDS \u2014 '+clear.length+' LOCATIONS</div>'
+      + '<div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:6px">\u2713 '+(briefDay==='34'?'NO FORECAST HAZARDS':'NO ACTIVE HAZARDS')+' \u2014 '+clear.length+' LOCATIONS</div>'
       + '<div style="font-size:10px;color:#8a9aaa;line-height:1.8">'+clear.join(' \u00B7 ')+'</div></div>';
   }
 
@@ -5850,9 +5922,9 @@ function _watchDownloadDocx(codes, notes, sections) {
   sp();
   add('Team,', ppr({after:'80'}), rpr({sz:22}));
   add(buildBriefNarrative(secs), ppr({after:'100'}), rpr({sz:22}));
-  add('This is the only alert that will be issued today. Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.',
+  add(''+_briefIssuedLine()+' Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.',
       ppr({after:'120'}), rpr({sz:22, i:true, b:true}));
-  var _srd = _briefNarrativeHTML('wpcShortRangeText');
+  var _srd = briefDay === '34' ? '' : _briefNarrativeHTML('wpcShortRangeText');
   if (_srd) {
     add('WPC Short Range Forecast Discussion (Day 1-2)', ppr({fill:'0E2841', after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
     _srd.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'\n').replace(/&lt;/g,'<').replace(/&nbsp;/g,' ')
@@ -6525,6 +6597,7 @@ function openPrintBriefing() {
     +'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="area" '+(defaultScope==='area'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">Area</span> <select id="bo-area" style="flex:1;font-size:12px;padding:3px 4px;border:1px solid #c8d0d8;border-radius:4px;cursor:pointer">'+_areaOpts+'</select></label>'
     +'</div>'
     +'<button id="bo-docx-all" style="width:100%;background:#2a7a4a;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 DOCX for every area (one file each)</button>'
+    +'<button id="bo-docx-out" style="width:100%;background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 3/4 Day Outlook, every area (one file each)</button>'
     +'<div style="display:flex;gap:8px">'
     +'<button id="bo-generate" style="flex:1;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">Generate Brief</button>'
     +'<button id="bo-docx" style="background:#1a6ba0;color:#fff;border:none;border-radius:4px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer">↓ DOCX</button>'
@@ -6542,10 +6615,20 @@ function openPrintBriefing() {
   // Bulk export: one DOCX per area, using the same section checkboxes and shift
   // notes as a single-area export. Areas with nothing to report are skipped
   // rather than producing an empty file.
-  document.getElementById('bo-docx-all').addEventListener('click', async function() {
+  var _bulkAreaHandler = async function() {
+    var _prevDay = briefDay;
+    var _isOutlook = this.id === 'bo-docx-out';
+    if (_isOutlook) briefDay = '34';
+    try {
     var btn = this, orig = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Loading...';
+    if (_isOutlook && !Object.keys(extOutlook).length) await scanExtendedOutlook();
+    if (_isOutlook && !Object.keys(extOutlook).length) {
+      briefDay = _prevDay; btn.disabled = false; btn.textContent = orig;
+      alert('No forecast data is loaded yet. Run Scan All, wait for it to finish, then try again.');
+      return;
+    }
     await fetchWPCPolygons();
     await fetchSPCPolygons();
     if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText) await fetchNWSNarrativeProducts();
@@ -6573,7 +6656,9 @@ function openPrintBriefing() {
       btn.textContent = 'Building ' + (i+1) + '/' + areas.length + ' \u2014 ' + a;
       var secs = [];
       try { secs = collectSectionsForDay(codes, sects); } catch(e) { secs = []; }
-      if (!codes.length || !secs.length) { skipped.push(a); continue; }
+      // A Day 1 brief with nothing active is skipped. An outlook is still issued
+      // for every area, because a manager should get an explicit all-clear.
+      if (!codes.length || (!secs.length && !_isOutlook)) { skipped.push(a); continue; }
       _briefScopeLabel = a + ' Area';
       try { _watchDownloadDocx(codes, notes, sects); made.push(a); }
       catch(e) { failed.push(a + ' (' + e.message + ')'); }
@@ -6589,8 +6674,12 @@ function openPrintBriefing() {
     if (made.length) msg += ':\n' + made.join(', ');
     if (skipped.length) msg += '\n\nSkipped, nothing active to report:\n' + skipped.join(', ');
     if (failed.length) msg += '\n\nFailed:\n' + failed.join('\n');
+    if (_isOutlook && made.length) markOutlookSent();
     alert(msg);
-  });
+    } finally { briefDay = _prevDay; }
+  };
+  document.getElementById('bo-docx-all').addEventListener('click', _bulkAreaHandler);
+  document.getElementById('bo-docx-out').addEventListener('click', _bulkAreaHandler);
 
   document.getElementById('bo-docx').addEventListener('click', async function() {
     await fetchWPCPolygons();
@@ -7253,10 +7342,10 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
 
   html += '<p style="margin:0 0 10px 0">Team,</p>';
   html += '<p style="margin:0 0 10px 0">'+buildBriefNarrative(secs)+'</p>';
-  html += '<p style="margin:0 0 16px 0;font-style:italic;font-weight:700">This is the only alert that will be issued today. Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.</p>';
+  html += '<p style="margin:0 0 16px 0;font-style:italic;font-weight:700">'+_briefIssuedLine()+' Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.</p>';
   // WPC Short Range Forecast Discussion leads the briefing -- it is the synoptic
   // setup for everything below, so it reads first rather than under one hazard.
-  html += _briefNarrativeHTML('wpcShortRangeText');
+  if (briefDay !== '34') html += _briefNarrativeHTML('wpcShortRangeText');
 
   if (notes) {
     html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px;font-size:11px"><strong>Shift Notes:</strong> '+notes+'</div>';
@@ -9299,6 +9388,7 @@ loadMyLocations();
   setInterval(tickZuluClock, 1000);
 loadDismissed();
 loadExtNotified();
+try { renderOutlookDue(); } catch(e){}
 _populateOutlookScope();
 updateLocFilterBtn();
 _populateAreaScope();
