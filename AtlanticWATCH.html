@@ -292,7 +292,7 @@
         <div style="background:#0E2841;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:10">
           <div>
             <div style="font-size:13px;font-weight:700;color:#ffffff;letter-spacing:.04em">ATLANTIC AVIATION — WATCH — OPERATIONAL WEATHER SUMMARY</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><div id="summary-timestamp" style="font-size:10px;color:#7a9ab8"></div><div id="brief-day-btns" style="display:flex;gap:1px;background:#1a3a5c;border-radius:3px;padding:2px"><button class="brief-day-btn" data-briefday="1" onclick="setBriefDay('1')" style="background:#ffffff;color:#0E2841;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 1</button><button class="brief-day-btn" data-briefday="2" onclick="setBriefDay('2')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 2</button><button class="brief-day-btn" data-briefday="3" onclick="setBriefDay('3')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 3</button><button class="brief-day-btn" data-briefday="47" onclick="setBriefDay('47')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 4-7</button><button class="brief-day-btn" data-briefday="34" onclick="setBriefDay('34')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">3/4 DAY</button></div><select id="summary-scope" onchange="generateSummary()" style="background:#1a3a5c;color:#7a9ab8;border:1px solid #2a5a8c;border-radius:3px;font-size:10px;padding:1px 6px;cursor:pointer"><option value="all">All Locations</option><option value="mine">My Stations</option></select></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><div id="summary-timestamp" style="font-size:10px;color:#7a9ab8"></div><div id="brief-day-btns" style="display:flex;gap:1px;background:#1a3a5c;border-radius:3px;padding:2px"><button class="brief-day-btn" data-briefday="1" onclick="setBriefDay('1')" style="background:#ffffff;color:#0E2841;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 1</button><button class="brief-day-btn" data-briefday="2" onclick="setBriefDay('2')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 2</button><button class="brief-day-btn" data-briefday="3" onclick="setBriefDay('3')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 3</button><button class="brief-day-btn" data-briefday="47" onclick="setBriefDay('47')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">DAY 4-7</button><button class="brief-day-btn" data-briefday="fc" onclick="setBriefDay('fc')" style="background:transparent;color:#7a9ab8;border:none;border-radius:2px;padding:2px 7px;font-size:9px;font-weight:700;cursor:pointer">FORECAST</button></div><select id="summary-scope" onchange="generateSummary()" style="background:#1a3a5c;color:#7a9ab8;border:1px solid #2a5a8c;border-radius:3px;font-size:10px;padding:1px 6px;cursor:pointer"><option value="all">All Locations</option><option value="mine">My Stations</option></select></div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="summary-status" style="font-size:10px;color:#7a9ab8"></span>
@@ -300,7 +300,7 @@
           </div>
         </div>
                 <!-- Summary content -->
-        <div id="outlook-due" style="padding:12px 20px 0;max-width:860px"></div>
+        <div id="fcst-due" style="padding:12px 20px 0;max-width:860px"></div>
         <div id="summary-content" style="padding:20px;max-width:860px">
           <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 0;color:#8a9aaa">
             <div style="font-size:32px;margin-bottom:10px">📋</div>
@@ -2592,16 +2592,14 @@ function _esc(s){
 // warnings would be wrong in an operational brief.
 
 var briefDay = '1';
-var BRIEF_DAY_LABEL = { '1':'Day 1', '2':'Day 2', '3':'Day 3', '47':'Days 4-7', '34':'3/4 Day Outlook' };
+var BRIEF_DAY_LABEL = { '1':'Day 1', '2':'Day 2', '3':'Day 3', '47':'Days 4-7' };
 
 // Briefing "Day N" means N-1 days out. Day 4-7 spans leads 3 through 6.
 function _briefDayLeads(day){
   if (day === '2')  return [1];
   if (day === '3')  return [2];
   if (day === '47') return [3,4,5,6];
-  // 3/4 Day Outlook: the two days that sit 3 and 4 days out from issue, i.e.
-  // Wed+Thu when sent Sunday, Sat+Sun when sent Wednesday.
-  if (day === '34') return [3,4];
+  if (day === 'fc') return _fcstLeads();
   return [];
 }
 
@@ -2618,7 +2616,8 @@ var EXT_KIND_STYLE = {
   SYSTEM:  {icon:'📅',      bg:'#556070', docxBg:'556070', actions:'universal'}
 };
 
-function _collectExtSections(codes, day){
+function _collectExtSections(codes, day, sel){
+  sel = _bNormalizeSel(sel);
   var leads = _briefDayLeads(day);
   var byKind = {};
   codes.forEach(function(c){
@@ -2638,6 +2637,7 @@ function _collectExtSections(codes, day){
   var out = [];
   EXT_KIND_ORDER.forEach(function(kind){
     if (!byKind[kind]) return;
+    if (sel && !sel['ext_'+kind]) return;
     var st = EXT_KIND_STYLE[kind] || EXT_KIND_STYLE.SYSTEM;
     var groups = Object.keys(byKind[kind]).sort().map(function(k){
       var g = byKind[kind][k];
@@ -2666,81 +2666,120 @@ function _collectExtSections(codes, day){
 // disagree about which day they are showing.
 function collectSectionsForDay(codes, sel){
   if (briefDay === '1') return collectBriefSections(codes, sel);
-  return _collectExtSections(codes, briefDay);
+  return _collectExtSections(codes, briefDay, sel);
 }
 
-function setBriefDay(d){
-  briefDay = String(d);
+function _syncBriefDayBtns(){
   document.querySelectorAll('.brief-day-btn').forEach(function(b){
     var on = b.dataset.briefday === briefDay;
     b.style.background = on ? '#ffffff' : 'transparent';
     b.style.color = on ? '#0E2841' : '#7a9ab8';
   });
+}
+function setBriefDay(d){
+  briefDay = String(d);
+  _syncBriefDayBtns();
   var so = document.getElementById('brief-section-note');
   if (so) so.remove();
   generateSummary();
 }
 
-// ══ 3/4 DAY OUTLOOK: cadence, date range, reminder ═════════════════════════
-// Issued Sundays and Wednesdays. Both cover leads +3 and +4 from issue day.
-var OUTLOOK_DUE_DOWS = [0, 3];
-var OUTLOOK_SENT_KEY = 'watch_outlook_sent';
+// ══ FORECAST BRIEFING: window, cadence, reminder ═══════════════════════════
+// Two issues a week. Sunday covers Mon-Thu, Wednesday covers Thu-Mon. Pulled on
+// any other day it covers tomorrow through the end of the current issue's
+// window, so it never reaches past what the next issue will cover.
+var FCST_DUE_DOWS = [0, 3];
+var FCST_SENT_KEY = 'watch_fcst_sent';
+var FCST_DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-function _outlookRange(from){
-  var base = from ? new Date(from) : new Date();
+function _fcstLeads(now){
+  var base = now ? new Date(now) : new Date();
   base.setHours(0,0,0,0);
-  var a = new Date(base); a.setDate(a.getDate()+3);
-  var b = new Date(base); b.setDate(b.getDate()+4);
+  var endDow = (base.getDay() <= 2) ? 4 : 1;     // Sun-Tue end Thu; Wed-Sat end Mon
+  var out = [];
+  for (var i = 1; i <= 7; i++) {
+    var t = new Date(base); t.setDate(t.getDate() + i);
+    out.push(i);
+    if (t.getDay() === endDow) break;
+  }
+  return out;
+}
+function _fcstRange(now){
+  var base = now ? new Date(now) : new Date();
+  base.setHours(0,0,0,0);
+  var L = _fcstLeads(base);
+  var a = new Date(base); a.setDate(a.getDate() + L[0]);
+  var b = new Date(base); b.setDate(b.getDate() + L[L.length-1]);
   return [a, b];
 }
-function _outlookRangeText(from){
-  var r = _outlookRange(from);
+function _fcstRangeText(now){
+  var r = _fcstRange(now);
   var f = function(d){ return d.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}); };
-  return f(r[0]) + ' and ' + f(r[1]);
+  return f(r[0]) + ' through ' + f(r[1]);
 }
+function _fcstShort(now){
+  var r = _fcstRange(now);
+  return FCST_DOW[r[0].getDay()] + '-' + FCST_DOW[r[1].getDay()];
+}
+Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
+
 function _briefIssuedLine(){
-  return briefDay === '34'
-    ? 'This outlook is issued Sundays and Wednesdays. The next one will follow the same schedule.'
+  return briefDay === 'fc'
+    ? 'This forecast briefing is issued Sundays and Wednesdays.'
     : 'This is the only alert that will be issued today.';
 }
-function _outlookDueToday(now){
-  now = now || new Date();
-  return OUTLOOK_DUE_DOWS.indexOf(now.getDay()) !== -1;
-}
-function _outlookNextDue(now){
+function _fcstDueToday(now){ return FCST_DUE_DOWS.indexOf((now || new Date()).getDay()) !== -1; }
+function _fcstNextDue(now){
   var d = new Date(now || new Date()); d.setHours(0,0,0,0);
   for (var i = 1; i <= 7; i++) {
-    var t = new Date(d); t.setDate(t.getDate()+i);
-    if (OUTLOOK_DUE_DOWS.indexOf(t.getDay()) !== -1) return t;
+    var t = new Date(d); t.setDate(t.getDate() + i);
+    if (FCST_DUE_DOWS.indexOf(t.getDay()) !== -1) return t;
   }
   return null;
 }
-function _outlookSentToday(){
-  try { return localStorage.getItem(OUTLOOK_SENT_KEY) === _extDateKey(new Date()); } catch(e){ return false; }
+function _fcstSentToday(){
+  try { return localStorage.getItem(FCST_SENT_KEY) === _extDateKey(new Date()); } catch(e){ return false; }
 }
-function markOutlookSent(){
-  try { localStorage.setItem(OUTLOOK_SENT_KEY, _extDateKey(new Date())); } catch(e){}
-  renderOutlookDue();
+function markFcstSent(){
+  try { localStorage.setItem(FCST_SENT_KEY, _extDateKey(new Date())); } catch(e){}
+  renderFcstDue();
 }
-function renderOutlookDue(){
-  var el = document.getElementById('outlook-due');
+function renderFcstDue(){
+  var el = document.getElementById('fcst-due');
   if (!el) return;
   var now = new Date();
   var box = 'border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:12px;';
-  if (_outlookDueToday(now) && !_outlookSentToday()) {
+  if (_fcstDueToday(now) && !_fcstSentToday()) {
     el.innerHTML = '<div style="'+box+'background:#fff7e6;border:1px solid #d97706;color:#7a4a00">'
-      + '<div style="font-weight:700;margin-bottom:4px">\u{1F4C5} 3/4 Day Outlook is due today</div>'
-      + '<div style="margin-bottom:8px">Covers ' + _outlookRangeText() + '. Review it, then use Generate Briefing and the 3/4 day button to download one file per area.</div>'
-      + '<button onclick="setBriefDay(\'34\')" style="background:#0E2841;color:#fff;border:none;border-radius:4px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">View outlook</button>'
-      + '<button onclick="markOutlookSent()" style="background:#fff;color:#0E2841;border:1px solid #0E2841;border-radius:4px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">Mark as sent</button>'
+      + '<div style="font-weight:700;margin-bottom:4px">\u{1F4C5} Forecast Briefing is due today (' + _fcstShort() + ')</div>'
+      + '<div style="margin-bottom:8px">Covers ' + _fcstRangeText() + '. Open Generate Briefing, choose Forecast, then pull it collectively, by hazard or by area.</div>'
+      + '<button onclick="setBriefDay(\'fc\')" style="background:#0E2841;color:#fff;border:none;border-radius:4px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">View forecast</button>'
+      + '<button onclick="markFcstSent()" style="background:#fff;color:#0E2841;border:1px solid #0E2841;border-radius:4px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">Mark as sent</button>'
       + '</div>';
-  } else if (_outlookDueToday(now)) {
-    el.innerHTML = '<div style="'+box+'background:#eaf7ee;border:1px solid #16a34a;color:#14532d">✓ Today’s 3/4 Day Outlook is marked as sent.</div>';
+  } else if (_fcstDueToday(now)) {
+    el.innerHTML = '<div style="'+box+'background:#eaf7ee;border:1px solid #16a34a;color:#14532d">✓ Today’s Forecast Briefing is marked as sent.</div>';
   } else {
-    var n = _outlookNextDue(now);
-    el.innerHTML = '<div style="'+box+'background:#f0f4f7;border:1px solid #c8d0d8;color:#556070">Next 3/4 Day Outlook: '
-      + (n ? n.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}) : '') + '</div>';
+    var n = _fcstNextDue(now);
+    el.innerHTML = '<div style="'+box+'background:#f0f4f7;border:1px solid #c8d0d8;color:#556070">Next Forecast Briefing: '
+      + (n ? n.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}) + ' (covers ' + _fcstShort(n) + ')' : '') + '</div>';
   }
+}
+
+// Hazard checkboxes follow the briefing type: Day 1 sections for the daily
+// briefing, forecast hazard kinds for every forward day.
+function _briefSectionDefs(){
+  if (briefDay === '1') return _briefSelCodes();
+  var all = COVERED_ALL.map(function(f){ return f.code; });
+  var have = {};
+  try { _collectExtSections(all, briefDay, null).forEach(function(s){ have[s.def.id] = 1; }); } catch(e){}
+  return EXT_KIND_ORDER.map(function(k){
+    return { id:'ext_'+k, def:{icon:(EXT_KIND_STYLE[k]||EXT_KIND_STYLE.SYSTEM).icon}, label:_extKindLabel(k), active:!!have['ext_'+k] };
+  });
+}
+function _briefReadSects(){
+  var s = {};
+  document.querySelectorAll('#bo-sections input[type=checkbox]').forEach(function(el){ s[el.id.replace(/^bo-/,'')] = !!el.checked; });
+  return s;
 }
 
 // ══ SHARED BRIEFING HAZARD MODEL ═══════════════════════════════════════════
@@ -3285,8 +3324,8 @@ function _hazardPhrase(title) {
 }
 
 function buildBriefNarrative(secs){
-  if (briefDay === '34') {
-    if (!secs.length) return 'No significant weather hazards are forecast for these locations ' + _outlookRangeText() + '. Continue to monitor forecasts, as outlooks at this range can change.';
+  if (briefDay === 'fc') {
+    if (!secs.length) return 'No significant weather hazards are forecast for Atlantic Aviation locations from ' + _fcstRangeText() + '. Continue to monitor forecasts, as conditions at this range can change.';
   } else if (!secs.length) return 'No active weather hazards are affecting Atlantic Aviation locations at this time.';
   var bits = [];
   secs.forEach(function(s){
@@ -3296,11 +3335,11 @@ function buildBriefNarrative(secs){
     // Counts only. Listing the first twelve codes made the summary look like a
     // roster while silently omitting the rest, so people at unlisted stations
     // could read it as an all-clear. The tables are the authoritative list.
-    bits.push(_hazardPhrase(briefDay==='34' ? s.def.title.replace(/\s*\u2014\s*3\/4 DAY OUTLOOK/i,'') : s.def.title)+' affects '+n+' location'+(n!==1?'s':'')+'.');
+    bits.push(_hazardPhrase(briefDay==='fc' ? s.def.title.replace(/\s*\u2014\s*FORECAST.*$/i,'') : s.def.title)+' affects '+n+' location'+(n!==1?'s':'')+'.');
   });
-  if (briefDay === '34') return 'Outlook for ' + _outlookRangeText() + '. The following hazards are forecast for Atlantic Aviation locations. '
+  if (briefDay === 'fc') return 'Forecast briefing for ' + _fcstRangeText() + '. The following hazards are forecast for Atlantic Aviation locations. '
     + bits.join(' ')
-    + ' This is an early look. Begin planning now and expect updates as the event gets closer.';
+    + ' Begin planning now and expect updates as conditions get closer.';
   return 'The following hazards are active or forecast for Atlantic Aviation locations today. '
     + bits.join(' ')
     + ' All impacted locations should complete preparations before conditions arrive rather than waiting for a formal watch or warning.';
@@ -3322,7 +3361,7 @@ function _bActionRuns(secs){
 
 // ── Live BRIEFING tab: cards only, no narrative / supervisor / disclaimer ────
 function _renderBriefLive(secs, mapsBySection){
-  if (!secs.length) return '<div style="padding:30px;text-align:center;color:#16a34a;font-size:13px">' + (briefDay==='34' ? 'No significant weather hazards forecast ' + _outlookRangeText() + '.' : 'No active weather hazards across the selected locations.') + '</div>';
+  if (!secs.length) return '<div style="padding:30px;text-align:center;color:#16a34a;font-size:13px">' + (briefDay==='fc' ? 'No significant weather hazards forecast from ' + _fcstRangeText() + '.' : 'No active weather hazards across the selected locations.') + '</div>';
   var html='';
   mapsBySection = mapsBySection || {};
   secs.forEach(function(s){
@@ -3516,7 +3555,7 @@ function _renderBriefDocx(secs, add, ppr, rpr, sp, emitMap, raw){
 }
 
 function _generateSummaryInner(content, ts, status) {
-  try { renderOutlookDue(); } catch(e){}
+  try { renderFcstDue(); } catch(e){}
   var now = new Date();
   ts.textContent = 'Updated ' + now.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 
@@ -3563,7 +3602,7 @@ function _generateSummaryInner(content, ts, status) {
   var clear = codes.filter(function(c){ return !impacted.has(c); });
   if (clear.length) {
     html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:12px">'
-      + '<div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:6px">\u2713 '+(briefDay==='34'?'NO FORECAST HAZARDS':'NO ACTIVE HAZARDS')+' \u2014 '+clear.length+' LOCATIONS</div>'
+      + '<div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:6px">\u2713 '+(briefDay==='fc'?'NO FORECAST HAZARDS':'NO ACTIVE HAZARDS')+' \u2014 '+clear.length+' LOCATIONS</div>'
       + '<div style="font-size:10px;color:#8a9aaa;line-height:1.8">'+clear.join(' \u00B7 ')+'</div></div>';
   }
 
@@ -5924,7 +5963,7 @@ function _watchDownloadDocx(codes, notes, sections) {
   add(buildBriefNarrative(secs), ppr({after:'100'}), rpr({sz:22}));
   add(''+_briefIssuedLine()+' Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.',
       ppr({after:'120'}), rpr({sz:22, i:true, b:true}));
-  var _srd = briefDay === '34' ? '' : _briefNarrativeHTML('wpcShortRangeText');
+  var _srd = _briefNarrativeHTML('wpcShortRangeText');
   if (_srd) {
     add('WPC Short Range Forecast Discussion (Day 1-2)', ppr({fill:'0E2841', after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
     _srd.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'\n').replace(/&lt;/g,'<').replace(/&nbsp;/g,' ')
@@ -6582,12 +6621,18 @@ function openPrintBriefing() {
       +'<span style="font-size:12px;color:#1a2a3a">'+label+'</span></label>';
   }
 
+  function _secHTML(){ return _briefSectionDefs().map(function(x){ return chk(x.id, x.def.icon+' '+x.label, x.active, !x.active); }).join(''); }
   modal.innerHTML = '<div style="background:#fff;border-radius:8px;padding:20px;width:100%;max-width:380px;max-height:90vh;overflow-y:auto">'
     +'<div style="font-size:15px;font-weight:700;color:#0E2841;margin-bottom:4px">Generate Briefing</div>'
     +'<div style="font-size:11px;color:#556070;margin-bottom:16px">Select sections and scope</div>'
-    +'<div style="font-size:10px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Hazard Sections</div>'
+    +'<div style="font-size:10px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Briefing</div>'
     +'<div style="border:1px solid #e8e8e8;border-radius:6px;padding:4px 12px;margin-bottom:14px">'
-    +_briefSelCodes().map(function(x){ return chk(x.id, x.def.icon+' '+x.label, x.active, !x.active); }).join('')
+    +'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-type" value="1" '+(briefDay!=='fc'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">Daily (next 24 hours)</span></label>'
+    +'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-type" value="fc" '+(briefDay==='fc'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">Forecast ('+_fcstShort()+')</span></label>'
+    +'</div>'
+    +'<div style="font-size:10px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Hazard Sections</div>'
+    +'<div id="bo-sections" style="border:1px solid #e8e8e8;border-radius:6px;padding:4px 12px;margin-bottom:14px">'
+    +_secHTML()
     +'</div>'
     +'<div style="font-size:10px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Scope</div>'
     +'<div style="border:1px solid #e8e8e8;border-radius:6px;padding:4px 12px;margin-bottom:16px">'
@@ -6597,7 +6642,7 @@ function openPrintBriefing() {
     +'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="area" '+(defaultScope==='area'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">Area</span> <select id="bo-area" style="flex:1;font-size:12px;padding:3px 4px;border:1px solid #c8d0d8;border-radius:4px;cursor:pointer">'+_areaOpts+'</select></label>'
     +'</div>'
     +'<button id="bo-docx-all" style="width:100%;background:#2a7a4a;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 DOCX for every area (one file each)</button>'
-    +'<button id="bo-docx-out" style="width:100%;background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 3/4 Day Outlook, every area (one file each)</button>'
+    +'<button id="bo-docx-haz" style="width:100%;background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 DOCX for every hazard (one file each)</button>'
     +'<div style="display:flex;gap:8px">'
     +'<button id="bo-generate" style="flex:1;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">Generate Brief</button>'
     +'<button id="bo-docx" style="background:#1a6ba0;color:#fff;border:none;border-radius:4px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer">↓ DOCX</button>'
@@ -6606,26 +6651,33 @@ function openPrintBriefing() {
 
   document.body.appendChild(modal);
   document.getElementById('bo-cancel').addEventListener('click', function(){ modal.remove(); });
+  document.querySelectorAll('input[name="bo-type"]').forEach(function(r){
+    r.addEventListener('change', function(){
+      briefDay = this.value === 'fc' ? 'fc' : '1';
+      _syncBriefDayBtns();
+      var box = document.getElementById('bo-sections');
+      if (box) box.innerHTML = _secHTML();
+    });
+  });
   var _areaSel = document.getElementById('bo-area');
   if (_areaSel) _areaSel.addEventListener('change', function(){
     var r = document.querySelector('input[name="bo-scope"][value="area"]');
     if (r) r.checked = true;
   });
   modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
-  // Bulk export: one DOCX per area, using the same section checkboxes and shift
-  // notes as a single-area export. Areas with nothing to report are skipped
-  // rather than producing an empty file.
-  var _bulkAreaHandler = async function() {
-    var _prevDay = briefDay;
-    var _isOutlook = this.id === 'bo-docx-out';
-    if (_isOutlook) briefDay = '34';
-    try {
+  // Bulk export. mode 'area' = one DOCX per manager area, mode 'hazard' = one
+  // DOCX per checked hazard across every location. Daily briefings with nothing
+  // to report are skipped; a forecast briefing is still issued for every area so
+  // a manager gets an explicit all-clear.
+  function _mkBulk(mode) { return async function() {
     var btn = this, orig = btn.textContent;
+    var isFc = briefDay === 'fc';
     btn.disabled = true;
     btn.textContent = 'Loading...';
-    if (_isOutlook && !Object.keys(extOutlook).length) await scanExtendedOutlook();
-    if (_isOutlook && !Object.keys(extOutlook).length) {
-      briefDay = _prevDay; btn.disabled = false; btn.textContent = orig;
+    var _restore = function(){ btn.disabled = false; btn.textContent = orig; };
+    if (isFc && !Object.keys(extOutlook).length) await scanExtendedOutlook();
+    if (isFc && !Object.keys(extOutlook).length) {
+      _restore();
       alert('No forecast data is loaded yet. Run Scan All, wait for it to finish, then try again.');
       return;
     }
@@ -6633,60 +6685,70 @@ function openPrintBriefing() {
     await fetchSPCPolygons();
     if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText) await fetchNWSNarrativeProducts();
 
-    var sects = {};
-    WATCH_BRIEF_SECTIONS.forEach(function(d){ var el=document.getElementById('bo-'+d.id); sects[d.id] = !!(el && el.checked); });
+    var sects = _briefReadSects();
     var notesEl = document.getElementById('shift-notes');
     var notes = notesEl ? notesEl.value.trim() : '';
+    var jobs = [];
+    if (mode === 'area') {
+      Object.keys(GRID_REGIONS).filter(function(r){ return r !== 'All'; }).forEach(function(a){
+        var list = GRID_REGIONS[a] || [];
+        jobs.push({ label:a+' Area', sects:sects,
+          codes: COVERED.filter(function(f){ return list.indexOf(f.code) !== -1; }).map(function(f){ return f.code; }) });
+      });
+    } else {
+      var ids = Object.keys(sects).filter(function(k){ return sects[k]; });
+      if (!ids.length) { _restore(); alert('Tick at least one hazard first.'); return; }
+      var allC = COVERED.map(function(f){ return f.code; });
+      ids.forEach(function(id){
+        var el = document.getElementById('bo-'+id);
+        var lbl = el && el.parentNode ? el.parentNode.textContent.replace(/[^\x20-\x7E]/g,'').trim() : id;
+        var one = {}; one[id] = true;
+        jobs.push({ label:lbl, sects:one, codes:allC });
+      });
+    }
 
-    var areas = Object.keys(GRID_REGIONS).filter(function(r){ return r !== 'All'; });
-
-    // Prefetch hourly data once across every area rather than per area, so the
-    // same location is never fetched twice.
-    var allCodes = [];
-    areas.forEach(function(a){
-      (GRID_REGIONS[a]||[]).forEach(function(c){ if (allCodes.indexOf(c) === -1) allCodes.push(c); });
-    });
-    await _prefetchHourly(allCodes, btn);
+    // Prefetch hourly data once for the whole run. Forecast briefings read data
+    // already in memory, so they skip it.
+    if (!isFc) {
+      var allCodes = [];
+      jobs.forEach(function(j){ j.codes.forEach(function(c){ if (allCodes.indexOf(c) === -1) allCodes.push(c); }); });
+      await _prefetchHourly(allCodes, btn);
+    }
 
     var made = [], skipped = [], failed = [];
-    for (var i = 0; i < areas.length; i++) {
-      var a = areas[i];
-      var list = GRID_REGIONS[a] || [];
-      var codes = COVERED.filter(function(f){ return list.indexOf(f.code) !== -1; }).map(function(f){ return f.code; });
-      btn.textContent = 'Building ' + (i+1) + '/' + areas.length + ' \u2014 ' + a;
+    for (var i = 0; i < jobs.length; i++) {
+      var j = jobs[i];
+      btn.textContent = 'Building ' + (i+1) + '/' + jobs.length + ' — ' + j.label;
       var secs = [];
-      try { secs = collectSectionsForDay(codes, sects); } catch(e) { secs = []; }
-      // A Day 1 brief with nothing active is skipped. An outlook is still issued
-      // for every area, because a manager should get an explicit all-clear.
-      if (!codes.length || (!secs.length && !_isOutlook)) { skipped.push(a); continue; }
-      _briefScopeLabel = a + ' Area';
-      try { _watchDownloadDocx(codes, notes, sects); made.push(a); }
-      catch(e) { failed.push(a + ' (' + e.message + ')'); }
+      try { secs = collectSectionsForDay(j.codes, j.sects); } catch(e) { secs = []; }
+      var keepEmpty = isFc && mode === 'area';
+      if (!j.codes.length || (!secs.length && !keepEmpty)) { skipped.push(j.label); continue; }
+      _briefScopeLabel = j.label;
+      try { _watchDownloadDocx(j.codes, notes, j.sects); made.push(j.label); }
+      catch(e) { failed.push(j.label + ' (' + e.message + ')'); }
       // Browsers drop downloads fired back to back, so space them out.
       await new Promise(function(r){ setTimeout(r, 900); });
     }
     _briefScopeLabel = '';
-    btn.disabled = false;
-    btn.textContent = orig;
+    _restore();
     modal.remove();
+    if (isFc && mode === 'area' && made.length) markFcstSent();
 
-    var msg = made.length + ' area briefing' + (made.length===1?'':'s') + ' downloaded';
+    var msg = made.length + ' briefing' + (made.length===1?'':'s') + ' downloaded';
     if (made.length) msg += ':\n' + made.join(', ');
-    if (skipped.length) msg += '\n\nSkipped, nothing active to report:\n' + skipped.join(', ');
+    if (skipped.length) msg += '\n\nSkipped, nothing to report:\n' + skipped.join(', ');
     if (failed.length) msg += '\n\nFailed:\n' + failed.join('\n');
-    if (_isOutlook && made.length) markOutlookSent();
     alert(msg);
-    } finally { briefDay = _prevDay; }
-  };
-  document.getElementById('bo-docx-all').addEventListener('click', _bulkAreaHandler);
-  document.getElementById('bo-docx-out').addEventListener('click', _bulkAreaHandler);
+  }; }
+  document.getElementById('bo-docx-all').addEventListener('click', _mkBulk('area'));
+  document.getElementById('bo-docx-haz').addEventListener('click', _mkBulk('hazard'));
 
   document.getElementById('bo-docx').addEventListener('click', async function() {
     await fetchWPCPolygons();
     await fetchSPCPolygons();
     if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText) await fetchNWSNarrativeProducts();
     var sects = {};
-    WATCH_BRIEF_SECTIONS.forEach(function(d){ var el=document.getElementById('bo-'+d.id); sects[d.id] = !!(el && el.checked); });
+    sects = _briefReadSects();
     var scopeEl=document.querySelector('input[name="bo-scope"]:checked');
     var scope=scopeEl?scopeEl.value:'all';
     var codes;
@@ -6722,7 +6784,7 @@ function openPrintBriefing() {
     await fetchSPCPolygons();
     if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText) await fetchNWSNarrativeProducts();
     var sections = {};
-    WATCH_BRIEF_SECTIONS.forEach(function(d){ var el=document.getElementById('bo-'+d.id); sections[d.id] = !!(el && el.checked); });
+    sections = _briefReadSects();
     var scopeEl = document.querySelector('input[name="bo-scope"]:checked');
     var scope = scopeEl ? scopeEl.value : 'all';
     var codes;
@@ -7345,7 +7407,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   html += '<p style="margin:0 0 16px 0;font-style:italic;font-weight:700">'+_briefIssuedLine()+' Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.</p>';
   // WPC Short Range Forecast Discussion leads the briefing -- it is the synoptic
   // setup for everything below, so it reads first rather than under one hazard.
-  if (briefDay !== '34') html += _briefNarrativeHTML('wpcShortRangeText');
+  html += _briefNarrativeHTML('wpcShortRangeText');
 
   if (notes) {
     html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px;font-size:11px"><strong>Shift Notes:</strong> '+notes+'</div>';
@@ -9388,7 +9450,7 @@ loadMyLocations();
   setInterval(tickZuluClock, 1000);
 loadDismissed();
 loadExtNotified();
-try { renderOutlookDue(); } catch(e){}
+try { renderFcstDue(); } catch(e){}
 _populateOutlookScope();
 updateLocFilterBtn();
 _populateAreaScope();
