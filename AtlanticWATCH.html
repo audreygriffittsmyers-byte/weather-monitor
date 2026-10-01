@@ -2240,13 +2240,21 @@ var spcExtPolys    = {};         // spc day 4..8 -> geojson
 var extScanStamp   = null;
 var _extScanBusy   = false;
 
+// Days 2-7 are for large-impact events only. Routine convection and everyday
+// extremes are Day 1 products and are deliberately not carried forward.
+// Flip a kind to true here to bring it back in every output at once.
+var EXT_KINDS_ON = { SEVERE:true, WIND:true, WINTER:true, TROPICAL:true, RAIN:true, SYSTEM:true,
+                     TSTM:false, HEAT:false, COLD:false };
+var EXT_SPC_MIN_CAT  = 'MDT';   // Days 2-3: Moderate or High only (outbreak-level)
+var EXT_SPC_MIN_PROB = 30;      // Days 4-8: the 30% area only; 15% is routine
+
 var EXT_RANK  = { MONITOR:1, ADVISORY:2, WARNING:3 };
 var EXT_COLOR = { MONITOR:'#0891b2', ADVISORY:'#d97706', WARNING:'#dc2626' };
 
 // Named systems get called out verbatim -- a forecaster writing "nor'easter"
 // is the strongest lead signal there is, and no polygon carries it.
 function _extStormName(txt){
-  var m = String(txt||'').match(/\b(nor[’']?easter|blizzard|ice storm|winter storm|tropical storm|hurricane|derecho|atmospheric river)\b/i);
+  var m = String(txt||'').match(/\b(nor[’']?easter|blizzard|ice storm|winter storm|tropical storm|hurricane|derecho|atmospheric river|(?:tornado |severe weather |severe )outbreak)\b/i);
   if (!m) return null;
   var s = m[1].replace(/’/, "'");
   return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase();
@@ -2276,8 +2284,8 @@ function _extSpcFor(code, spcDay){
     var s = spcData[spcDay] && spcData[spcDay][code];
     if (!s || s.st !== 'ok' || !s.label || s.label === 'No Risk') return null;
     var lab = s.label;
-    if (lab === 'TSTM') return {kind:'SEVERE', sev:'MONITOR', detail:'SPC general thunderstorm area'};
-    var sev = (lab==='HIGH'||lab==='MDT') ? 'WARNING' : (lab==='ENH' ? 'ADVISORY' : 'MONITOR');
+    if (SPC_CAT_RANK.indexOf(lab) < SPC_CAT_RANK.indexOf(EXT_SPC_MIN_CAT)) return null;   // TSTM/MRGL/SLGT/ENH
+    var sev = 'WARNING';
     var nice = (SPC_LABEL_MAP[lab] && SPC_LABEL_MAP[lab].label) || lab;
     return {kind:'SEVERE', sev:sev, detail:'SPC '+nice+' risk'};
   }
@@ -2291,8 +2299,8 @@ function _extSpcFor(code, spcDay){
     var dn = Number(p.dn != null ? p.dn : p.DN);
     if (!isNaN(dn) && dn > best) best = dn;
   });
-  if (!best) return null;
-  return {kind:'SEVERE', sev: best>=30?'ADVISORY':'MONITOR',
+  if (best < EXT_SPC_MIN_PROB) return null;
+  return {kind:'SEVERE', sev:'ADVISORY',
           detail:'SPC Day '+spcDay+' severe probability '+best+'%'};
 }
 
@@ -2338,18 +2346,17 @@ function buildExtOutlook(code){
     var w = Math.max(b.gust, b.sus);
     if (b.gust >= 46 || b.sus >= 40) hz.push({kind:'WIND', sev:'WARNING',  detail:'Forecast wind to '+w+' mph'});
     else if (b.gust >= 35 || b.sus >= 25) hz.push({kind:'WIND', sev:'ADVISORY', detail:'Forecast wind to '+w+' mph'});
-    else if (b.gust >= BRIEF_WIND_GST_MPH || b.sus >= BRIEF_WIND_SUS_MPH) hz.push({kind:'WIND', sev:'MONITOR', detail:'Forecast wind to '+w+' mph'});
 
     if (/blizzard|ice storm|freezing rain/i.test(txt))
       hz.push({kind:'WINTER', sev:'WARNING', detail:'Snow, ice or freezing rain in forecast'});
-    else if (/snow|sleet|wintry|freezing/i.test(txt))
-      hz.push({kind:'WINTER', sev: b.pop>=60?'ADVISORY':'MONITOR', detail:'Winter precipitation in forecast'+(b.pop?' ('+b.pop+'% PoP)':'')});
+    else if (/snow|sleet|wintry/i.test(txt) && b.pop >= 60)
+      hz.push({kind:'WINTER', sev:'ADVISORY', detail:'Winter storm potential ('+b.pop+'% PoP)'});
 
-    if (/tropical storm|hurricane/i.test(txt))
+    if (/tropical storm|tropical depression|tropical cyclone|post-tropical|hurricane/i.test(txt))
       hz.push({kind:'TROPICAL', sev:'WARNING', detail:'Tropical system referenced in forecast'});
 
-    if (b.pop >= 70 && /rain|shower|storm/i.test(txt))
-      hz.push({kind:'RAIN', sev: b.pop>=80?'ADVISORY':'MONITOR', detail:'Heavy rain likely ('+b.pop+'% PoP)'});
+    if (/flood|heavy rain|torrential|excessive rain/i.test(txt))
+      hz.push({kind:'RAIN', sev: b.pop>=70?'WARNING':'ADVISORY', detail:'Flooding or heavy rain in forecast'+(b.pop?' ('+b.pop+'% PoP)':'')});
 
     if (/thunder/i.test(txt))
       hz.push({kind:'TSTM', sev: b.pop>=60?'ADVISORY':'MONITOR', detail:'Thunderstorms in forecast'+(b.pop?' ('+b.pop+'% PoP)':'')});
@@ -2363,6 +2370,9 @@ function buildExtOutlook(code){
     if (spc) hz.push(spc);
 
     var names = Object.keys(b.names);
+    if (names.length && /outbreak|derecho/i.test(names[0]))
+      hz.push({kind:'SEVERE', sev:'WARNING', detail:names[0]+' referenced in forecast'});
+    hz = hz.filter(function(h){ return EXT_KINDS_ON[h.kind]; });
     if (names.length) {
       hz.forEach(function(h){ h.storm = names[0]; });
       if (!hz.length) hz.push({kind:'SYSTEM', sev:'MONITOR', detail:names[0]+' referenced in forecast', storm:names[0]});
@@ -2473,8 +2483,8 @@ function notifyExtendedOutlook(){
 }
 
 function _extKindLabel(k){
-  return ({WIND:'High wind', WINTER:'Winter weather', TROPICAL:'Tropical threat', RAIN:'Heavy rain',
-           TSTM:'Thunderstorms', HEAT:'Extreme heat', COLD:'Extreme cold', SEVERE:'Severe weather',
+  return ({WIND:'High wind', WINTER:'Winter storm', TROPICAL:'Tropical threat', RAIN:'Flooding / heavy rain',
+           TSTM:'Thunderstorms', HEAT:'Extreme heat', COLD:'Extreme cold', SEVERE:'Severe outbreak',
            SYSTEM:'Developing system'})[k] || k;
 }
 
@@ -2603,7 +2613,7 @@ function _briefDayLeads(day){
   return [];
 }
 
-var EXT_KIND_ORDER = ['SEVERE','TSTM','WIND','WINTER','TROPICAL','RAIN','HEAT','COLD','SYSTEM'];
+var EXT_KIND_ORDER = ['SEVERE','TSTM','WIND','WINTER','TROPICAL','RAIN','HEAT','COLD','SYSTEM'].filter(function(k){ return EXT_KINDS_ON[k]; });
 var EXT_KIND_STYLE = {
   SEVERE:  {icon:'⛈',            bg:'#0E2841', docxBg:'0E2841', actions:'thunderstorm'},
   TSTM:    {icon:'⚡',            bg:'#c05928', docxBg:'C05928', actions:'thunderstorm'},
