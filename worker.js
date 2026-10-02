@@ -8,6 +8,36 @@ const CORS = {
 const GEOJSON = { ...CORS, 'Content-Type': 'application/json' };
 const TEXT    = { ...CORS, 'Content-Type': 'text/plain' };
 const UA = 'AtlanticAviation-WATCH/1.0 (ops@atlanticaviation.com)';
+const WORKER_BUILD = '46';
+
+// Relay an upstream response WITHOUT laundering failures into HTTP 200.
+// Before v46 every route returned 200 regardless of upstream status, and the app
+// read an error body as "no features", which rendered as an all-clear (eval C2-2).
+// ArcGIS MapServers report failures as HTTP 200 with an {"error":{...}} body, so
+// that shape is also converted to 502.
+async function relay(res, headers) {
+  const st = res.status;
+  const h = { ...headers, 'X-Upstream-Status': String(st), 'X-Watch-Worker': WORKER_BUILD };
+  if (st === 204 || st === 205 || st === 304) return new Response(null, { status: st, headers: h });
+  const body = await res.text();
+  if (res.ok && body && body.charAt(0) === '{') {
+    try {
+      const j = JSON.parse(body);
+      if (j && j.error && !Array.isArray(j.features)) {
+        return new Response(JSON.stringify({ error: 'upstream error', detail: j.error, features: [] }), { status: 502, headers: h });
+      }
+    } catch (e) { /* not JSON: pass through */ }
+  }
+  return new Response(body, { status: st, headers: h });
+}
+// Thrown fetch: 502, with an empty-shaped body so a consumer that ignores the
+// status still parses it, while every consumer that checks r.ok sees the failure.
+function failed(headers, emptyBody, e) {
+  const h = { ...headers, 'X-Watch-Worker': WORKER_BUILD };
+  let body = emptyBody;
+  try { const o = JSON.parse(emptyBody); if (o && !Array.isArray(o)) { o.error = 'upstream fetch failed'; body = JSON.stringify(o); } } catch (x) {}
+  return new Response(body, { status: 502, headers: h });
+}
 
 export default {
   async fetch(request, env) {
@@ -38,10 +68,18 @@ export default {
         if (HAIL[day]) reqs.push(fetch(`${base}/${HAIL[day]}/query?${qs}`, { headers: { 'User-Agent': UA } }));
         if (WIND[day]) reqs.push(fetch(`${base}/${WIND[day]}/query?${qs}`, { headers: { 'User-Agent': UA } }));
         const responses = await Promise.all(reqs);
-        const [catRes, tornRes, hailRes, windRes] = await Promise.all(responses.map(r => r.json().catch(() => ({}))));
-        return new Response(JSON.stringify({ cat: catRes, torn: tornRes||{}, hail: hailRes||{}, wind: windRes||{} }), { headers: GEOJSON });
+        const [catRes, tornRes, hailRes, windRes] = await Promise.all(responses.map(r => r.json().catch(() => ({ error: 'bad json' }))));
+        // A failed categorical query used to come back as 200 with cat:{error},
+        // which the app read as "No Risk". It is now a 502 the app records as an error.
+        if (!responses[0].ok || !catRes || catRes.error || !Array.isArray(catRes.features)) {
+          return new Response(JSON.stringify({ error: 'SPC categorical query failed', upstream: responses[0].status }),
+            { status: 502, headers: { ...GEOJSON, 'X-Watch-Worker': WORKER_BUILD } });
+        }
+        const ok = o => (o && !o.error) ? o : {};
+        return new Response(JSON.stringify({ cat: catRes, torn: ok(tornRes), hail: ok(hailRes), wind: ok(windRes) }),
+          { headers: { ...GEOJSON, 'X-Watch-Worker': WORKER_BUILD } });
       } catch(e) {
-        return new Response(JSON.stringify({ cat:{}, torn:{}, hail:{}, wind:{} }), { headers: GEOJSON });
+        return failed(GEOJSON, JSON.stringify({ cat:{}, torn:{}, hail:{}, wind:{} }), e);
       }
     }
 
@@ -50,8 +88,8 @@ export default {
       try {
         const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${layer}/query?where=1%3D1&outFields=DN&returnGeometry=true&outSR=4326&f=geojson`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify({features:[]}), e); }
     }
 
     if (type === 'spcpoly') {
@@ -63,8 +101,8 @@ export default {
       try {
         const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${LAYER[day]||1}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify({features:[]}), e); }
     }
 
     if (type === 'text') {
@@ -87,8 +125,8 @@ export default {
       try {
         const res = await fetch(`https://api.weather.gov/alerts/active?area=${area}&status=actual`,
           { headers: { 'User-Agent': UA, 'Accept': 'application/geo+json' } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify({features:[]}), e); }
     }
 
     if (type === 'activefire') {
@@ -98,9 +136,8 @@ export default {
           'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query?where=GISAcres%3E100&outFields=IncidentName,GISAcres,DiscoveryAcres,PercentContained,ModifiedOnDateTime_dt&returnGeometry=true&outSR=4326&f=geojson&resultRecordCount=200',
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } }
         );
-        if (!res.ok) return new Response(JSON.stringify({features:[]}), { headers: GEOJSON });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify({features:[]}), e); }
     }
 
     if (type === 'firepoly') {
@@ -111,8 +148,8 @@ export default {
       try {
         const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/${LAYER[day]||1}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify({features:[]}), e); }
     }
 
     if (type === 'wpcpoly') {
@@ -123,8 +160,8 @@ export default {
       try {
         const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer/${EROL[eroDay]}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify({features:[]}), e); }
     }
 
     if (type === 'winterpoly') {
@@ -135,8 +172,8 @@ export default {
       try {
         const res = await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_wssi/MapServer/${WSSIL[wDay]}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify({features:[]}), e); }
     }
 
     if (type === 'nearbymetar') {
@@ -171,8 +208,8 @@ export default {
       try {
         const res = await fetch(`https://aviationweather.gov/api/data/metar?ids=${icao}&format=json&taf=false`,
           { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify([]), e); }
     }
 
     if (type === 'taf') {
@@ -181,8 +218,8 @@ export default {
       try {
         const res = await fetch(`https://aviationweather.gov/api/data/taf?ids=${icao}&format=json&metar=false`,
           { headers: { 'User-Agent': UA }, cf: { cacheEverything: false } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify([]), e); }
     }
 
     if (type === 'aqi') {
@@ -193,8 +230,8 @@ export default {
       try {
         const res = await fetch(`https://www.airnowapi.org/aq/observation/latLong/current/?format=application/json&latitude=${lat}&longitude=${lon}&distance=25&API_KEY=${apiKey}`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify([]), e); }
     }
 
     if (type === 'aqiforecast') {
@@ -205,8 +242,8 @@ export default {
       try {
         const res = await fetch(`https://www.airnowapi.org/aq/forecast/latLong/?format=application/json&latitude=${lat}&longitude=${lon}&distance=25&API_KEY=${apiKey}`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 21600, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify([]), e); }
     }
 
 
@@ -229,8 +266,8 @@ export default {
         const res = await fetch(
           `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${lat},${lon}/today/tomorrow?${qs}`,
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 1800, cacheEverything: true } });
-        if (!res.ok) return new Response(JSON.stringify({ error: 'upstream', status: res.status }), { headers: GEOJSON });
-        return new Response(await res.text(), { headers: GEOJSON });
+        if (!res.ok) return new Response(JSON.stringify({ error: 'upstream', status: res.status }), { status: 502, headers: GEOJSON });
+        return relay(res, GEOJSON);
       } catch(e) { return new Response(JSON.stringify({ error: 'fetch_failed' }), { headers: GEOJSON }); }
     }
 
@@ -238,8 +275,8 @@ export default {
       try {
         const res = await fetch('https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query?where=PolygonDateTime+>=+CURRENT_TIMESTAMP+-+7&outFields=attr_IncidentName,attr_GISAcres,attr_FireBehaviorGeneral&returnGeometry=true&outSR=4326&f=geojson&resultRecordCount=500',
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: GEOJSON });
-      } catch(e) { return new Response(JSON.stringify({features:[]}), { headers: GEOJSON }); }
+        return relay(res, GEOJSON);
+      } catch(e) { return failed(GEOJSON, JSON.stringify({features:[]}), e); }
     }
 
     if (type === 'nhcdisturbances') {
@@ -281,7 +318,7 @@ export default {
       try {
         const res = await fetch('https://www.nhc.noaa.gov/CurrentStorms.json',
           { headers: { 'User-Agent': UA }, cf: { cacheTtl: 300, cacheEverything: true } });
-        return new Response(await res.text(), { headers: CORS });
+        return relay(res, CORS);
       } catch(e) { return new Response(JSON.stringify({activeStorms:[]}), { headers: CORS }); }
     }
 
@@ -413,7 +450,7 @@ export default {
           if (arpt) programs.push({ type:'AFP', arpt:arpt.trim(), reason:tag(b,'Reason').trim() });
         }
         return new Response(JSON.stringify(programs), { headers: { ...GEOJSON, 'Cache-Control': 'public, max-age=300' } });
-      } catch(e) { return new Response(JSON.stringify([]), { headers: GEOJSON }); }
+      } catch(e) { return failed(GEOJSON, JSON.stringify([]), e); }
     }
 
     if (type === 'satellite') {
