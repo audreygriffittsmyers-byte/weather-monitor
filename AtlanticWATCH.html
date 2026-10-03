@@ -2984,13 +2984,13 @@ function _fcstShort(now){
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
 function _briefIssuedLine(){
-  // v46 (eval D-4): "This is the only alert that will be issued today" told
-  // field teams no update would follow. Removed.
+  // v48: wording restored per owner. Briefings go out once per period, so the
+  // text says so and tells bases to monitor conditions themselves.
   if (briefDay === 'fc') {
     var nd = _fcstNextDue(new Date());
-    return 'This forecast briefing is issued Sundays and Wednesdays' + (nd ? '; next issue ' + nd.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}) : '') + '. An update will be issued if the forecast changes significantly.';
+    return 'This forecast briefing is issued Sundays and Wednesdays' + (nd ? '; next issue ' + nd.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}) : '') + '. This is the only forecast briefing issued for this period. Bases must monitor conditions and forecast changes.';
   }
-  return 'An updated briefing will be issued if conditions change. Always follow NWS warnings for your location.';
+  return 'This is the only briefing issued for this period. Bases must monitor conditions and follow NWS warnings for their location.';
 }
 function _fcstDueToday(now){ return FCST_DUE_DOWS.indexOf((now || new Date()).getDay()) !== -1; }
 function _fcstNextDue(now){
