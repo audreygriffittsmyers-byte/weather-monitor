@@ -2922,17 +2922,23 @@ var EXT_KIND_STYLE = {
 function _collectExtSections(codes, day, sel){
   sel = _bNormalizeSel(sel);
   var leads = _briefDayLeads(day);
-  var byKind = {};
+  var byKind = {}, byBase = {};
   codes.forEach(function(c){
     (extOutlook[c] || []).forEach(function(d){
       if (leads.indexOf(d.lead) === -1) return;
       d.hazards.forEach(function(h){
+        var rk = EXT_RANK[h.sev] || 1;
         if (!byKind[h.kind]) byKind[h.kind] = {};
         var k = d.dateKey;
         if (!byKind[h.kind][k]) byKind[h.kind][k] = {lead:d.lead, label:d.label, rank:0, rows:[]};
         var g = byKind[h.kind][k];
-        g.rank = Math.max(g.rank, EXT_RANK[h.sev]||1);
-        g.rows.push(_bRow(c, (d.storm ? d.storm + ' — ' : '') + h.sev, h.detail));
+        g.rank = Math.max(g.rank, rk);
+        var row = _bRow(c, (d.storm ? d.storm + ' \u2014 ' : '') + h.sev, h.detail);
+        row.tier = rk;
+        g.rows.push(row);
+        var bk = (byBase[h.kind] = byBase[h.kind] || {});
+        var bc = (bk[c] = bk[c] || {});
+        if (!bc[d.lead] || rk > bc[d.lead].rank) bc[d.lead] = {rank:rk, dateKey:d.dateKey, detail:h.detail, storm:d.storm || ''};
       });
     });
   });
@@ -2949,20 +2955,20 @@ function _collectExtSections(codes, day, sel){
       return {
         label: (g.label||k) + '  (' + (g.lead===1?'tomorrow':'+'+g.lead+' days') + ')',
         bg: bg, docxBg: bg.replace('#','').toUpperCase(),
-        action: sev==='WARNING'?'Plan Now':(sev==='ADVISORY'?'Prepare':'Monitor'),
+        action: sev, tier: g.rank, tierFixed: true,
         cols:['FBO','City / State','Severity','Detail'],
         rows: g.rows
       };
     });
     if (!groups.length) return;
     out.push({
-      def:{ id:'ext_'+kind, title:_extKindLabel(kind).toUpperCase() + ' — ' + BRIEF_DAY_LABEL[day].toUpperCase(),
-            sub:'Forecast hazard, not a current observation',
+      def:{ id:'ext_'+kind, title:_extKindLabel(kind).toUpperCase() + ' \u2014 ' + BRIEF_DAY_LABEL[day].toUpperCase(),
+            sub:'Forecast hazard, not a current observation. One row per base, one column per day.',
             icon:st.icon, bg:st.bg, tc:'#fff', docxBg:st.docxBg, actions:st.actions },
-      data:{ groups: groups }
+      data:{ groups: groups, grid: _extBuildGrid(kind, byBase[kind] || {}, leads, codes, day) }
     });
   });
-  return out;
+  return _bAnnotateSections(out);
 }
 
 // Single entry point so the live tab, the popup brief and the DOCX can never
@@ -3003,7 +3009,7 @@ function _briefIssueMeta(){
   var z = String(now.getUTCHours()).padStart(2,'0') + String(now.getUTCMinutes()).padStart(2,'0') + 'Z';
   var asof = [];
   var f = WATCH_FRESH;
-  var t = function(ts){ return ts ? new Date(ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : 'not loaded'; };
+  var t = function(ts){ return ts ? new Date(ts).toLocaleString('en-US',{weekday:'short',hour:'numeric',minute:'2-digit'}) : 'not loaded'; };
   if (briefDay === '1') {
     asof.push('NWS alerts ' + t(f.alerts.cycle || f.alerts.ok));
     asof.push('METAR ' + t(f.metar.ok));
@@ -3106,6 +3112,7 @@ function _fcstSentToday(){
 }
 function markFcstSent(){
   try { localStorage.setItem(FCST_SENT_KEY, _extDateKey(new Date())); } catch(e){}
+  try { _extSaveSnapshot(); } catch(e){}
   renderFcstDue();
 }
 function renderFcstDue(){
@@ -3173,8 +3180,30 @@ function _bAlerts(code, re){
     return !(a.expires && new Date(a.expires).getTime() < nowMs);
   });
 }
+function _bFmtT(dt, code){
+  var d = (dt instanceof Date) ? dt : new Date(dt);
+  var o = {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'};
+  var z = code && SITE_TZ[code];
+  if (z) o.timeZone = z;
+  try { return d.toLocaleString('en-US', o); } catch (e) { delete o.timeZone; return d.toLocaleString('en-US', o); }
+}
 function _bAlertTxt(list, code){
-  return list.map(function(a){ return a.event + (a.expires ? ' until '+fmtTime(a.expires, code) : ''); }).join('; ');
+  return list.map(function(a){ return a.event + (a.expires ? ' until '+_bFmtT(a.expires, code) : ''); }).join('; ');
+}
+// ERO valid times arrive in UTC; the briefing shows site-local time with the day.
+function _bEroLocal(code, info){
+  function iso(s){ if(!s) return null; var d = new Date(String(s).replace(' ','T') + (String(s).indexOf('Z') > -1 ? '' : 'Z')); return isNaN(d.getTime()) ? null : d.toISOString(); }
+  var a = iso(info.start), b = iso(info.end);
+  if (a && b) return _bHrLabel(a, code) + ' to ' + _bHrLabel(b, code);
+  if (a) return 'From ' + _bHrLabel(a, code);
+  if (b) return 'Until ' + _bHrLabel(b, code);
+  return info.timing || 'Not specified';
+}
+function _bTafIso(ddhh){
+  var dd = +ddhh.slice(0,2), hh = +ddhh.slice(2,4), n = new Date();
+  var mo = n.getUTCMonth();
+  if (dd < n.getUTCDate() - 15) mo++;
+  return new Date(Date.UTC(n.getUTCFullYear(), mo, dd, hh)).toISOString();
 }
 function _bRH(tempF, dewF){
   if (tempF==null || dewF==null) return null;
@@ -3199,12 +3228,10 @@ function _bHrLabel(iso, code){
   if (z) o.timeZone = z;
   var t;
   try { t = d.toLocaleTimeString('en-US', o); } catch (e) { delete o.timeZone; t = d.toLocaleTimeString('en-US', o); }
-  // The forecast window runs 24h, so a bare "10:00 AM" read at 3 PM looks like a
-  // time that already passed. Name the day whenever it is not today AT THE SITE.
-  if (_siteDateKey(d, code) !== _siteDateKey(n, code)) {
-    var wo = {weekday:'short'}; if (z) wo.timeZone = z;
-    try { t = d.toLocaleDateString('en-US', wo) + ' ' + t; } catch (e) {}
-  }
+  // v54: the day is always named ("Sun 3:00 PM MDT"), including today at the
+  // site, so no entry in the briefing depends on the reader knowing the date.
+  var wo = {weekday:'short'}; if (z) wo.timeZone = z;
+  try { t = d.toLocaleDateString('en-US', wo) + ' ' + t; } catch (e) {}
   return t;
 }
 function _bWindMph(p){
@@ -3237,7 +3264,7 @@ function _bTsTiming(code){
   var taf = tafData && tafData[code];
   if (taf && taf.rawTAF && /\bTS/.test(taf.rawTAF)) {
     var mm = taf.rawTAF.match(/(?:TEMPO|PROB\d{2})\s+(\d{2})(\d{2})\/(\d{2})(\d{2})/);
-    if (mm) return 'Thunderstorms possible ' + mm[2] + '00Z\u2013' + mm[4] + '00Z';
+    if (mm) return 'Thunderstorms possible ' + _bHrLabel(_bTafIso(mm[1]+mm[2]), code) + ' to ' + _bHrLabel(_bTafIso(mm[3]+mm[4]), code);
     return 'Thunderstorms in TAF period';
   }
   return null;
@@ -3278,8 +3305,9 @@ var WATCH_BRIEF_SECTIONS = [
       if (maxHail) probs.push('HAIL '+maxHail+'%');
       if (maxWind) probs.push('WIND '+maxWind+'%');
       var hz = Z[z].hazards + (probs.length ? ' | Max probs: '+probs.join(' ') : '');
+      var _zt = {HIGH:3, MDT:3, ENH:2, SLGT:2, MRGL:1, TSTM:1}[z];
       groups.push({label:Z[z].label, level:Z[z].level, bg:Z[z].bg, docxBg:Z[z].docxBg,
-                   action:Z[z].action, hazards:hz, probs:probs.join(' '),
+                   action:TIER_NAME[_zt], tier:_zt, tierFixed:true, hazards:hz, probs:probs.join(' '),
                    listOnly:(z==='TSTM'),
                    cols:['FBO','City / State','Timing'], rows:rows});
     });
@@ -3332,18 +3360,19 @@ var WATCH_BRIEF_SECTIONS = [
     codes.forEach(function(c){
       var info = (typeof getEroInfoForCode==='function') ? getEroInfoForCode(c) : null;
       if (!info) return;
-      (byTier[info.tier] = byTier[info.tier] || []).push(_bRow(c, ERO_TIER_LABEL[info.tier]||info.tier, info.timing||'Not specified'));
+      (byTier[info.tier] = byTier[info.tier] || []).push(_bRow(c, ERO_TIER_LABEL[info.tier]||info.tier, _bEroLocal(c, info)));
     });
     var groups = ERO_TIER_ORDER.filter(function(t){return byTier[t]&&byTier[t].length;}).map(function(t){
-      return {label:(ERO_TIER_LABEL[t]||t)+' RISK', bg:'#0369a1', docxBg:'0369A1', action:'', hazards:'',
+      var _et = {HIGH:3, MDT:3, SLGT:2, MRGL:1}[t] || 1;
+      return {label:(ERO_TIER_LABEL[t]||t)+' RISK', bg:'#0369a1', docxBg:'0369A1', action:TIER_NAME[_et], tier:_et, tierFixed:true, hazards:'',
               cols:['FBO','City / State','ERO Risk','Timing (Valid Period)'], rows:byTier[t]};
     });
     return groups.length ? {groups:groups} : null;
   }},
 
 // 6 ── 24h heavy rainfall forecast ───────────────────────────────────────────
-{ id:'rainfcst', title:'24-HOUR HEAVY RAINFALL FORECAST', sub:'50% or greater chance of precipitation',
-  icon:'\uD83C\uDF27', bg:'#0891b2', tc:'#fff', docxBg:'0891B2', actions:'flood',
+{ id:'rainfcst', title:'RAIN LIKELY (NEXT 24 HOURS)', sub:'50% or greater chance of precipitation. Awareness only: this is not a flooding signal. See the WPC Excessive Rainfall Outlook for flood risk.',
+  icon:'\uD83C\uDF27', bg:'#0891b2', tc:'#fff', docxBg:'0891B2', actions:null,
   collect:function(codes){
     var rows=[];
     codes.forEach(function(c){
@@ -3473,9 +3502,9 @@ var WATCH_BRIEF_SECTIONS = [
   }},
 
 // 15 ── Forecast real feel ───────────────────────────────────────────────────
-{ id:'feelfcst', title:'FORECAST REAL FEEL TEMPERATURE',
-  sub:'Above '+BRIEF_HEAT_F+'\u00B0F, below '+BRIEF_COLD_F+'\u00B0F, heat index above '+BRIEF_HEATIDX_F+'\u00B0F, or wind chill below '+BRIEF_CHILL_F+'\u00B0F',
-  icon:'\uD83C\uDF21', bg:'#9f1239', tc:'#fff', docxBg:'9F1239', actions:'heat',
+{ id:'feelfcst', title:'FORECAST REAL FEEL TEMPERATURE (AWARENESS)',
+  sub:'Awareness only, no action block. Above '+BRIEF_HEAT_F+'\u00B0F, below '+BRIEF_COLD_F+'\u00B0F, heat index above '+BRIEF_HEATIDX_F+'\u00B0F, or wind chill below '+BRIEF_CHILL_F+'\u00B0F. NWS heat and cold products are listed under their own sections.',
+  icon:'\uD83C\uDF21', bg:'#9f1239', tc:'#fff', docxBg:'9F1239', actions:null,
   collect:function(codes){
     var rows=[];
     codes.forEach(function(c){
@@ -3722,6 +3751,8 @@ function collectBriefSections(codes, sel){
     else if (!d.rows || !d.rows.length) return;
     out.push({def:def, data:d});
   });
+  _bMergeOther(out);
+  _bAnnotateSections(out);
   return out;
 }
 
@@ -3788,120 +3819,753 @@ function buildBriefNarrativeParts(secs){
     outro:'All impacted locations should complete preparations before conditions arrive rather than waiting for a formal watch or warning.' };
 }
 
-// ══ SHARED BRIEFING RENDERERS ══════════════════════════════════════════════
-// Actions belong to a hazard family, not to every individual section, so a run
-// of consecutive sections sharing an actions key emits one block after the last
-// table in that run. That keeps actionables directly below the impacted bases.
-function _bActionRuns(secs){
-  var runs=[];
-  secs.forEach(function(s,i){
-    var next = secs[i+1];
-    var emit = s.def.actions && (!next || next.def.actions !== s.def.actions);
-    runs.push(emit ? s.def.actions : null);
+// ══ v54 BRIEFING STRUCTURE ═════════════════════════════════════════════════
+// One severity scale for every output, a priority summary and base index at the
+// top, standing actions stated once, tier-scaled hazard actions, and (forecast
+// briefing) a per-base timeline grid with peak day, trend and change markers.
+
+// Warning-tier wind. The forecast engine already treats gust 46+ or sustained 40+
+// as WARNING for days 2+, so the daily briefing uses the same numbers.
+var BRIEF_WIND_WARN_SUS_MPH = 40;
+var BRIEF_WIND_WARN_GST_MPH = 46;
+
+var TIER_NAME = {3:'WARNING', 2:'ADVISORY', 1:'MONITOR'};
+var TIER_ABBR = {3:'WARN',    2:'ADV',      1:'MON'};
+var TIER_BG   = {3:'#dc2626', 2:'#d97706',  1:'#0891b2'};
+var TIER_FILL = {3:'#fde2e2', 2:'#fdebd0',  1:'#ddf0f6'};
+var TIER_DOCX = {3:'DC2626',  2:'D97706',   1:'0891B2'};
+var TIER_FILL_DOCX = {3:'FDE2E2', 2:'FDEBD0', 1:'DDF0F6'};
+
+var BRIEF_FAMILY_ORDER = ['THUNDER','RAIN','WIND','TEMP','WINTER','TROP','OTHER'];
+var BRIEF_FAMILY_COL   = {THUNDER:'Thunder', RAIN:'Rain / flood', WIND:'Wind', TEMP:'Heat / cold', WINTER:'Winter', TROP:'Tropical', OTHER:'Other'};
+var BRIEF_FAMILY_TXT   = {THUNDER:'thunderstorms', RAIN:'rain / flooding', WIND:'wind', TEMP:'heat / cold', WINTER:'winter weather', TROP:'tropical', OTHER:'fire, dust, air quality or other alerts'};
+var BRIEF_FAMILY_OF = {
+  spc:'THUNDER', tsfcst:'THUNDER', lightning:'THUNDER', tsalerts:'THUNDER',
+  ero:'RAIN', rainfcst:'RAIN', floodalerts:'RAIN',
+  windalerts:'WIND', windcur:'WIND', windfcstsus:'WIND', windfcstgust:'WIND',
+  chillalerts:'TEMP', heatalerts:'TEMP', heatcur:'TEMP', feelfcst:'TEMP',
+  winteralerts:'WINTER', snowice:'WINTER',
+  tropical:'TROP', dust:'OTHER', fire:'OTHER', aqi:'OTHER', otheralerts:'OTHER',
+  ext_SEVERE:'THUNDER', ext_TSTM:'THUNDER', ext_WIND:'WIND', ext_WINTER:'WINTER',
+  ext_TROPICAL:'TROP', ext_RAIN:'RAIN', ext_HEAT:'TEMP', ext_COLD:'TEMP', ext_SYSTEM:'OTHER'
+};
+
+// Daily section order is by consequence: people move now (lightning, NWS
+// products, current conditions), then forecast hazards, then awareness, then outlooks.
+var BRIEF_GROUP_LABEL = {
+  now:      'ACTIVE NOW: current conditions and NWS products in effect',
+  forecast: 'FORECAST HAZARDS: next 24 hours',
+  aware:    'AWARENESS: informational, no action block',
+  outlook:  'OUTLOOKS: SPC, WPC and NHC guidance'
+};
+var BRIEF_ORDER = [
+  ['lightning','now'],['tsalerts','now'],['floodalerts','now'],['windalerts','now'],['windcur','now'],
+  ['chillalerts','now'],['heatalerts','now'],['heatcur','now'],['winteralerts','now'],['dust','now'],
+  ['fire','now'],['aqi','now'],['tropical','now'],['otheralerts','now'],
+  ['tsfcst','forecast'],['windfcstsus','forecast'],['windfcstgust','forecast'],['snowice','forecast'],
+  ['rainfcst','aware'],['feelfcst','aware'],
+  ['spc','outlook'],['ero','outlook'],['nhc','outlook']
+];
+(function(){
+  var pos = {};
+  BRIEF_ORDER.forEach(function(p,i){ pos[p[0]] = {i:i, g:p[1]}; });
+  WATCH_BRIEF_SECTIONS.forEach(function(d){ if (pos[d.id]) d.grp = pos[d.id].g; });
+  WATCH_BRIEF_SECTIONS.sort(function(a,b){
+    return (pos[a.id] ? pos[a.id].i : 99) - (pos[b.id] ? pos[b.id].i : 99);
   });
-  return runs;
+})();
+
+function _bCode(code){ return code + (INTL_CODES.has(code) ? '†' : ''); }
+function _bList(arr, n){
+  var out = arr.slice(0, n).map(_bCode).join(', ');
+  return out + (arr.length > n ? ' +' + (arr.length - n) + ' more' : '');
+}
+function _bNum(re, txt){ var m = String(txt||'').match(re); return m ? Number(m[1]) : 0; }
+function _bLeadDate(lead){ var d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate() + Number(lead)); return d; }
+function _bLeadShort(lead){ return _bLeadDate(lead).toLocaleDateString('en-US', {weekday:'short'}); }
+function _bLeadMD(lead){ var d = _bLeadDate(lead); return (d.getMonth()+1) + '/' + d.getDate(); }
+
+// NWS product text carries its own tier: warnings act now, watches and advisories prepare.
+function _bTextTier(txt){
+  txt = String(txt||'');
+  if (/warning|emergency/i.test(txt)) return 3;
+  if (/watch|advisory|alert/i.test(txt)) return 2;
+  return 1;
+}
+function _bRowTier(id, g, r){
+  var d1 = r.detail || '', d2 = r.detail2 || '', both = d1 + ' ' + d2, t;
+  switch (id) {
+    case 'spc': case 'ero': return g.tier || 1;
+    case 'lightning': return /^LIGHTNING PROTOCOL/i.test(d1) ? 3 : 2;
+    case 'windcur': return (_bNum(/^(\d+)/, d1) >= BRIEF_WIND_WARN_SUS_MPH || _bNum(/G(\d+)/, d1) >= BRIEF_WIND_WARN_GST_MPH) ? 3 : 2;
+    case 'windfcstsus': return _bNum(/^(\d+)/, d1) >= BRIEF_WIND_WARN_SUS_MPH ? 3 : 2;
+    case 'windfcstgust': return _bNum(/G(\d+)/, d1) >= BRIEF_WIND_WARN_GST_MPH ? 3 : 2;
+    case 'heatcur': return 2;
+    case 'tsfcst': case 'rainfcst': case 'feelfcst': return 1;
+    case 'winteralerts':
+      t = _bTextTier(d1);
+      if (/major|extreme/i.test(d2)) t = Math.max(t, 3); else if (/moderate/i.test(d2)) t = Math.max(t, 2);
+      return t;
+    case 'tropical': t = _bTextTier(d1); return (t === 1 && /cone/i.test(d1)) ? 2 : t;
+    case 'dust': t = _bTextTier(d1); return t > 1 ? t : 2;
+    case 'fire':
+      t = _bTextTier(d1);
+      if (/extremely critical/i.test(both)) t = Math.max(t, 3); else if (/critical/i.test(both)) t = Math.max(t, 2);
+      return t;
+    case 'aqi':
+      t = _bTextTier(d1);
+      var a = _bNum(/AQI (\d+)/, both);
+      if (a >= 201) t = Math.max(t, 3); else if (a >= 101) t = Math.max(t, 2);
+      return t;
+    default: return _bTextTier(d1);
+  }
+}
+function _bAnnotateSections(secs){
+  secs.forEach(function(s){
+    var d = s.data;
+    if (d.html) return;
+    var groups = d.groups || [{rows:d.rows}];
+    var smax = 0;
+    groups.forEach(function(g){
+      if (g.track) return;
+      var gmax = 0;
+      g.rows.forEach(function(r){
+        if (!r.tier) r.tier = _bRowTier(s.def.id, g, r);
+        if (r.tier > gmax) gmax = r.tier;
+      });
+      if (!g.tier) g.tier = gmax;
+      if (g.tier > smax) smax = g.tier;
+    });
+    s.tier = smax;
+  });
+  return secs;
 }
 
-// ── Live BRIEFING tab: cards only, no narrative / supervisor / disclaimer ────
+// Rip current, high surf and beach statements belong beside the same base's
+// flood or wind entry instead of in a separate table at the end.
+function _bMergeOther(out){
+  var idx = {};
+  out.forEach(function(s,i){ idx[s.def.id] = i; });
+  if (idx.otheralerts == null) return;
+  function rowOf(id, code){
+    if (idx[id] == null) return null;
+    var rows = out[idx[id]].data.rows || [];
+    for (var i = 0; i < rows.length; i++) if (rows[i].code === code) return rows[i];
+    return null;
+  }
+  var oth = out[idx.otheralerts], keep = [];
+  oth.data.rows.forEach(function(r){
+    var tgt = null;
+    if (/surf|rip current|beach|coastal|marine|tsunami/i.test(r.detail)) tgt = rowOf('floodalerts', r.code) || rowOf('windalerts', r.code);
+    if (tgt) tgt.detail = tgt.detail + '\nAlso: ' + r.detail;
+    else keep.push(r);
+  });
+  oth.data.rows = keep;
+  if (!keep.length) out.splice(idx.otheralerts, 1);
+}
+
+// ── Tier-scaled actions ─────────────────────────────────────────────────────
+// ADVISORY tier gets the short prepare list. WARNING tier gets that list plus the
+// restrictive items. Standing actions are printed once at the top, not here.
+var _STANDING_ACTIONS = [
+  'Review the Atlantic Aviation Prep Guide as applicable for full checklists and procedures.',
+  'Brief your entire team on conditions and expected timing before the threat arrives. Do not wait for a formal watch or warning to begin preparations.',
+  'Employee safety takes priority over all operations. Enforce stop-work authority: any employee who feels unsafe has the right and responsibility to stop work.'
+];
+var _ACT = {
+  thunderstorm: {title:'Thunderstorms, Lightning, Hail and Tornadoes', color:'#1a2a3a',
+    adv:['Brief the team on expected timing and be ready to stop outdoor work the moment lightning is within 5 miles.',
+         'Secure loose ramp items and stage GSE so it can be moved or chocked quickly.',
+         'Plan aircraft placement now: hangar where able and chock the rest.'],
+    warn:['Move all personnel indoors when lightning is within 5 miles or conditions are imminent. Stop all outdoor operations. No one on the ramp, in open structures, in refuelers or near hangar doors.',
+          'Tornado warning: move immediately to designated interior shelters away from windows. Do not return outside until an all-clear is confirmed and the ramp is reassessed.',
+          'Triple-chock aircraft left on the ramp and notify crews of unsecured panels, doors or hail risk.',
+          'Move GSE inside or chock with brakes set, wheels away from buildings and fuel storage. Lower air stairs and open baggage cart curtains.',
+          'Resume only after the threat has passed, a full ramp FOD sweep and aircraft inspection are complete, and a post-event safety huddle is held.']},
+  wind: {title:'High Winds', color:'#ea580c',
+    adv:['Remove or secure loose ramp items: cones, chocks, wands, mats, trash cans, rolling dumpsters. Close and secure hangar and facility doors.',
+         'Chock aircraft and GSE, set parking brakes, lower air stairs and open baggage cart curtains.',
+         'No ladder use and no aerial lifts.'],
+    warn:['Cease overwing fueling. If high-wing fueling is unavoidable, two employees must be present.',
+          'No towing, especially light aircraft.',
+          'Halt all non-essential outdoor operations. Triple-chock aircraft or move to hangars where able, and notify crews of unsecured panels or doors when safely able.',
+          'Prohibit all elevated work.',
+          'Full ramp sweep and visual inspection of aircraft, GSE and structures before resuming normal operations.']},
+  heat: {title:'Extreme Heat / High Heat Index', color:'#dc2626',
+    adv:['Water breaks every hour in shade or air conditioning. Keep water, electrolyte packets and cooling towels stocked at all break areas.',
+         'Shorten ramp duty cycles and move high-exertion tasks to cooler hours.',
+         'Pair crews to watch each other for heat illness.'],
+    warn:['Limit ramp duty cycles to 30 to 45 minutes during peak heat and limit time on blacktop.',
+          'Educate staff on heat exhaustion versus heat stroke and post signs in all work areas.',
+          'Escort passengers directly from the lobby to the aircraft and notify customers of service adjustments.',
+          'Supervisors hold daily huddles covering temperatures, adjusted plans and break schedules.']},
+  cold: {title:'Extreme Cold', color:'#1e40af',
+    adv:['Full cold-weather PPE for outdoor work: insulated waterproof gloves, jackets, hats, coveralls or bibs. Provide hand and foot warmers.',
+         'Breaks in warm, dry areas with water and warm beverages.',
+         'Keep first aid kits stocked and brief staff on cold stress symptoms.'],
+    warn:['Limit outdoor exposure to under 30 minutes per NOAA frostbite guidelines. Balaclavas or ski masks in extreme cold.',
+          'No wool or polyester gloves during fueling. Use fleece-lined nitrile gloves and discard fuel-soaked cloth gloves.',
+          'High-visibility outerwear and wands during precipitation. Slow, steady movement on all surfaces.']},
+  flood: {title:'Flooding / Excessive Precipitation', color:'#065f46',
+    adv:['Avoid ramp operations in areas with standing water and do not drive equipment through flooded zones.',
+         'Keep employees out of water of unknown depth and away from exposed wiring or fuel-contaminated floodwater.',
+         'Stay in contact with airport operations and local authorities.'],
+    warn:['Cease all fueling and ramp operations in areas with standing water.',
+          'Move all personnel to dry, protected indoor areas and keep shelter access and egress clear.',
+          'Elevate essential GSE, power units and tools. Shut down power to low-lying storage and cover exposed electrical panels.',
+          'Do not resume until a full ramp and facility inspection is completed and cleared.']},
+  winter: {title:'Ice / Freezing Precipitation', color:'#0891b2',
+    adv:['Ice cleats and high-visibility PPE for all outdoor work.',
+         'Apply approved airport-safe ice melt to walkways and post signage near icy surfaces.',
+         'Store lav carts, deicers and GPUs indoors or under cover. Advise crews of ice accumulation risk on tail and control surfaces.'],
+    warn:['Shelter employees indoors during active freezing rain or icing.',
+          'Halt GSE movement, towing and ladder use when conditions warrant. No GSE unless traction and steering are confirmed. No aerial lifts or standing ladders on ice.',
+          'Slow all movement and operating speeds and reinforce cold stress symptoms and PPE requirements.']},
+  dust: {title:'Blowing Dust / Sand', color:'#a16207',
+    adv:['Watch visibility against operational minimums. Blowing dust can reduce it to near zero in minutes.',
+         'Eye protection and N95 masks (or higher) for outdoor work while dust is present.',
+         'Cover or hangar aircraft where able and keep fuel caps and ports covered.'],
+    warn:['Suspend ramp operations when visibility drops below operational minimums. Stop all aircraft movement and towing during a dust storm.',
+          'Close hangar doors and shut down fresh-air intakes.',
+          'Do not fuel in blowing dust unless the point of contact stays clean.',
+          'Inspect GSE filters and intakes after the event and complete a ramp inspection before normal operations.']},
+  fire: {title:'Fire Weather', color:'#b45309',
+    adv:['Confirm hot-work permits with airport operations before any outdoor welding, grinding, cutting or open flame.',
+         'Stage spill kits at every fueling point and clean up drips immediately.',
+         'No smoking or ignition sources on the ramp or near fuel storage.'],
+    warn:['Defer outdoor hot work while a Red Flag Warning or critical fire weather is in effect.',
+          'Keep vehicles and GSE off dry grass, where hot exhaust and brakes can start fires.',
+          'Report any smoke or fire immediately to airport operations, ARFF and 911. Brief staff on the evacuation route and assembly point.',
+          'If wildfire smoke or ash reaches the airport, monitor visibility and air quality and follow the Poor Air Quality actions.']},
+  aqi: {title:'Poor Air Quality', color:'#7c3aed',
+    adv:['N95 masks (or higher) for outdoor ramp work while AQI is degraded.',
+         'Monitor employees with asthma or other respiratory conditions and reassign them indoors as needed.'],
+    warn:['Shelter employees indoors when AQI exceeds 200 and limit outdoor task duration below that.',
+          'Close hangar doors and disable fresh-air intake fans when smoke is present.',
+          'Advise customers to keep aircraft windows and vents closed while parked.',
+          'No compressed air or dry sweeping during ash events. Wet ash before cleanup.']}
+};
+function _bActionModel(type, tier){
+  var A = _ACT[type];
+  if (!A || tier < 2) return null;
+  return {title:A.title, color:A.color, tier:tier,
+          head:'ACTIONS: ' + A.title.toUpperCase() + ' | ' + TIER_NAME[tier] + ' TIER' + (tier >= 3 ? ' (includes ADVISORY actions)' : ''),
+          items: tier >= 3 ? A.adv.concat(A.warn) : A.adv.slice()};
+}
+function _bActionBlockHTML(m){
+  if (!m) return '';
+  return '<div style="margin:10px 0 14px 0;border:1px solid '+m.color+';border-radius:4px;overflow:hidden">'
+    + '<div style="background:'+m.color+';color:#fff;font-size:10px;font-weight:700;padding:6px 12px;letter-spacing:.04em">'+m.head+'</div>'
+    + '<ol style="margin:0;padding:10px 12px 10px 28px">'
+    + m.items.map(function(i){ return '<li style="margin-bottom:5px;font-size:11px;color:#1a2a3a;line-height:1.5">'+i+'</li>'; }).join('')
+    + '</ol></div>';
+}
+// One block per hazard type, under the first run of sections of that type, at the
+// highest tier found anywhere in that type. MONITOR-only types print no block.
+function _bActionPlan(secs){
+  var plan = secs.map(function(){ return null; }), byType = {};
+  secs.forEach(function(s,i){
+    var t = s.def.actions;
+    if (!t || t === 'universal' || !_ACT[t]) return;
+    var e = byType[t] || (byType[t] = {first:i, max:0});
+    if ((s.tier || 0) > e.max) e.max = s.tier;
+  });
+  Object.keys(byType).forEach(function(t){
+    var e = byType[t];
+    if (e.max < 2) return;
+    var j = e.first;
+    while (j + 1 < secs.length && secs[j+1].def.actions === t) j++;
+    plan[j] = {type:t, tier:e.max};
+  });
+  return plan;
+}
+
+// ── Region lookup (manager areas) ───────────────────────────────────────────
+function _bRegionOf(code){
+  if (!_bRegionOf._m) {
+    var m = {};
+    Object.keys(GRID_REGIONS).forEach(function(r){
+      if (r === 'All' || !GRID_REGIONS[r]) return;
+      GRID_REGIONS[r].forEach(function(c){ if (!m[c]) m[c] = r; });
+    });
+    _bRegionOf._m = m;
+  }
+  return _bRegionOf._m[code] || null;
+}
+
+// ── Summary, base index, standing actions ───────────────────────────────────
+function _bBaseMap(secs){
+  var base = {};
+  secs.forEach(function(s){
+    var d = s.data;
+    if (d.html) return;
+    var F = BRIEF_FAMILY_OF[s.def.id] || 'OTHER';
+    function put(code, tier, peak){
+      var b = base[code] || (base[code] = {code:code, max:0, fam:{}});
+      var f = b.fam[F];
+      if (!f || tier > f.tier || (tier === f.tier && peak != null && (f.peak == null || peak < f.peak))) b.fam[F] = {tier:tier, peak:peak};
+      if (tier > b.max) b.max = tier;
+    }
+    if (d.grid) { d.grid.rows.forEach(function(r){ if (!r.dropped) put(r.code, r.tier, r.peakLead); }); return; }
+    (d.groups || [{rows:d.rows}]).forEach(function(g){
+      if (g.track) return;
+      g.rows.forEach(function(r){ put(r.code, r.tier || g.tier || 1, null); });
+    });
+  });
+  return base;
+}
+function _bMultiDay(secs){
+  var out = [];
+  secs.forEach(function(s){
+    var g = s.data.grid;
+    if (!g) return;
+    var codes = [], leads = [], mx = 0;
+    g.rows.forEach(function(r){
+      if (r.dropped) return;
+      var ls = Object.keys(r.cells).filter(function(l){ return r.cells[l].rank >= 2; }).map(Number);
+      if (ls.length >= 2) { codes.push(r.code); leads = leads.concat(ls); mx = Math.max(mx, r.tier); }
+    });
+    if (!codes.length) return;
+    var lo = Math.min.apply(null, leads), hi = Math.max.apply(null, leads);
+    out.push({tier:mx, n:codes.length, text:_extKindLabel(s.def.id.replace(/^ext_/,'')) + ': ' + _bList(codes, 6)
+      + ' (' + _bLeadShort(lo) + (hi > lo ? ' to ' + _bLeadShort(hi) : '') + ', up to ' + TIER_NAME[mx] + ')'});
+  });
+  out.sort(function(a,b){ return b.tier - a.tier || b.n - a.n; });
+  return out.slice(0, 3);
+}
+function _bChangeCounts(secs){
+  var c = {NEW:0, WORSENED:0, IMPROVED:0, DROPPED:0, any:false};
+  secs.forEach(function(s){
+    var g = s.data.grid;
+    if (!g || !g.hasChange) return;
+    c.any = true;
+    g.rows.forEach(function(r){ if (c[r.change] != null) c[r.change]++; });
+  });
+  return c;
+}
+function _bTopModel(secs, codes){
+  var base = _bBaseMap(secs);
+  var bc = Object.keys(base);
+  var nW = bc.filter(function(c){ return base[c].max === 3; }).length;
+  var nA = bc.filter(function(c){ return base[c].max === 2; }).length;
+  var nM = bc.filter(function(c){ return base[c].max === 1; }).length;
+  function famParts(tier){
+    var parts = [];
+    BRIEF_FAMILY_ORDER.forEach(function(F){
+      var cs = bc.filter(function(c){ return base[c].fam[F] && base[c].fam[F].tier === tier; }).sort();
+      if (cs.length) parts.push(BRIEF_FAMILY_TXT[F].replace(/^./, function(x){ return x.toUpperCase(); }) + ' (' + _bList(cs, 6) + ')');
+    });
+    return parts;
+  }
+  var isFc = secs.some(function(s){ return !!s.data.grid; });
+  var lines = [];
+  var w = famParts(3), a = famParts(2);
+  lines.push({k:'Top tier (WARNING)', v:w.length ? w.join('; ') : 'None. No base has a warning-level hazard.'});
+  lines.push({k:'Next tier (ADVISORY)', v:a.length ? a.join('; ') : 'None.'});
+  var ranked = bc.filter(function(c){ return base[c].max >= 2; }).sort(function(x,y){
+    var bx = base[x], by = base[y];
+    var cx = BRIEF_FAMILY_ORDER.filter(function(F){ return bx.fam[F] && bx.fam[F].tier >= 2; }).length;
+    var cy = BRIEF_FAMILY_ORDER.filter(function(F){ return by.fam[F] && by.fam[F].tier >= 2; }).length;
+    return by.max - bx.max || cy - cx || (x < y ? -1 : 1);
+  }).slice(0, 5);
+  lines.push({k:'Sites of greatest concern', v:ranked.length ? ranked.map(function(c){
+    var b = base[c];
+    var fams = BRIEF_FAMILY_ORDER.filter(function(F){ return b.fam[F] && b.fam[F].tier === b.max; }).map(function(F){ return BRIEF_FAMILY_TXT[F].split(',')[0]; });
+    return _bCode(c) + ' (' + TIER_NAME[b.max] + ': ' + fams.join(', ') + ')';
+  }).join('; ') : 'None. Every listed base is MONITOR only.'});
+  if (isFc) {
+    var md = _bMultiDay(secs);
+    lines.push({k:'Multi-day events', v:md.length ? md.map(function(x){ return x.text; }).join('; ') : 'None. No base has the same hazard on two or more days at ADVISORY or above.'});
+    var ch = _bChangeCounts(secs);
+    lines.push({k:'Change since last issue', v:ch.any
+      ? ch.NEW + ' new, ' + ch.WORSENED + ' worsened, ' + ch.IMPROVED + ' improved, ' + ch.DROPPED + ' dropped'
+      : 'Not available. No earlier issue is recorded on this device (use Mark as sent on each issue to enable this).'});
+  } else {
+    lines.push({k:'Duration', v:'Next 24 hours only. Multi-day events are in the Forecast briefing (Sunday and Wednesday issues).'});
+  }
+  var gaps = (typeof _briefDataGaps === 'function') ? _briefDataGaps(codes).length : 0;
+  lines.push({k:'Coverage', v:bc.length + ' of ' + codes.length + ' bases have a listed hazard: ' + nW + ' at WARNING, ' + nA + ' at ADVISORY, ' + nM + ' MONITOR only.'
+    + (gaps ? ' ' + gaps + ' base' + (gaps !== 1 ? 's have' : ' has') + ' a data gap (not an all-clear).' : '')});
+
+  // base index: bases with a hazard at ADVISORY or above, grouped by manager area
+  var cols = BRIEF_FAMILY_ORDER.filter(function(F){ return bc.some(function(c){ return base[c].fam[F] && base[c].fam[F].tier >= 2; }); });
+  var regions = {}, regionOrder = Object.keys(GRID_REGIONS).filter(function(r){ return r !== 'All'; });
+  bc.filter(function(c){ return base[c].max >= 2; }).forEach(function(c){
+    var rg = _bRegionOf(c) || 'Corporate / unassigned';
+    (regions[rg] = regions[rg] || []).push(c);
+  });
+  var regList = regionOrder.concat(['Corporate / unassigned']).filter(function(r){ return regions[r]; }).map(function(r){
+    return {name:(r === 'Corporate / unassigned' ? r : r + ' area'), rows:regions[r].sort(function(x,y){
+      return base[y].max - base[x].max || (x < y ? -1 : 1);
+    }).map(function(c){
+      var f = _bFbo(c);
+      return {code:c, city:(f.city||'') + (f.state ? ', ' + f.state : ''), max:base[c].max, cells:cols.map(function(F){
+        var e = base[c].fam[F];
+        if (!e || e.tier < 2) return {tier:0, txt:''};
+        return {tier:e.tier, txt:TIER_ABBR[e.tier] + (e.peak != null ? ' ' + _bLeadShort(e.peak) : '')};
+      })};
+    })};
+  });
+  var monOnly = bc.filter(function(c){ return base[c].max === 1; }).sort();
+  var hasIntl = bc.some(function(c){ return INTL_CODES.has(c); });
+  return {lines:lines, index:{cols:cols, regions:regList, monOnly:monOnly}, hasIntl:hasIntl, isFc:isFc,
+          counts:{W:nW, A:nA, M:nM, total:bc.length}};
+}
+
+function _bTopHTML(top){
+  var h = '<div style="border:2px solid #0E2841;border-radius:4px;margin:0 0 12px 0;overflow:hidden">'
+    + '<div style="background:#0E2841;color:#fff;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.05em">SUMMARY: WHAT MATTERS MOST</div>'
+    + '<div style="padding:8px 12px;font-size:11px;line-height:1.55">'
+    + top.lines.map(function(l){ return '<div style="margin:0 0 3px 0"><strong>'+l.k+':</strong> '+l.v+'</div>'; }).join('')
+    + '</div></div>';
+  var ix = top.index;
+  if (ix.regions.length) {
+    h += '<div style="background:#0E2841;color:#fff;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.05em">BASE INDEX (ADVISORY AND ABOVE, BY AREA)</div>';
+    h += '<table style="width:100%;border-collapse:collapse;margin:0 0 6px 0"><tr style="background:#f0f4f7">'
+      + '<th style="border:1px solid #ddd;text-align:left;font-size:10px;color:#556070;padding:3px 6px;width:22%">Base</th>'
+      + ix.cols.map(function(F){ return '<th style="border:1px solid #ddd;text-align:center;font-size:10px;color:#556070;padding:3px 4px">'+BRIEF_FAMILY_COL[F]+'</th>'; }).join('') + '</tr>';
+    ix.regions.forEach(function(rg){
+      h += '<tr><td colspan="'+(ix.cols.length+1)+'" style="background:#e3e8ed;border:1px solid #ddd;font-weight:700;font-size:10px;padding:3px 6px;color:#0E2841">'+rg.name+'</td></tr>';
+      rg.rows.forEach(function(r){
+        h += '<tr><td style="border:1px solid #ddd;padding:3px 6px;font-size:10px"><strong>'+_bCode(r.code)+'</strong> <span style="color:#556070">'+r.city+'</span></td>'
+          + r.cells.map(function(c){
+              return '<td style="border:1px solid #ddd;padding:3px 4px;text-align:center;font-size:10px;font-weight:700'
+                + (c.tier ? ';background:'+TIER_FILL[c.tier]+';color:#1a2a3a' : '') + '">'+c.txt+'</td>';
+            }).join('') + '</tr>';
+      });
+    });
+    h += '</table>';
+  }
+  if (ix.monOnly.length) h += '<div style="font-size:10px;color:#556070;margin:0 0 10px 0;overflow-wrap:anywhere"><strong>MONITOR only (awareness, no actions):</strong> '+ix.monOnly.map(_bCode).join(' · ')+'</div>';
+  h += _bStandingHTML();
+  return h;
+}
+function _bStandingHTML(){
+  return '<div style="margin:10px 0 14px 0;border:1px solid #0E2841;border-radius:4px;overflow:hidden">'
+    + '<div style="background:#0E2841;color:#fff;font-size:10px;font-weight:700;padding:6px 12px;letter-spacing:.04em">STANDING ACTIONS: ALL HAZARDS, ALL TIERS</div>'
+    + '<ol style="margin:0;padding:10px 12px 10px 28px">'
+    + _STANDING_ACTIONS.map(function(i){ return '<li style="margin-bottom:5px;font-size:11px;color:#1a2a3a;line-height:1.5">'+i+'</li>'; }).join('')
+    + '</ol></div>';
+}
+
+// ── Legend and reading guide (footer) ───────────────────────────────────────
+function _bLegendLines(hasIntl, isFc){
+  var L = [];
+  L.push('WARNING = act now: an NWS warning, or a forecast at warning level (sustained wind '+BRIEF_WIND_WARN_SUS_MPH+'+ mph or gusts '+BRIEF_WIND_WARN_GST_MPH+'+ mph, SPC Moderate or High, WPC excessive rainfall Moderate or High, WSSI Major or Extreme). '
+       + 'ADVISORY = prepare: an NWS watch or advisory, or a forecast at advisory level (sustained wind '+BRIEF_WIND_SUS_MPH+'+ mph or gusts '+BRIEF_WIND_GST_MPH+'+ mph today, 25+ and 35+ mph for days 2 and later; SPC Enhanced or Slight; WPC Slight; WSSI Moderate). '
+       + 'MONITOR = awareness only, no action block (SPC Marginal or general thunder, WPC Marginal, rain likely, real feel).');
+  L.push('How to read this: start with the Summary, find your base or area in the Base Index, then read your hazard sections'
+       + (isFc ? ' (each base is one row, one column per day; ▲ marks the peak day; trend shows whether PoP or gusts are building, steady or fading; change compares with the last issue marked sent).'
+               : ' in order of urgency (active now, then forecast, awareness and outlooks).')
+       + ' Times are local to each base with the day shown. NWS and SPC product names are quoted exactly as issued; the tier is WATCH’s own label.');
+  if (hasIntl) L.push('† Model-only base (BDA, GCM, SXM, PLS): no NWS product exists for this location, so no official alert will appear. Data is METAR and forecast model only; treat as guidance.');
+  return L;
+}
+function _bLegendHTML(hasIntl, isFc){
+  return '<div style="border-top:1px solid #c8d0d8;margin-top:12px;padding-top:6px;font-size:9px;color:#556070;line-height:1.5">'
+    + '<div style="font-weight:700;margin-bottom:2px">LEGEND AND READING GUIDE</div>'
+    + _bLegendLines(hasIntl, isFc).map(function(t){ return '<div style="margin-bottom:3px">'+t+'</div>'; }).join('') + '</div>';
+}
+
+// ── Forecast briefing: per-base timeline grid ───────────────────────────────
+function _extMetric(detail){
+  var t = String(detail || ''), m;
+  if ((m = t.match(/gusts?\s+(?:to|of|up to)\s+(\d+)\s*mph/i))) return {txt:'G'+m[1], val:+m[1]};
+  if ((m = t.match(/sustained\s+(?:to|of|up to)\s+(\d+)\s*mph/i))) return {txt:'S'+m[1], val:+m[1]};
+  if ((m = t.match(/\((\d+)%\s*PoP\)/i))) return {txt:m[1]+'%', val:+m[1]};
+  if ((m = t.match(/(\d+)\s*°F/))) return {txt:m[1]+'°F', val:+m[1]};
+  return {txt:'', val:null};
+}
+var EXT_SNAP_LAST = 'watch_fcst_snap_last', EXT_SNAP_PREV = 'watch_fcst_snap_prev';
+function _extRawCells(codes, day){
+  var leads = _briefDayLeads(day), cells = {}, dates = [];
+  leads.forEach(function(l){ dates.push(_extDateKey(_bLeadDate(l))); });
+  codes.forEach(function(c){
+    (extOutlook[c] || []).forEach(function(d){
+      if (leads.indexOf(d.lead) === -1) return;
+      d.hazards.forEach(function(h){
+        var k = h.kind + '|' + c + '|' + d.dateKey, r = EXT_RANK[h.sev] || 1;
+        if (!cells[k] || r > cells[k]) cells[k] = r;
+      });
+    });
+  });
+  return {dates:dates, cells:cells};
+}
+function _extSaveSnapshot(){
+  try {
+    var snap = _extRawCells(COVERED_ALL.map(function(f){ return f.code; }), 'fc');
+    snap.issued = _extDateKey(new Date());
+    var last = JSON.parse(localStorage.getItem(EXT_SNAP_LAST) || 'null');
+    if (last && last.issued !== snap.issued) localStorage.setItem(EXT_SNAP_PREV, JSON.stringify(last));
+    localStorage.setItem(EXT_SNAP_LAST, JSON.stringify(snap));
+  } catch (e) {}
+}
+// The issue to compare against: the last one marked sent, unless that is today's own issue.
+function _extPrevSnapshot(){
+  try {
+    var last = JSON.parse(localStorage.getItem(EXT_SNAP_LAST) || 'null');
+    if (!last) return null;
+    if (last.issued === _extDateKey(new Date())) return JSON.parse(localStorage.getItem(EXT_SNAP_PREV) || 'null');
+    return last;
+  } catch (e) { return null; }
+}
+function _extChange(kind, code, cells, prev, winDates){
+  var overlap = prev.dates.filter(function(d){ return winDates.indexOf(d) !== -1; });
+  if (!overlap.length) return 'n/a';
+  var byDate = {};
+  Object.keys(cells).forEach(function(l){ byDate[cells[l].dateKey] = cells[l].rank; });
+  var pMax = 0, cMax = 0, pCnt = 0, cCnt = 0, diff = false;
+  overlap.forEach(function(d){
+    var p = prev.cells[kind + '|' + code + '|' + d] || 0, c = byDate[d] || 0;
+    if (p > pMax) pMax = p;
+    if (c > cMax) cMax = c;
+    if (p) pCnt++;
+    if (c) cCnt++;
+    if (p !== c) diff = true;
+  });
+  if (!pMax && cMax) return 'NEW';
+  if (cMax > pMax) return 'WORSENED';
+  if (cMax < pMax) return 'IMPROVED';
+  if (cCnt > pCnt) return 'WORSENED';
+  if (cCnt < pCnt) return 'IMPROVED';
+  return diff ? 'CHANGED' : 'UNCHANGED';
+}
+function _extBuildGrid(kind, baseMap, leads, codes, day){
+  var sorted = leads.slice().sort(function(a,b){ return a - b; });
+  var days = sorted.map(function(l){ return {lead:l, short:_bLeadShort(l), md:_bLeadMD(l), key:_extDateKey(_bLeadDate(l))}; });
+  var prev = (day === 'fc') ? _extPrevSnapshot() : null;
+  var winDates = days.map(function(d){ return d.key; });
+  var rows = Object.keys(baseMap).map(function(code){
+    var cells = {}, best = null;
+    sorted.forEach(function(l){
+      var c = baseMap[code][l];
+      if (!c) return;
+      var m = _extMetric(c.detail);
+      cells[l] = {rank:c.rank, dateKey:c.dateKey, detail:c.detail, storm:c.storm, metric:m.txt, val:m.val, lead:l};
+      if (!best || c.rank > best.rank || (c.rank === best.rank && (m.val || 0) > (best.val || 0))) best = cells[l];
+    });
+    var vals = sorted.filter(function(l){ return cells[l] && cells[l].val != null; }).map(function(l){ return cells[l].val; });
+    var trend = '-';
+    if (vals.length >= 2 && (kind === 'WIND' || kind === 'RAIN' || kind === 'WINTER')) {
+      var mx = Math.max.apply(null, vals), im = vals.indexOf(mx), last = vals.length - 1, unit = (/%$/.test(best.metric) ? '%' : (/^[GS]/.test(best.metric) ? ' mph' : ''));
+      if (im === 0 && vals[last] <= 0.88 * mx) trend = 'FADING ' + vals[0] + unit + ' to ' + vals[last] + unit;
+      else if (im === last && vals[0] <= 0.88 * mx) trend = 'BUILDING ' + vals[0] + unit + ' to ' + vals[last] + unit;
+      else trend = 'STEADY';
+    }
+    var row = {code:code, city:_bFbo(code).city || '', state:_bFbo(code).state || '', cells:cells, tier:best.rank,
+               peakLead:best.lead, peakDetail:(best.storm ? best.storm + ': ' : '') + best.detail, trend:trend,
+               change: prev ? _extChange(kind, code, cells, prev, winDates) : ''};
+    return row;
+  });
+  if (prev) {
+    var codeSet = {}; codes.forEach(function(c){ codeSet[c] = 1; });
+    var seen = {}; Object.keys(baseMap).forEach(function(c){ seen[c] = 1; });
+    var overlap = prev.dates.filter(function(d){ return winDates.indexOf(d) !== -1; });
+    var drop = {};
+    Object.keys(prev.cells).forEach(function(k){
+      var p = k.split('|');
+      if (p[0] !== kind || !codeSet[p[1]] || seen[p[1]] || overlap.indexOf(p[2]) === -1) return;
+      drop[p[1]] = 1;
+    });
+    Object.keys(drop).forEach(function(code){
+      rows.push({code:code, city:_bFbo(code).city || '', state:_bFbo(code).state || '', cells:{}, tier:1, peakLead:null,
+                 peakDetail:'No longer forecast at this level', trend:'-', change:'DROPPED', dropped:true});
+    });
+  }
+  rows.sort(function(a,b){
+    if (!!a.dropped !== !!b.dropped) return a.dropped ? 1 : -1;
+    return b.tier - a.tier || (a.code < b.code ? -1 : 1);
+  });
+  return {days:days, rows:rows, hasChange:!!prev};
+}
+function _bGridCellTxt(row, lead){
+  var c = row.cells[lead];
+  if (!c) return {tier:0, txt:'-'};
+  return {tier:c.rank, txt:(row.peakLead === c.lead ? '▲ ' : '') + TIER_ABBR[c.rank] + (c.metric ? ' ' + c.metric : '')};
+}
+function _bGridHTML(grid){
+  var h = '<table style="width:100%;border-collapse:collapse;margin-bottom:10px"><tr style="background:#f0f4f7">'
+    + '<th style="border:1px solid #ddd;text-align:left;font-size:10px;color:#556070;padding:3px 6px;width:14%">Base</th>'
+    + grid.days.map(function(d){ return '<th style="border:1px solid #ddd;text-align:center;font-size:10px;color:#556070;padding:3px 3px">'+d.short+' '+d.md+'</th>'; }).join('')
+    + '<th style="border:1px solid #ddd;text-align:left;font-size:10px;color:#556070;padding:3px 6px;width:26%">Peak day</th>'
+    + '<th style="border:1px solid #ddd;text-align:left;font-size:10px;color:#556070;padding:3px 6px;width:11%">Trend</th>'
+    + (grid.hasChange ? '<th style="border:1px solid #ddd;text-align:left;font-size:10px;color:#556070;padding:3px 6px;width:10%">Change</th>' : '') + '</tr>';
+  grid.rows.forEach(function(r){
+    h += '<tr><td style="border:1px solid #ddd;padding:3px 6px;font-size:10px"><strong>'+_bCode(r.code)+'</strong><br><span style="color:#556070">'+r.city+(r.state?', '+r.state:'')+'</span></td>'
+      + grid.days.map(function(d){
+          var c = _bGridCellTxt(r, d.lead);
+          return '<td style="border:1px solid #ddd;padding:3px 3px;text-align:center;font-size:10px;font-weight:700'
+            + (c.tier ? ';background:'+TIER_FILL[c.tier]+';color:#1a2a3a' : ';color:#8a9aaa') + '">'+c.txt+'</td>';
+        }).join('')
+      + '<td style="border:1px solid #ddd;padding:3px 6px;font-size:10px">'+(r.peakLead != null ? '<strong>'+_bLeadShort(r.peakLead)+'</strong><br>' : '')+r.peakDetail+'</td>'
+      + '<td style="border:1px solid #ddd;padding:3px 6px;font-size:10px;font-weight:700">'+r.trend+'</td>'
+      + (grid.hasChange ? '<td style="border:1px solid #ddd;padding:3px 6px;font-size:10px;font-weight:700">'+r.change+'</td>' : '') + '</tr>';
+  });
+  return h + '</table>';
+}
+function _bGridDocx(grid){
+  var cols = ['Base'].concat(grid.days.map(function(d){ return d.short + ' ' + d.md; }), ['Peak day', 'Trend']);
+  if (grid.hasChange) cols.push('Change');
+  var tail = grid.hasChange ? 1400 : 0, trendW = 1500, baseW = 1600, dayW = 800;
+  var peakW = 10080 - baseW - trendW - tail - dayW * grid.days.length;
+  var widths = [baseW].concat(grid.days.map(function(){ return dayW; }), [peakW, trendW]);
+  if (grid.hasChange) widths.push(tail);
+  var fills = [];
+  var rows = grid.rows.map(function(r){
+    var f = [null];
+    var row = [_bCode(r.code) + '\n' + r.city + (r.state ? ', ' + r.state : '')];
+    grid.days.forEach(function(d){ var c = _bGridCellTxt(r, d.lead); row.push(c.txt); f.push(c.tier ? TIER_FILL_DOCX[c.tier] : null); });
+    row.push((r.peakLead != null ? _bLeadShort(r.peakLead) + '\n' : '') + r.peakDetail); f.push(null);
+    row.push(r.trend); f.push(null);
+    if (grid.hasChange) { row.push(r.change); f.push(null); }
+    fills.push(f);
+    return row;
+  });
+  return _docxTable(cols, rows, widths, fills);
+}
+
+// ══ SHARED BRIEFING RENDERERS ══════════════════════════════════════════════
+// Table model for one group: the Tier column is added for NWS-alert style
+// sections (SPC, ERO and forecast groups already carry the tier in their header).
+function _bTblModel(def, g, d){
+  var cols = (g.cols || d.cols || ['FBO','City / State','Detail']).slice();
+  var showTier = _bShowTier(g) && cols.indexOf('Severity') === -1;
+  var widths = g.widths ? g.widths.slice() : null;
+  if (showTier) {
+    cols.splice(2, 0, 'Tier');
+    if (widths) { widths.splice(2, 0, 1200); widths[widths.length-1] -= 1200; }
+  }
+  var rows = g.rows.map(function(r){
+    var cells = [g.track ? r.code : _bCode(r.code), r.city + (r.state ? ', ' + r.state : '')];
+    if (showTier) cells.push(TIER_NAME[r.tier] || '');
+    for (var k = (showTier ? 3 : 2); k < cols.length; k++) cells.push(k === (showTier ? 3 : 2) ? r.detail : r.detail2);
+    return {cells:cells, tier:r.tier};
+  });
+  return {cols:cols, rows:rows, widths:widths, showTier:!!showTier};
+}
+function _bShowTier(g){
+  return !g.tierFixed && !g.track && g.rows.length > 0 && g.rows.some(function(r){ return r.tier >= 2; });
+}
+function _bGroupHead(g){
+  return g.label + (g.level ? ' — Level ' + g.level : '') + (g.action ? ' | ' + g.action : '') + (g.hazards ? ' | ' + g.hazards : '');
+}
+
+// ── Live BRIEFING tab: cards only ───────────────────────────────────────────
 function _renderBriefLive(secs, mapsBySection){
   if (!secs.length) return '<div style="padding:30px;text-align:center;color:#16a34a;font-size:13px">' + (briefDay==='fc' ? 'No significant weather hazards forecast from ' + _fcstRangeText() + '.' : 'No active weather hazards across the selected locations.') + '</div>';
-  var html='';
+  var html = '', plan = _bActionPlan(secs), lastGrp = null;
   mapsBySection = mapsBySection || {};
-  secs.forEach(function(s){
-    var d=s.data, def=s.def;
+  secs.forEach(function(s, si){
+    var d = s.data, def = s.def;
+    if (def.grp && def.grp !== lastGrp) {
+      lastGrp = def.grp;
+      html += '<div style="font-size:10px;font-weight:700;color:#0E2841;letter-spacing:.06em;border-bottom:2px solid #0E2841;padding:10px 2px 3px;margin:6px 0 8px">'+BRIEF_GROUP_LABEL[def.grp]+'</div>';
+    }
     (mapsBySection[def.id] || []).forEach(function(m){ html += _watchMapImgHTML(m); });
     if (d.html) {
       html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;overflow:hidden;margin-bottom:12px">'
         + '<div style="background:'+def.bg+';padding:10px 14px"><div style="font-size:12px;font-weight:700;color:'+def.tc+';letter-spacing:.04em">'+def.icon+' '+def.title+'</div></div>'
         + '<div style="padding:10px 14px">'+d.html+'</div></div>';
-      return;
-    }
-    var groups = d.groups || [{label:null, bg:def.bg, rows:d.rows}];
-    groups.forEach(function(g){
-      if (g.listOnly) {
-        html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:12px">'
-          + '<div style="font-size:11px;font-weight:700;color:#556070;margin-bottom:6px">'+g.label
-          + (g.hazards?' <span style="font-weight:400;color:#8a9aaa">\u2014 '+g.hazards+'</span>':'')+'</div>'
-          + '<div style="font-size:10px;color:#556070;line-height:2;overflow-wrap:anywhere">'
-          + g.rows.map(function(r){
-              return '<span style="display:inline-block;background:#f0f4f7;border-radius:3px;padding:1px 6px;margin:0 3px 3px 0;font-family:monospace">'+r.code+'</span>';
-            }).join('') + '</div></div>';
-        return;
-      }
-      var rows = g.rows.map(function(r){
-        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 14px;border-top:1px solid #e8e8e8">'
-          + '<div style="display:flex;align-items:center;gap:8px">'
-          + '<span style="font-family:monospace;font-size:12px;font-weight:700;color:#0E2841;min-width:40px">'+r.code+'</span>'
-          + '<span style="font-size:11px;color:#556070">'+r.city+(r.state?', '+r.state:'')+'</span></div>'
-          + '<div style="text-align:right;max-width:62%">'
-          + (r.detail?'<div style="font-size:11px;font-weight:600;color:#1a2a3a">'+_bNl(r.detail)+'</div>':'')
-          + (r.detail2?'<div style="font-size:10px;color:#8a9aaa">'+_bNl(r.detail2)+'</div>':'')
-          + '</div></div>';
-      }).join('');
-      var title = g.label ? def.title+' \u2014 '+g.label : def.title;
-      var sub   = g.hazards || def.sub || '';
+    } else if (d.grid) {
       html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;overflow:hidden;margin-bottom:12px">'
-        + '<div style="background:'+(g.bg||def.bg)+';padding:10px 14px;display:flex;align-items:center;justify-content:space-between">'
-        + '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+def.icon+'</span><div>'
-        + '<div style="font-size:12px;font-weight:700;color:'+def.tc+';letter-spacing:.04em">'+title+'</div>'
-        + (sub?'<div style="font-size:10px;color:'+def.tc+';opacity:.85;margin-top:1px">'+sub+'</div>':'')
-        + '</div></div>'
-        + '<span style="background:rgba(0,0,0,0.2);color:'+def.tc+';font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">'
-        + g.rows.length+' '+(g.unit||'location')+(g.rows.length!==1?'s':'')+'</span></div>'+rows+'</div>';
-    });
+        + '<div style="background:'+def.bg+';padding:10px 14px"><div style="font-size:12px;font-weight:700;color:'+def.tc+';letter-spacing:.04em">'+def.icon+' '+def.title+'</div>'
+        + '<div style="font-size:10px;color:'+def.tc+';opacity:.85">'+(def.sub||'')+'</div></div>'
+        + '<div style="padding:8px;overflow-x:auto">'+_bGridHTML(d.grid)+'</div></div>';
+    } else {
+      var groups = d.groups || [{label:null, bg:def.bg, rows:d.rows}];
+      groups.forEach(function(g){
+        if (g.listOnly) {
+          html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;padding:10px 14px;margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:700;color:#556070;margin-bottom:6px">'+g.label
+            + (g.hazards?' <span style="font-weight:400;color:#8a9aaa">— '+g.hazards+'</span>':'')+'</div>'
+            + '<div style="font-size:10px;color:#556070;line-height:2;overflow-wrap:anywhere">'
+            + g.rows.map(function(r){
+                return '<span style="display:inline-block;background:#f0f4f7;border-radius:3px;padding:1px 6px;margin:0 3px 3px 0;font-family:monospace">'+_bCode(r.code)+'</span>';
+              }).join('') + '</div></div>';
+          return;
+        }
+        var showTier = _bShowTier(g);
+        var rows = g.rows.map(function(r){
+          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 14px;border-top:1px solid #e8e8e8">'
+            + '<div style="display:flex;align-items:center;gap:8px">'
+            + '<span style="font-family:monospace;font-size:12px;font-weight:700;color:#0E2841;min-width:40px">'+(g.track ? r.code : _bCode(r.code))+'</span>'
+            + (showTier ? '<span style="background:'+TIER_BG[r.tier]+';color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px">'+TIER_ABBR[r.tier]+'</span>' : '')
+            + '<span style="font-size:11px;color:#556070">'+r.city+(r.state?', '+r.state:'')+'</span></div>'
+            + '<div style="text-align:right;max-width:62%">'
+            + (r.detail?'<div style="font-size:11px;font-weight:600;color:#1a2a3a">'+_bNl(r.detail)+'</div>':'')
+            + (r.detail2?'<div style="font-size:10px;color:#8a9aaa">'+_bNl(r.detail2)+'</div>':'')
+            + '</div></div>';
+        }).join('');
+        var title = g.label ? def.title+' — '+g.label : def.title;
+        var sub   = g.hazards || def.sub || '';
+        html += '<div style="background:#fff;border:1px solid #c8d0d8;border-radius:6px;overflow:hidden;margin-bottom:12px">'
+          + '<div style="background:'+(g.bg||def.bg)+';padding:10px 14px;display:flex;align-items:center;justify-content:space-between">'
+          + '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+def.icon+'</span><div>'
+          + '<div style="font-size:12px;font-weight:700;color:'+def.tc+';letter-spacing:.04em">'+title+(g.action?' | '+g.action:'')+'</div>'
+          + (sub?'<div style="font-size:10px;color:'+def.tc+';opacity:.85;margin-top:1px">'+sub+'</div>':'')
+          + '</div></div>'
+          + '<span style="background:rgba(0,0,0,0.2);color:'+def.tc+';font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">'
+          + g.rows.length+' '+(g.unit||'location')+(g.rows.length!==1?'s':'')+'</span></div>'+rows+'</div>';
+      });
+    }
+    if (plan[si]) html += _bActionBlockHTML(_bActionModel(plan[si].type, plan[si].tier));
   });
   return html;
 }
 
-// ── Generate Brief popup: tables + actionables below each hazard family ─────
+// ── Generate Brief popup ────────────────────────────────────────────────────
 function _renderBriefHTML(secs, mapsBySection){
-  var runs=_bActionRuns(secs), html='';
+  var plan = _bActionPlan(secs), html = '', lastGrp = null, wpcDone = false;
   mapsBySection = mapsBySection || {};
-  secs.forEach(function(s,i){
-    var d=s.data, def=s.def;
+  function wpc(){ if (!wpcDone) { wpcDone = true; html += _briefNarrativeHTML('wpcShortRangeText'); } }
+  secs.forEach(function(s, si){
+    var d = s.data, def = s.def;
+    if (def.grp && def.grp !== lastGrp) {
+      lastGrp = def.grp;
+      if (def.grp === 'outlook') wpc();
+      html += '<div style="font-size:11px;font-weight:700;color:#0E2841;letter-spacing:.05em;border-bottom:2px solid #0E2841;padding:12px 2px 3px;margin:8px 0 6px">'+BRIEF_GROUP_LABEL[def.grp]+'</div>';
+    }
     (mapsBySection[def.id] || []).forEach(function(m){ html += _watchMapImgHTML(m); });
     if (d.html) {
       html += '<div style="margin-bottom:14px">'
         + '<div style="background:'+def.bg+';color:'+def.tc+';font-size:11px;font-weight:700;padding:6px 10px;letter-spacing:.04em">'+def.title+'</div>'
         + '<div style="border:1px solid #ddd;border-top:none;padding:10px 12px;font-size:11px">'+d.html+'</div></div>';
     } else {
-      var groups = d.groups || [{label:null, bg:def.bg, cols:d.cols, rows:d.rows}];
       html += '<div style="background:'+def.bg+';color:'+def.tc+';font-size:11px;font-weight:700;padding:6px 10px;letter-spacing:.04em;margin-top:4px">'+def.title+'</div>';
       if (def.sub) html += '<div style="font-size:10px;color:#556070;font-style:italic;margin:3px 0 6px">'+def.sub+'</div>';
-      groups.forEach(function(g){
-        var cols = g.cols || d.cols || ['FBO','City / State','Detail'];
+      if (d.grid) html += _bGridHTML(d.grid);
+      else (d.groups || [{label:null, bg:def.bg, cols:d.cols, rows:d.rows}]).forEach(function(g){
         if (g.listOnly) {
-          html += '<div style="background:'+(g.bg||def.bg)+';color:#fff;font-weight:700;font-size:11px;padding:5px 8px">'
-            + g.label + (g.level?' \u2014 Level '+g.level:'') + (g.action?' | '+g.action:'') + (g.hazards?' | '+g.hazards:'') + '</div>'
+          html += '<div style="background:'+(g.bg||def.bg)+';color:#fff;font-weight:700;font-size:11px;padding:5px 8px">'+_bGroupHead(g)+'</div>'
             + '<div style="border:1px solid #ddd;border-top:none;padding:8px;font-size:11px;line-height:1.9;margin-bottom:10px;overflow-wrap:anywhere">'
-            + g.rows.map(function(r){return r.code;}).join(' \u00B7 ') + '</div>';
+            + g.rows.map(function(r){return _bCode(r.code);}).join(' · ') + '</div>';
           return;
         }
+        var M = _bTblModel(def, g, d);
         html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">';
-        if (g.label) html += '<tr><td colspan="'+cols.length+'" style="background:'+(g.bg||def.bg)+';color:#fff;font-weight:700;font-size:11px;padding:5px 8px;border:1px solid '+(g.bg||def.bg)+'">'
-          + g.label + (g.level?' \u2014 Level '+g.level:'') + (g.action?' | '+g.action:'') + (g.hazards?' | '+g.hazards:'') + '</td></tr>';
-        html += '<tr style="background:#f0f4f7">'+cols.map(function(c,ci){
+        if (g.label) html += '<tr><td colspan="'+M.cols.length+'" style="background:'+(g.bg||def.bg)+';color:#fff;font-weight:700;font-size:11px;padding:5px 8px;border:1px solid '+(g.bg||def.bg)+'">'+_bGroupHead(g)+'</td></tr>';
+        html += '<tr style="background:#f0f4f7">'+M.cols.map(function(c,ci){
           return '<th style="border:1px solid #ddd;text-align:left;font-size:10px;color:#556070;padding:4px 6px'+(ci<2?';word-break:normal;overflow-wrap:normal':'')+'">'+c+'</th>';
         }).join('')+'</tr>';
-        g.rows.forEach(function(r,ri){
+        M.rows.forEach(function(r,ri){
           var bg = ri%2===0?'#fff':'#f9f9f9';
-          var cells = ['<td style="border:1px solid #ddd;font-weight:700;padding:4px 6px;background:'+bg+';word-break:normal;overflow-wrap:normal">'+r.code+'</td>',
-                       '<td style="border:1px solid #ddd;padding:4px 6px;background:'+bg+';word-break:normal;overflow-wrap:normal">'+r.city+(r.state?', '+r.state:'')+'</td>'];
-          for (var k=2;k<cols.length;k++) cells.push('<td style="border:1px solid #ddd;padding:4px 6px;background:'+bg+'">'+_bNl(k===2?r.detail:r.detail2)+'</td>');
-          html += '<tr>'+cells.join('')+'</tr>';
+          html += '<tr>'+r.cells.map(function(c,ci){
+            var st = 'border:1px solid #ddd;padding:4px 6px;background:'+bg+(ci===0?';font-weight:700':'')+(ci<2?';word-break:normal;overflow-wrap:normal':'');
+            if (M.showTier && ci === 2) st = 'border:1px solid #ddd;padding:4px 6px;background:'+TIER_FILL[r.tier]+';font-weight:700;font-size:10px';
+            return '<td style="'+st+'">'+_bNl(c)+'</td>';
+          }).join('')+'</tr>';
         });
         html += '</table>';
       });
     }
     html += _briefNarrativeFor(def);
-    if (runs[i]) html += _getActionHTML(runs[i]);
+    if (plan[si]) html += _bActionBlockHTML(_bActionModel(plan[si].type, plan[si].tier));
   });
+  wpc();
   return html;
 }
 
-// ── DOCX: same order, same sections, same actionable placement ──────────────
-// Word renders pipe-joined text as a plain paragraph, which is why the DOCX
-// lost every table. These build a real w:tbl instead.
+// ── DOCX: same order, same sections, same action placement ──────────────────
 function _docxEsc(s){
   return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -3912,15 +4576,18 @@ function _docxCellParas(text, bold, sz){
   }).join('<w:r>'+rpr+'<w:br/></w:r>');
   return '<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'+runs+'</w:p>';
 }
-function _docxTable(cols, rows, wOpt){
+// rows: arrays of cell text, or {span:text, fill:hex} for a full-width band.
+// fills: optional per-row arrays of cell fill colours.
+function _docxTable(cols, rows, wOpt, fills){
   var TOTAL = 10080; // page width less margins, in twips
   var widths;
   if (wOpt && wOpt.length === cols.length) widths = wOpt;
   else if (cols.length === 3) widths = [1700, 2900, 5480];
   else if (cols.length === 4) widths = [1500, 2600, 3100, 2880];
   else { var w = Math.floor(TOTAL / cols.length); widths = cols.map(function(){ return w; }); }
-  function cell(text, w, shd, bold, sz){
+  function cell(text, w, shd, bold, sz, span){
     return '<w:tc><w:tcPr><w:tcW w:w="'+w+'" w:type="dxa"/>'
+      + (span ? '<w:gridSpan w:val="'+span+'"/>' : '')
       + (shd ? '<w:shd w:val="clear" w:color="auto" w:fill="'+shd+'"/>' : '')
       + '<w:tcMar><w:top w:w="40" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/>'
       + '<w:left w:w="90" w:type="dxa"/><w:right w:w="90" w:type="dxa"/></w:tcMar></w:tcPr>'
@@ -3937,9 +4604,13 @@ function _docxTable(cols, rows, wOpt){
   xml += '<w:tr><w:trPr><w:tblHeader/></w:trPr>'
     + cols.map(function(c,i){ return cell(c, widths[i], 'F0F4F7', true, 18); }).join('') + '</w:tr>';
   rows.forEach(function(r, ri){
-    var shd = (ri % 2 === 0) ? null : 'F7F9FA';
-    xml += '<w:tr>' + cols.map(function(_, i){
-      return cell(r[i], widths[i], shd, i === 0, 19);
+    if (r && r.span != null && !Array.isArray(r)) {
+      xml += '<w:tr><w:trPr><w:cantSplit/></w:trPr>' + cell(r.span, TOTAL, r.fill || 'E3E8ED', true, 19, cols.length) + '</w:tr>';
+      return;
+    }
+    var shd = (ri % 2 === 0) ? null : 'F7F9FA', f = fills && fills[ri];
+    xml += '<w:tr><w:trPr><w:cantSplit/></w:trPr>' + cols.map(function(_, i){
+      return cell(r[i], widths[i], (f && f[i]) ? f[i] : shd, i === 0, 19);
     }).join('') + '</w:tr>';
   });
   // Word requires a paragraph after a table
@@ -3947,36 +4618,77 @@ function _docxTable(cols, rows, wOpt){
   return xml;
 }
 
-function _renderBriefDocx(secs, add, ppr, rpr, sp, emitMap, raw){
-  var runs=_bActionRuns(secs);
+function _bTopDocx(top, add, ppr, rpr, sp, raw){
+  add('SUMMARY: WHAT MATTERS MOST', ppr({fill:'0E2841', after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
+  top.lines.forEach(function(l){ add(l.k + ': ' + l.v, ppr({fill:'F2F4F6', after:'20'}), rpr({sz:19})); });
+  sp();
+  var ix = top.index;
+  if (ix.regions.length && raw) {
+    add('BASE INDEX (ADVISORY AND ABOVE, BY AREA)', ppr({fill:'0E2841', after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
+    var cols = ['Base'].concat(ix.cols.map(function(F){ return BRIEF_FAMILY_COL[F]; }));
+    var cw = Math.floor((10080 - 2600) / ix.cols.length);
+    var widths = [2600].concat(ix.cols.map(function(){ return cw; }));
+    var rows = [], fills = [];
+    ix.regions.forEach(function(rg){
+      rows.push({span:rg.name, fill:'E3E8ED'}); fills.push(null);
+      rg.rows.forEach(function(r){
+        rows.push([_bCode(r.code) + '  ' + r.city].concat(r.cells.map(function(c){ return c.txt; })));
+        fills.push([null].concat(r.cells.map(function(c){ return c.tier ? TIER_FILL_DOCX[c.tier] : null; })));
+      });
+    });
+    raw(_docxTable(cols, rows, widths, fills));
+  }
+  if (ix.monOnly.length) { add('MONITOR only (awareness, no actions): ' + ix.monOnly.map(_bCode).join(' · '), ppr({after:'80'}), rpr({sz:18})); }
+  add('STANDING ACTIONS: ALL HAZARDS, ALL TIERS', ppr({fill:'0E2841', after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
+  _STANDING_ACTIONS.forEach(function(t, ix2){ add((ix2+1)+'. '+t, ppr({indL:'720', indH:'360', after:'60'}), rpr({sz:20})); });
+  sp();
+}
+function _bLegendDocx(hasIntl, isFc, add, ppr, rpr){
+  add('LEGEND AND READING GUIDE', ppr({after:'20'}), rpr({b:true, sz:16, color:'556070'}));
+  _bLegendLines(hasIntl, isFc).forEach(function(t){ add(t, ppr({after:'40'}), rpr({sz:16, color:'556070'})); });
+}
+
+function _renderBriefDocx(secs, add, ppr, rpr, sp, emitMap, raw, P){
+  var plan = _bActionPlan(secs), lastGrp = null, wpcDone = false;
+  function wpc(){
+    if (wpcDone) return; wpcDone = true;
+    var srd = _briefNarrativeHTML('wpcShortRangeText');
+    if (!srd) return;
+    add('WPC Short Range Forecast Discussion (Day 1-2)', ppr({fill:'0E2841', after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
+    srd.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'\n').replace(/&lt;/g,'<').replace(/&nbsp;/g,' ')
+       .split('\n').forEach(function(line){ if(line.trim()) add(line.trim(), ppr({after:'20'}), rpr({sz:17})); });
+    sp();
+  }
   secs.forEach(function(s,i){
-    if (emitMap) emitMap(s.def.id);
-    var d=s.data, def=s.def;
+    var d = s.data, def = s.def;
+    if (def.grp && def.grp !== lastGrp) {
+      lastGrp = def.grp;
+      if (def.grp === 'outlook') wpc();
+      add(BRIEF_GROUP_LABEL[def.grp], ppr({after:'60'}), rpr({b:true, sz:21, color:'0E2841'}));
+    }
+    if (emitMap) emitMap(def.id);
     add(def.title, ppr({fill:def.docxBg, after:'40'}), rpr({b:true, sz:24, color:'FFFFFF'}));
     if (def.sub) add(def.sub, ppr({after:'60'}), rpr({sz:19, i:true}));
     if (d.html) {
       var txt = String(d.html).replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ');
       txt.split('\n').forEach(function(line){ if(line.trim()) add(line.trim(), ppr({after:'40'}), rpr({sz:19})); });
       sp();
+    } else if (d.grid) {
+      if (raw) raw(_bGridDocx(d.grid));
     } else {
-      var groups = d.groups || [{label:null, cols:d.cols, rows:d.rows}];
-      groups.forEach(function(g){
-        var cols = g.cols || d.cols || ['FBO','City / State','Detail'];
-        if (g.label) add(g.label + (g.level?' \u2014 Level '+g.level:'') + (g.action?' | '+g.action:'') + (g.hazards?' | '+g.hazards:''),
-                         ppr({fill:g.docxBg||def.docxBg, after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
+      (d.groups || [{label:null, cols:d.cols, rows:d.rows}]).forEach(function(g){
+        if (g.label) add(_bGroupHead(g), ppr({fill:g.docxBg||def.docxBg, after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
         if (g.listOnly) {
-          add(g.rows.map(function(r){return r.code;}).join(' \u00B7 '), ppr({after:'80'}), rpr({sz:20}));
+          add(g.rows.map(function(r){return _bCode(r.code);}).join(' · '), ppr({after:'80'}), rpr({sz:20}));
           sp();
           return;
         }
-        var tblRows = g.rows.map(function(r){
-          var parts=[r.code, r.city+(r.state?', '+r.state:'')];
-          for (var k=2;k<cols.length;k++) parts.push(k===2?r.detail:r.detail2);
-          return parts;
-        });
-        if (raw) raw(_docxTable(cols, tblRows, g.widths));
+        var M = _bTblModel(def, g, d);
+        var tblRows = M.rows.map(function(r){ return r.cells; });
+        var fills = M.showTier ? M.rows.map(function(r){ var f = []; f[2] = TIER_FILL_DOCX[r.tier]; return f; }) : null;
+        if (raw) raw(_docxTable(M.cols, tblRows, M.widths, fills));
         else {
-          add(cols.join('  |  '), ppr({fill:'F2F4F6', after:'30'}), rpr({b:true, sz:19}));
+          add(M.cols.join('  |  '), ppr({fill:'F2F4F6', after:'30'}), rpr({b:true, sz:19}));
           tblRows.forEach(function(p,ri){ add(p.join('  |  '), ppr({fill:ri%2===0?'FFFFFF':'F7F9FA', after:'30'}), rpr({sz:20})); });
           sp();
         }
@@ -3988,18 +4700,16 @@ function _renderBriefDocx(secs, add, ppr, rpr, sp, emitMap, raw){
       ntxt.split('\n').forEach(function(line){ if(line.trim()) add(line.trim(), ppr({after:'20'}), rpr({sz:17})); });
       sp();
     }
-    if (runs[i]) {
-      var txt2 = _getActionHTML(runs[i]);
-      var title = (txt2.match(/IMMEDIATE ACTIONS[^<]*/)||['IMMEDIATE ACTIONS'])[0];
-      add(title, ppr({fill:'1A2A3A', after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
-      var items = txt2.match(/<li[^>]*>([\s\S]*?)<\/li>/g) || [];
-      items.forEach(function(li,ix){
-        var t = li.replace(/<[^>]+>/g,'').replace(/&mdash;/g,'\u2014').trim();
-        if (t) add((ix+1)+'. '+t, ppr({indL:'720', indH:'360', after:'60'}), rpr({sz:20}));
-      });
-      sp();
+    if (plan[i]) {
+      var m = _bActionModel(plan[i].type, plan[i].tier);
+      if (m) {
+        add(m.head, ppr({fill:m.color.replace('#','').toUpperCase(), after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
+        m.items.forEach(function(t,ix){ add((ix+1)+'. '+t, ppr({indL:'720', indH:'360', after:'60'}), rpr({sz:20})); });
+        sp();
+      }
     }
   });
+  wpc();
 }
 
 function _generateSummaryInner(content, ts, status) {
@@ -4046,6 +4756,8 @@ function _generateSummaryInner(content, ts, status) {
   if (_mg.leftover.length) {
     html = '<div style="margin-bottom:12px">' + _mg.leftover.map(_watchMapImgHTML).join('') + '</div>' + html;
   }
+  var _liveTop = secs.length ? _bTopModel(secs, codes) : null;
+  if (_liveTop) html = _bTopHTML(_liveTop) + html;
 
   var _gaps = _briefDataGaps(codes);
   var _gapSet = new Set(_gaps.map(function(g){ return g.code; }));
@@ -4063,6 +4775,7 @@ function _generateSummaryInner(content, ts, status) {
       + '<div style="font-size:10px;color:#8a9aaa;line-height:1.8">'+clear.join(' \u00B7 ')+'</div></div>';
   }
 
+  if (_liveTop) html += _bLegendHTML(_liveTop.hasIntl, _liveTop.isFc);
   content.innerHTML = html;
   status.textContent = impacted.size + ' location' + (impacted.size!==1?'s':'') + ' with active hazards';
 }
@@ -4471,7 +5184,7 @@ function getEroInfoForCode(code) {
   if (!best) return null;
   var p = bestProps || {};
   var timing = p.valid_time || ((p.start_time || p.end_time) ? (_fmtEroTime(p.start_time) + ' \u2013 ' + _fmtEroTime(p.end_time)) : '');
-  return { tier: best, timing: timing };
+  return { tier: best, timing: timing, start: p.start_time || '', end: p.end_time || '' };
 }
 function getEroTierForCode(code) {
   var info = getEroInfoForCode(code);
@@ -6738,8 +7451,9 @@ function _watchDownloadDocx(codes, notes, sections) {
   sp();
   add('Team,', ppr({after:'80'}), rpr({sz:22}));
   var _np = buildBriefNarrativeParts(secs);
-  add(_np.intro, ppr({after:'60'}), rpr({sz:22}));
-  _np.bullets.forEach(function(b){ add('• ' + b.label + ': ' + b.detail, ppr({indL:'360', indH:'240', after:'40'}), rpr({sz:22})); });
+  var _top = _bTopModel(secs, codes);
+  if (briefDay === 'fc') add('Forecast briefing for ' + _fcstRangeText() + '.', ppr({after:'60'}), rpr({sz:22}));
+  _bTopDocx(_top, add, ppr, rpr, sp, function(xml){ paras.push(xml); });
   if (_np.outro) add(_np.outro, ppr({after:'100'}), rpr({sz:22}));
   var _dGaps = _briefDataGaps(codes);
   if (_dGaps.length) add(_briefGapText(_dGaps), ppr({fill:'FDE2E2', after:'100'}), rpr({sz:20, b:true, color:'7F1D1D'}));
@@ -6747,13 +7461,6 @@ function _watchDownloadDocx(codes, notes, sections) {
   if (_dPg) add(_dPg, ppr({fill:'FFEDD5', after:'100'}), rpr({sz:20, b:true, color:'9A3412'}));
   add(''+_briefIssuedLine()+' Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.',
       ppr({after:'120'}), rpr({sz:22, i:true, b:true}));
-  var _srd = _briefNarrativeHTML('wpcShortRangeText');
-  if (_srd) {
-    add('WPC Short Range Forecast Discussion (Day 1-2)', ppr({fill:'0E2841', after:'40'}), rpr({b:true, sz:21, color:'FFFFFF'}));
-    _srd.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'\n').replace(/&lt;/g,'<').replace(/&nbsp;/g,' ')
-        .split('\n').forEach(function(line){ if(line.trim()) add(line.trim(), ppr({after:'20'}), rpr({sz:17})); });
-    sp();
-  }
 
   if (notes) { add('Shift Notes: '+notes, ppr({fill:'F0F4F7', after:'120'}), rpr({sz:20})); sp(); }
 
@@ -6776,7 +7483,7 @@ function _watchDownloadDocx(codes, notes, sections) {
         var _bucket = m._sectionId ? (_mapParaBySection[m._sectionId] = _mapParaBySection[m._sectionId] || []) : _mapParas;
         _bucket.push(P(m.title, ppr({after:'60'}), rpr({b:true, sz:20, color:NAVY})));
         // 6.5in wide, matching the renderer's 1100x700 aspect ratio
-        var cx = 5943600, cy = Math.round(cx * 700 / 1100);
+        var cx = m.regional ? 3200400 : 5943600, cy = Math.round(cx * 700 / 1100);
         _bucket.push('<w:p>' + ppr({after:'240'}) + '<w:r><w:drawing>'
           + '<wp:inline distT="0" distB="0" distL="0" distR="0">'
           + '<wp:extent cx="' + cx + '" cy="' + cy + '"/>'
@@ -6806,6 +7513,8 @@ function _watchDownloadDocx(codes, notes, sections) {
   // Safety tagline
   add('Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.',
       ppr({fill:NAVY,jc:'center',after:'80'}), rpr({b:true,sz:22,color:'FFFFFF'}));
+
+  _bLegendDocx(_top.hasIntl, _top.isFc, add, ppr, rpr);
 
   // Disclaimer
   add('DISCLAIMER: This alert is intended for internal use only. It is based on information available at the time of issuance and is subject to change. This alert does not supersede official National Weather Service watches, warnings, or advisories. All operational decisions remain the responsibility of local management.',
@@ -8198,29 +8907,28 @@ function _doPrint(codes, notes, sections) {
 
 function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES, sections) {
   var secs = collectSectionsForDay(codes, sections);
+  var _top = _bTopModel(secs, codes);
   var html = '';
 
   html += '<table class="wx-hdr" style="border:none;margin-bottom:12px;width:100%"><tr><td style="background:#0E2841;padding:12px 16px;border:none">'
     +'<div style="color:#ffffff;font-size:13px;font-weight:700;letter-spacing:.04em">ATLANTIC AVIATION</div>'
     +'<div class="wx-hdr-title" style="color:#ffffff;font-size:15px;font-weight:700;overflow-wrap:anywhere">OPERATIONAL WEATHER BRIEFING \u2014 '+dateStr+(_briefScopeLabel?' \u2014 '+_briefScopeLabel:'')+(briefDay!=='1'?' \u2014 '+BRIEF_DAY_LABEL[briefDay]:'')+'</div>'
-    +'<div style="color:#c8d0d8;font-size:11px;margin-top:2px;overflow-wrap:anywhere">'+secs.map(function(s){return s.def.title;}).join(' \u00B7 ')+'</div>'
+    +'<div style="color:#c8d0d8;font-size:11px;margin-top:2px;overflow-wrap:anywhere">'+_top.counts.total+' base'+(_top.counts.total!==1?'s':'')+' impacted \u00B7 '+_top.counts.W+' at WARNING \u00B7 '+_top.counts.A+' at ADVISORY \u00B7 '+_top.counts.M+' MONITOR only</div>'
     +'</td></tr></table>';
 
   html += '<p style="font-size:10px;color:#556070;margin:0 0 10px 0">' + _briefIssueMeta() + '</p>';
   html += '<p style="margin:0 0 10px 0">Team,</p>';
   var _np = buildBriefNarrativeParts(secs);
-  html += '<p style="margin:0 0 6px 0">'+_np.intro+'</p>';
-  if (_np.bullets.length) html += '<ul style="margin:0 0 10px 0;padding-left:22px">'+_np.bullets.map(function(b){
-    return '<li style="margin:0 0 3px 0"><strong>'+b.label+':</strong> '+b.detail+'</li>'; }).join('')+'</ul>';
+  if (briefDay === 'fc') html += '<p style="margin:0 0 6px 0">Forecast briefing for ' + _fcstRangeText() + '.</p>';
+  html += _bTopHTML(_top);
   if (_np.outro) html += '<p style="margin:0 0 10px 0">'+_np.outro+'</p>';
   var _pGaps = _briefDataGaps(codes);
   if (_pGaps.length) html += '<p style="background:#fff0f0;border-left:4px solid #dc2626;padding:8px 12px;margin:0 0 10px 0;font-weight:700;color:#7f1d1d">' + _briefGapText(_pGaps) + '</p>';
   var _pPg = _briefProductGapText();
   if (_pPg) html += '<p style="background:#fff7ed;border-left:4px solid #ea580c;padding:8px 12px;margin:0 0 10px 0;font-weight:700;color:#9a3412">' + _pPg + '</p>';
   html += '<p style="margin:0 0 16px 0;font-style:italic;font-weight:700">'+_briefIssuedLine()+' Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.</p>';
-  // WPC Short Range Forecast Discussion leads the briefing -- it is the synoptic
-  // setup for everything below, so it reads first rather than under one hazard.
-  html += _briefNarrativeHTML('wpcShortRangeText');
+  // v54: the WPC Short Range Discussion sits with the outlooks (daily briefing) or
+  // after the grids (forecast briefing); _renderBriefHTML places it.
 
   if (notes) {
     html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px;font-size:11px"><strong>Shift Notes:</strong> '+notes+'</div>';
@@ -8236,6 +8944,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
 
   html += '<div style="background:#f2f4f6;padding:10px 12px;margin-top:16px;font-size:11px"><strong>Supervisors:</strong> Brief your team on all active hazards covered in this briefing before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.</div>';
   html += '<div style="background:#0E2841;color:#fff;text-align:center;font-weight:700;padding:8px;margin-top:8px;font-size:11px">Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.</div>';
+  html += _bLegendHTML(_top.hasIntl, _top.isFc);
   html += '<div style="font-size:9px;color:#666;font-style:italic;margin-top:8px">DISCLAIMER: This briefing is intended for internal use only. It is based on information available at the time of issuance and is subject to change. It does not supersede official National Weather Service watches, warnings, or advisories. All operational decisions remain the responsibility of local management.</div>';
   html += '<div style="font-size:9px;color:#8a9aaa;margin-top:10px">Generated '+utc+' by WATCH \u2014 Weather Awareness Tactical Command Hub \u2014 Atlantic Aviation \u2014 Internal Use Only</div>';
   return html;
@@ -9896,11 +10605,15 @@ function _watchBuildHazardMaps(codes) {
       });
       var regionCodes = _codesInRegion(codes, rk);
       var flagged = regionCodes.filter(function (c) { return siteColorFn && siteColorFn(c); });
-      // Skip a panel with no polygons and no impacted sites.
+      // Skip a panel with no polygons and no impacted sites. Regional panels
+      // (Alaska, Hawaii, offshore) are also skipped when no site there is highlighted:
+      // polygons alone on an otherwise empty frame add a page and no information.
       if (!layers.length && !flagged.length) return;
+      if (rk !== 'conus' && !flagged.length) return;
       var rSites = _watchMapSites(regionCodes, siteColorFn);
       var spec = {
         key: base.key + '_' + rk,
+        regional: (rk !== 'conus'),
         title: base.title + (REGION_LABEL[rk] ? ' \u2014 ' + REGION_LABEL[rk] : ''),
         subtitle: base.subtitle,
         sectionIds: base.sectionIds || [],
@@ -10246,7 +10959,7 @@ function _watchRenderAllMaps(codes) {
   specs.forEach(function (s) {
     try {
       var url = _watchRenderHazardMap(s);
-      if (url) out.push({ key: s.key, title: s.title, sectionIds: s.sectionIds || [], dataUrl: url });
+      if (url) out.push({ key: s.key, title: s.title, sectionIds: s.sectionIds || [], dataUrl: url, regional: !!s.regional });
     } catch (e) { console.warn('hazard map failed: ' + s.key, e); }
   });
   return out;
@@ -10287,6 +11000,10 @@ function _watchMapsBySection(codes, secs) {
 }
 
 function _watchMapImgHTML(m) {
+  if (m.regional) {
+    return '<div style="display:inline-block;vertical-align:top;width:49%;margin:6px 0.5% 6px 0"><img src="' + m.dataUrl + '" alt="' + m.title
+         + '" style="width:100%;border:1px solid #c8d0d8;display:block"/><div style="font-size:9px;color:#556070">' + m.title + '</div></div>';
+  }
   return '<div style="margin:8px 0"><img src="' + m.dataUrl + '" alt="' + m.title
        + '" style="width:100%;max-width:780px;border:1px solid #c8d0d8;display:block"/></div>';
 }
