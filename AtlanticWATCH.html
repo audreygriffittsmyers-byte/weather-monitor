@@ -3089,6 +3089,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
+var WATCH_BUILD = 'v58';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -3395,8 +3396,9 @@ var WATCH_BRIEF_SECTIONS = [
       var a=_bAlerts(c, /flood/i);
       // v55: tidal flooding is its own row and its own index column, so a coastal
       // advisory is not read as a ramp flood threat.
-      var co=a.filter(function(x){ return _BRIEF_COASTAL.test(x.event||''); });
+      var co=a.filter(function(x){ return _BRIEF_COASTAL.test(x.event||'') && _bCoastRamp(x); });
       var fl=a.filter(function(x){ return !_BRIEF_COASTAL.test(x.event||''); });
+      // v58: a tidal or coastal product with no airport or ramp impact is dropped, not listed
       if (fl.length) { var r1=_bRow(c, _bAlertTxt(fl, c)); r1.fam='FLASH'; rows.push(r1); }
       if (co.length) { var r2=_bRow(c, _bAlertTxt(co, c)); r2.fam='COAST'; r2.coastal=true; rows.push(r2); }
     });
@@ -3850,6 +3852,14 @@ var BRIEF_FAMILY_TXT   = {THUNDER:'thunderstorms and lightning', WIND:'wind', TR
 // {Carver:'Director: Name, 555-0100'}. Left empty until names are confirmed as stable.
 var AREA_CONTACTS = {};
 var _BRIEF_COASTAL = /coastal|tidal|lakeshore|storm surge/i;
+// v58: coastal flood is shown only when it can reach the ramp: any storm surge product,
+// or NWS text that names airport / ramp surfaces, or moderate / major flooding.
+function _bCoastRamp(a){
+  if (/storm surge/i.test(a.event||'')) return true;
+  var t = ((a.headline||'')+' '+(a.description||'')).replace(/\s+/g,' ');
+  if (/airport|runway|taxiway|tarmac|\bramp\b|apron|hangar/i.test(t)) return true;
+  return /(moderate|major)\s+(coastal\s+|tidal\s+)?flood|flood\w*\s+(is\s+)?(moderate|major)/i.test(t);
+}
 var BRIEF_FAMILY_OF = {
   spc:'THUNDER', tsfcst:'THUNDER', lightning:'THUNDER', tsalerts:'THUNDER',
   ero:'FLASH', rainfcst:'FLASH', floodalerts:'FLASH',
@@ -4289,7 +4299,7 @@ function _bLegendLines(hasIntl, isFc){
        + (isFc ? ' (each base is one row, one column per day; ▲ marks the peak day; trend shows whether PoP or gusts are building, steady or fading; change compares with the last issue marked sent).'
                : ' in order of urgency (active now, then forecast, awareness and outlooks).')
        + ' Times are local to each base with the day shown. NWS and SPC product names are quoted exactly as issued; the tier is WATCH’s own label.');
-  if (!isFc) L.push('TS in the base index = thunderstorms are forecast at that base in the next 24 hours (MONITOR tier, shown because lightning halts fueling; likely means scattered or numerous wording). Coastal flood is tidal: it is listed separately and does not trigger ramp flood actions.');
+  if (!isFc) L.push('TS in the base index = thunderstorms are forecast at that base in the next 24 hours (MONITOR tier, shown because lightning halts fueling; likely means scattered or numerous wording). Coastal flood is left out unless NWS text points to airport or ramp impacts, or it is a storm surge product.');
   if (hasIntl) L.push('\u2020 Model-only base (BDA, GCM, SXM, PLS): no NWS product exists for this location, so no official alert will appear. Data is METAR and forecast model only; treat as guidance.');
   return L;
 }
@@ -8999,7 +9009,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   html += '<div style="background:#0E2841;color:#fff;text-align:center;font-weight:700;padding:8px;margin-top:8px;font-size:11px">Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.</div>';
   html += _bLegendHTML(_top.hasIntl, _top.isFc);
   html += '<div style="font-size:9px;color:#666;font-style:italic;margin-top:8px">DISCLAIMER: This briefing is intended for internal use only. It is based on information available at the time of issuance and is subject to change. It does not supersede official National Weather Service watches, warnings, or advisories. All operational decisions remain the responsibility of local management.</div>';
-  html += '<div style="font-size:9px;color:#8a9aaa;margin-top:10px">Generated '+utc+' by WATCH \u2014 Weather Awareness Tactical Command Hub \u2014 Atlantic Aviation \u2014 Internal Use Only</div>';
+  html += '<div style="font-size:9px;color:#8a9aaa;margin-top:10px">Generated '+utc+' by WATCH \u2014 Weather Awareness Tactical Command Hub \u2014 Atlantic Aviation \u2014 Internal Use Only | Build '+WATCH_BUILD+'</div>';
   return html;
 }
 
@@ -9044,7 +9054,7 @@ function _buildAllClearBrief(codes, notes, dateStr, utc) {
     html += '</table>';
   }
   html += '<div style="background:#0E2841;color:#fff;font-weight:700;font-size:11px;padding:8px 14px;margin:16px 0;text-align:center">Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.</div>';
-  html += '<p style="font-size:9px;color:#8a9aaa;border-top:1px solid #ddd;padding-top:8px">Generated '+utc+' by WATCH \u2014 Atlantic Aviation \u2014 Internal Use Only</p>';
+  html += '<p style="font-size:9px;color:#8a9aaa;border-top:1px solid #ddd;padding-top:8px">Generated '+utc+' by WATCH \u2014 Atlantic Aviation \u2014 Internal Use Only | Build '+WATCH_BUILD+'</p>';
   return html;
 }
 
