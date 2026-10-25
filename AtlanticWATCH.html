@@ -3089,7 +3089,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v58';
+var WATCH_BUILD = 'v59';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -10813,11 +10813,24 @@ function _watchBuildHazardMaps(codes) {
     function (c) { var t = _winterSiteTier(c); return t ? t.color : null; },
     _winterLegend);
 
+  // v59: a site is highlighted on the NWS map only for a live watch, warning or
+  // advisory. Expired products, statements and outlooks do not count, and an
+  // advisory is drawn amber so it reads as a highlight, not as a plain dot.
+  // Zone-based products often carry no polygon, so the dot is the only mark.
+  function _nwsSiteTier(c) {
+    var live = _bAlerts(c, /watch|warning|advisory/i);
+    if (!live.length) return null;
+    var best = 'LOW';
+    live.forEach(function (a) { var b = a.bucket || getBucket(a.event || ''); if (ORD[b] < ORD[best]) best = b; });
+    if (best === 'LOW') return { color: TIER_BG[2], label: 'ADVISORY (site)' };
+    return { color: NWS_MARKER_COLOR[best], label: best };
+  }
   // Active NWS alerts with geometry
   var nwsFeats = Object.values(nwsPolygons || {}).filter(Boolean)
     .reduce(function (a, d) { return a.concat(d.features || []); }, [])
     .filter(function (f) { return f.geometry; });
-  if (nwsFeats.length) {
+  var _nwsAny = codes.some(function (c) { return _nwsSiteTier(c); });
+  if (nwsFeats.length || _nwsAny) {
     var nwsTiers = [];
     ['EXTREME', 'SEVERE', 'MODERATE', 'LOW'].forEach(function (b) {
       var feats = nwsFeats.filter(function (f) { return getBucket((f.properties && f.properties.event) || '') === b; });
@@ -10825,13 +10838,18 @@ function _watchBuildHazardMaps(codes) {
       var st = NWS_POLY_STYLE[b] || {};
       nwsTiers.push({ feats: feats, color: st.color, alpha: st.fillOpacity, weight: st.weight, label: b });
     });
-    if (nwsTiers.length) pushRegional(
+    if (nwsTiers.length || _nwsAny) pushRegional(
       { key: 'nws', title: 'Active NWS Watches, Warnings and Advisories', subtitle: 'Polygon-based alerts in effect at issuance time', sectionIds: ['tsalerts','floodalerts','windalerts','winteralerts','heatalerts','otheralerts'] },
       nwsTiers,
-      function (c) {
-        var r = results[c];
-        if (!r || !r.alerts || !r.alerts.length) return null;
-        return NWS_MARKER_COLOR[topBucket(r.alerts)] || null;
+      function (c) { var t = _nwsSiteTier(c); return t ? t.color : null; },
+      function (rk, regionCodes, polyLegend) {
+        var out = [], seen = {};
+        (polyLegend || []).forEach(function (e) { if (!seen[e.label]) { seen[e.label] = 1; out.push(e); } });
+        (regionCodes || []).forEach(function (c) {
+          var t = _nwsSiteTier(c);
+          if (t && !seen[t.label]) { seen[t.label] = 1; out.push(t); }
+        });
+        return out;
       });
   }
 
