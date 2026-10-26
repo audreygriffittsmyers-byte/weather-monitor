@@ -3089,7 +3089,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v63';
+var WATCH_BUILD = 'v64';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -3853,12 +3853,12 @@ var BRIEF_FAMILY_TXT   = {THUNDER:'thunderstorms and lightning', WIND:'wind', TR
 var AREA_CONTACTS = {};
 var _BRIEF_COASTAL = /coastal|tidal|lakeshore|storm surge/i;
 // v58: coastal flood is shown only when it can reach the ramp: any storm surge product,
-// or NWS text that names airport / ramp surfaces, or moderate / major flooding.
+// or NWS text that names airport / ramp surfaces. A warning or a flood category alone is not enough.
 function _bCoastRamp(a){
   if (/storm surge/i.test(a.event||'')) return true;
   var t = ((a.headline||'')+' '+(a.description||'')).replace(/\s+/g,' ');
   if (/airport|runway|taxiway|tarmac|\bramp\b|apron|hangar/i.test(t)) return true;
-  return /(moderate|major)\s+(coastal\s+|tidal\s+)?flood|flood\w*\s+(is\s+)?(moderate|major)/i.test(t);
+  return false;
 }
 var BRIEF_FAMILY_OF = {
   spc:'THUNDER', tsfcst:'THUNDER', lightning:'THUNDER', tsalerts:'THUNDER',
@@ -4144,15 +4144,12 @@ function _bBaseMap(secs){
     if (d.grid) { d.grid.rows.forEach(function(r){
       if (r.dropped) return;
       put(r.code, r.tier, r.peakFlat ? null : r.peakLead, F0, s.def.id);
-      if (s.def.id === 'ext_WIND') { var gv = _bNum(/gusts?\s+to\s+(\d+)/i, r.peakDetail); if (gv > (B(r.code).gust || 0)) B(r.code).gust = gv; }
     }); return; }
     (d.groups || [{rows:d.rows}]).forEach(function(g){
       if (g.track) return;
       g.rows.forEach(function(r){
         put(r.code, r.tier || g.tier || 1, null, r.fam || F0, s.def.id + ' ' + (r.detail || '') + ' ' + (r.detail2 || ''));
         if (s.def.id === 'tsfcst') B(r.code).ts = _bTsMarker(r);
-        if (s.def.id === 'windcur' || s.def.id === 'windfcstgust') { var gg = _bNum(/G(\d+)/, r.detail); if (gg > (B(r.code).gust || 0)) B(r.code).gust = gg; }
-        if (/alerts$|^tropical$|^fire$/.test(s.def.id) && (r.tier || g.tier || 1) >= 3 && /\bwarning\b/i.test(r.detail || '')) B(r.code).nwsW = true;
       });
     });
   });
@@ -4229,7 +4226,7 @@ function _bTopModel(secs, codes){
     var ch = _bChangeCounts(secs);
     lines.push({k:'Change since last issue', v:ch.any
       ? ch.NEW + ' new, ' + ch.WORSENED + ' worsened, ' + ch.IMPROVED + ' improved, ' + ch.DROPPED + ' dropped'
-      : 'Not available. No earlier issue is recorded on this device (use Mark as sent on each issue to enable this).'});
+      : 'No earlier issue on record.'});
   } else {
     lines.push({k:'Duration', v:'Next 24 hours only. Multi-day events are in the Forecast briefing (Sunday and Wednesday issues).'});
   }
@@ -4263,8 +4260,7 @@ function _bTopModel(secs, codes){
   var exec = null;
   try { exec = _bExecModel(base, bc, codes, isFc, ranked); } catch (e) { console.warn('executive layer failed', e); }
   return {lines:lines, index:{cols:cols, regions:regList, monOnly:monOnly}, hasIntl:hasIntl, isFc:isFc,
-          counts:{W:nW, A:nA, M:nM, act:nW + nA, total:bc.length}, exec:exec,
-          rankNote:'How sites are ranked: first by the most disruptive hazard present (lightning, wind, tropical, flash flood, winter, coastal flood, then heat or cold), then by the highest tier, then by how many hazards are active at once at ADVISORY or above. Duration, staffing and customer volume are not scored.'};
+          counts:{W:nW, A:nA, M:nM, act:nW + nA, total:bc.length}, exec:exec};
 }
 
 // ══ v63 EXECUTIVE LAYER ═════════════════════════════════════════════════════
@@ -4277,22 +4273,6 @@ function _bTopModel(secs, codes){
 //   {'Southeast':['Hartman','Therrien'], 'Hawaii':['Read'], 'Alaska':['Hill']}
 // Left empty, the Regional Snapshot rolls up by manager area.
 var LEADERSHIP_REGIONS = {};
-var LEADERSHIP_ACTIONS = [
-  ['Local Management',    ['Brief employees','Verify preparedness actions','Monitor local NWS updates']],
-  ['Area Management',     ['Conduct outreach to impacted stations','Verify action completion']],
-  ['Regional Leadership', ['Monitor high-risk locations','Assess staffing and operational impacts']],
-  ['Safety',              ['Monitor stop-work potential','Support elevated-risk stations']],
-  ['Customer Experience', ['Prepare customer communication plans']],
-  ['HR',                  ['Monitor employee weather exposure concerns']]
-];
-// [trigger, escalation, key for the live count or null when only stations can report it]
-var ESCALATION_TRIGGERS = [
-  ['NWS warning',                  'Area Manager notified',           'nwsW'],
-  ['Ramp restrictions',            'Regional leadership informed',    null],
-  ['Lightning operational impacts','Safety notified',                 'light'],
-  ['Wind gusts over 40 mph',       'Leadership monitoring',           'gust40'],
-  ['Business interruption',        'Operations and CX engaged',       null]
-];
 var HAZARD_IMPACTS = {
   thunderstorm:['Fueling and ramp work stop when lightning is within 5 miles','Arrival and departure delays possible','Passenger escort delays possible','Hail or wind damage risk to aircraft and GSE'],
   wind:['Aircraft movement restrictions','Ladder restrictions','Increased equipment securing requirements','Possible fueling delays'],
@@ -4325,19 +4305,6 @@ function _exArea(code){
   for (var i = 0; i < keys.length; i++) if (LEADERSHIP_REGIONS[keys[i]].indexOf(area) !== -1) return keys[i];
   return area + (keys.length ? '' : ' area');
 }
-function _exDay(){ return new Date().toLocaleDateString('en-CA'); }
-var EX_TREND_KEY = 'watch_trend_hist_';
-function _exTrendLoad(kind){ try { return JSON.parse(localStorage.getItem(EX_TREND_KEY + kind) || '[]'); } catch (e) { return []; } }
-function _bTrendSave(top){
-  try {
-    if (!top || !top.exec) return;
-    var kind = top.isFc ? 'fc' : 'd', today = _exDay();
-    var h = _exTrendLoad(kind).filter(function(e){ return e.d !== today; });
-    h.push({d:today, t:Date.now(), s:top.exec.scores});
-    localStorage.setItem(EX_TREND_KEY + kind, JSON.stringify(h.slice(-14)));
-  } catch (e) {}
-}
-
 function _bExecModel(base, bc, codes, isFc, ranked){
   var X = {};
   var R = {};
@@ -4364,8 +4331,6 @@ function _bExecModel(base, bc, codes, isFc, ranked){
             fams:topFams(g.score, 2).map(function(f){ return _EX_PHRASE[f]; })};
   });
   X.quiet = regs.filter(function(g){ return !g.hit.length && !g.ts; }).map(function(g){ return g.name; }).sort();
-  X.scores = {};
-  regs.forEach(function(g){ Object.keys(g.score).forEach(function(f){ X.scores[g.name + '|' + f] = g.score[f]; }); });
 
   function pick(test){ return bc.filter(function(c){ return test(base[c]); }); }
   var anyAct = bc.some(function(c){ return base[c].max >= 2 || base[c].ts; });
@@ -4425,33 +4390,6 @@ function _bExecModel(base, bc, codes, isFc, ranked){
     {k:'Potential communication needs', v:commB.length ? 'Proactive customer communication recommended at ' + _exL(commB, 10) : 'No warning-level sites; communicate locally as needed'}
   ];
 
-  // Escalation counts
-  var cnt = {
-    nwsW:   pick(function(b){ return b.nwsW; }),
-    light:  pick(function(b){ return _exTier(b, 'THUNDER') >= 2; }),
-    gust40: pick(function(b){ return (b.gust || 0) > 40; })
-  };
-  X.esc = ESCALATION_TRIGGERS.map(function(t){
-    return {trig:t[0], esc:t[1], now:t[2] ? (cnt[t[2]].length ? cnt[t[2]].length + ' base' + (cnt[t[2]].length === 1 ? '' : 's') + ': ' + _exL(cnt[t[2]], 6) : 'None') : 'Reported by stations'};
-  });
-
-  // Trend against the last briefing from an earlier day, same kind (daily or forecast)
-  var hist = _exTrendLoad(isFc ? 'fc' : 'd'), today = _exDay(), prior = null;
-  hist.forEach(function(e){ if (e.d < today && (!prior || e.d > prior.d)) prior = e; });
-  X.priorDay = prior ? prior.d : null;
-  var tr = [];
-  if (prior) {
-    var keys = {};
-    Object.keys(X.scores).concat(Object.keys(prior.s || {})).forEach(function(k){ keys[k] = 1; });
-    Object.keys(keys).forEach(function(k){
-      var now = X.scores[k] || 0, was = (prior.s || {})[k] || 0, p = k.split('|');
-      if (!R[p[0]] && !now) return;
-      tr.push({label:p[0] + ' ' + _EX_SHORT[p[1]] + ' risk', d:now - was, now:now});
-    });
-    tr.sort(function(a, b){ return Math.abs(b.d) - Math.abs(a.d) || b.now - a.now; });
-  }
-  X.trend = tr.slice(0, 8);
-  X.trendMore = Math.max(0, tr.length - 8);
   return X;
 }
 
@@ -4476,7 +4414,6 @@ function _bExecHTML(top){
     if (X.bi.safety.length) bi += _exSub('Employee Safety') + _exLines(X.bi.safety);
     if (X.bi.cx.length) bi += _exSub('Customer Experience') + _exLines(X.bi.cx);
     bi += _exSub('Management Attention') + _exLines(X.bi.mg);
-    bi += '<div style="font-size:9px;color:#556070;margin-top:6px">Impact wording is generic for each hazard type and says what is possible, not what a station has confirmed.</div>';
   }
   h += _exBox('BUSINESS IMPACT OUTLOOK', bi, '#0E2841');
   // Regional snapshot
@@ -4492,27 +4429,7 @@ function _bExecHTML(top){
         }).join('') + '</table>';
     if (X.quiet.length) rg += '<div style="font-size:9px;color:#556070;margin-top:4px">No bases with actions: ' + X.quiet.join(', ') + '</div>';
   }
-  h += _exBox('REGIONAL SNAPSHOT' + (Object.keys(LEADERSHIP_REGIONS).length ? '' : ' (BY MANAGER AREA)'), rg, '#1a6ba0');
-  // Trend
-  var tb = '';
-  if (!X.priorDay) tb = '<div>No earlier briefing is stored on this device yet. The trend starts after the next full all-locations briefing is generated.</div>';
-  else if (!X.trend.length) tb = '<div>No elevated hazards now or at the prior briefing.</div>';
-  else {
-    var A = {'1':['↑','Increasing','#b91c1c'], '0':['→','Stable','#556070'], '-1':['↓','Improving','#15803d']};
-    tb = '<div style="font-size:9px;color:#556070;margin-bottom:3px">Compared with the briefing generated ' + X.priorDay + '. Risk counts each base at ADVISORY or above, weighted by tier.</div>'
-      + X.trend.map(function(t){
-          var a = A[t.d > 0 ? '1' : (t.d < 0 ? '-1' : '0')];
-          return '<div style="margin:0 0 2px 10px"><strong style="color:' + a[2] + '">' + a[0] + ' ' + a[1] + '</strong> &nbsp;' + t.label + '</div>';
-        }).join('') + (X.trendMore ? '<div style="font-size:9px;color:#556070;margin-left:10px">+' + X.trendMore + ' more unchanged or smaller moves</div>' : '');
-  }
-  h += _exBox('RISK TREND', tb, '#556070');
-  // Leadership actions and escalation
-  var la = '<table style="width:100%;border-collapse:collapse;margin:0"><tr><th style="' + _EX_TH + ';width:26%">Role</th><th style="' + _EX_TH + '">Actions</th></tr>'
-    + LEADERSHIP_ACTIONS.map(function(r){ return '<tr><td style="' + _EX_TD + ';font-weight:700">' + r[0] + '</td><td style="' + _EX_TD + '">' + r[1].join(' &middot; ') + '</td></tr>'; }).join('') + '</table>';
-  h += _exBox(top.isFc ? 'LEADERSHIP ACTIONS THIS FORECAST PERIOD' : 'LEADERSHIP ACTIONS TODAY', la, '#0E2841');
-  var es = '<table style="width:100%;border-collapse:collapse;margin:0"><tr><th style="' + _EX_TH + ';width:32%">Trigger</th><th style="' + _EX_TH + ';width:30%">Escalation</th><th style="' + _EX_TH + '">' + (top.isFc ? 'Bases in forecast' : 'Bases now') + '</th></tr>'
-    + X.esc.map(function(r){ return '<tr><td style="' + _EX_TD + ';font-weight:700">' + r.trig + '</td><td style="' + _EX_TD + '">' + r.esc + '</td><td style="' + _EX_TD + '">' + r.now + '</td></tr>'; }).join('') + '</table>';
-  h += _exBox('ESCALATION THRESHOLDS', es, '#7f1d1d');
+  h += _exBox('REGIONAL SNAPSHOT', rg, '#1a6ba0');
   // Workforce and customer outlooks (printed after the standing actions)
   var t = '';
   var wf = '';
@@ -4577,7 +4494,6 @@ function _bConsolidateWind(secs){
   });
   return out;
 }
-var _briefIsFull = false;   // true only for an all-locations, all-sections briefing: it records the trend snapshot
 
 
 function _bTopHTML(top){
@@ -4586,7 +4502,6 @@ function _bTopHTML(top){
     + '<div style="background:#0E2841;color:#fff;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.05em">SUMMARY: WHAT MATTERS MOST</div>'
     + '<div style="padding:8px 12px;font-size:11px;line-height:1.55">'
     + top.lines.map(function(l){ return '<div style="margin:0 0 3px 0"><strong>'+l.k+':</strong> '+l.v+'</div>'; }).join('')
-    + '<div style="font-size:9px;color:#556070;margin-top:4px">'+top.rankNote+'</div>'
     + '</div></div>' + _ex.head;
   var ix = top.index;
   if (ix.regions.length) {
@@ -4629,7 +4544,7 @@ function _bLegendLines(hasIntl, isFc){
        + (isFc ? ' (each base is one row, one column per day; ▲ marks the peak day; trend shows whether PoP or gusts are building, steady or fading; change compares with the last issue marked sent).'
                : ' in order of urgency (active now, then forecast, awareness and outlooks).')
        + ' Times are local to each base with the day shown. NWS and SPC product names are quoted exactly as issued; the tier is WATCH’s own label.');
-  if (!isFc) L.push('TS in the base index = thunderstorms are forecast at that base in the next 24 hours (MONITOR tier, shown because lightning halts fueling; likely means scattered or numerous wording). Coastal flood is left out unless NWS text points to airport or ramp impacts, or it is a storm surge product.');
+  if (!isFc) L.push('TS in the base index = thunderstorms are forecast at that base in the next 24 hours (MONITOR tier, shown because lightning halts fueling; likely means scattered or numerous wording). Coastal flood is listed only when NWS reports airport or ramp impacts, or for storm surge.');
   if (hasIntl) L.push('\u2020 Model-only base (BDA, GCM, SXM, PLS): no NWS product exists for this location, so no official alert will appear. Data is METAR and forecast model only; treat as guidance.');
   return L;
 }
@@ -8626,7 +8541,6 @@ function openPrintBriefing() {
     }
 
     window._bulkStop = false;
-    _briefIsFull = false;
     var made = [], skipped = [], failed = [];
     for (var i = 0; i < jobs.length; i++) {
       var j = jobs[i];
@@ -8683,8 +8597,6 @@ function openPrintBriefing() {
       _briefScopeLabel = _an + ' Area';
     } else if (scope === 'mine') { _briefScopeLabel = 'My Stations'; }
     if (!codes.length) { alert('No locations in that scope.'); return; }
-    // only an all-locations briefing with every available section ticked records the trend snapshot
-    _briefIsFull = (scope === 'all' || (scope === 'mine' && myLocations.size === 0)) && !document.querySelector('#bo-sections input:not(:disabled):not(:checked)');
     var notesEl = document.getElementById('shift-notes');
     var notes = notesEl ? notesEl.value.trim() : '';
     var _genBtn = document.getElementById('bo-generate');
@@ -9334,7 +9246,6 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
       + '<div style="background:#0E2841;color:#fff;font-weight:700;font-size:12px;padding:6px 12px;letter-spacing:.05em">HAZARD MAPS</div>'
       + _mg.leftover.map(_watchMapImgHTML).join('') + '</div>';
   }
-  if (_briefIsFull) _bTrendSave(_top);
   html += _renderBriefHTML(_bConsolidateWind(secs), _mg.bySection);
 
   html += '<div style="background:#f2f4f6;padding:10px 12px;margin-top:16px;font-size:11px"><strong>Supervisors:</strong> Brief your team on all active hazards covered in this briefing before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.</div>';
