@@ -3089,7 +3089,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v59';
+var WATCH_BUILD = 'v61';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -8197,11 +8197,10 @@ function openPrintBriefing() {
     +(selected?'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="location" '+(defaultScope==='location'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">'+selected+' only</span></label>':'')
     +'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="radio" name="bo-scope" value="area" '+(defaultScope==='area'?'checked':'')+' style="cursor:pointer"> <span style="font-size:12px;color:#1a2a3a">Area</span> <select id="bo-area" style="flex:1;font-size:12px;padding:3px 4px;border:1px solid #c8d0d8;border-radius:4px;cursor:pointer">'+_areaOpts+'</select></label>'
     +'</div>'
-    +'<button id="bo-docx-all" style="width:100%;background:#2a7a4a;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 DOCX for every area (one file each)</button>'
-    +'<button id="bo-docx-haz" style="width:100%;background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 DOCX for every hazard (one file each)</button>'
+    +'<button id="bo-docx-all" style="width:100%;background:#2a7a4a;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 PDF for every area (one file each)</button>'
+    +'<button id="bo-docx-haz" style="width:100%;background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px">\u2193 PDF for every hazard (one file each)</button>'
     +'<div style="display:flex;gap:8px">'
     +'<button id="bo-generate" style="flex:1;background:#0E2841;color:#fff;border:none;border-radius:4px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">Generate Brief</button>'
-    +'<button id="bo-docx" style="background:#1a6ba0;color:#fff;border:none;border-radius:4px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer">↓ DOCX</button>'
     +'<button id="bo-cancel" style="background:#f0f0f0;color:#556070;border:none;border-radius:4px;padding:10px 14px;font-size:12px;cursor:pointer">Cancel</button>'
     +'</div></div>';
 
@@ -8221,8 +8220,8 @@ function openPrintBriefing() {
     if (r) r.checked = true;
   });
   modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
-  // Bulk export. mode 'area' = one DOCX per manager area, mode 'hazard' = one
-  // DOCX per checked hazard across every location. Daily briefings with nothing
+  // Bulk export. mode 'area' = one PDF per manager area, mode 'hazard' = one
+  // PDF per checked hazard across every location. Daily briefings with nothing
   // to report are skipped; a forecast briefing is still issued for every area so
   // a manager gets an explicit all-clear.
   function _mkBulk(mode) { return async function() {
@@ -8274,6 +8273,7 @@ function openPrintBriefing() {
       await _prefetchHourly(allCodes, btn);
     }
 
+    window._bulkStop = false;
     var made = [], skipped = [], failed = [];
     for (var i = 0; i < jobs.length; i++) {
       var j = jobs[i];
@@ -8283,17 +8283,22 @@ function openPrintBriefing() {
       var keepEmpty = isFc && mode === 'area';
       if (!j.codes.length || (!secs.length && !keepEmpty && !_briefDataGaps(j.codes).length)) { skipped.push(j.label); continue; }
       _briefScopeLabel = j.label;
-      try { _watchDownloadDocx(j.codes, notes, j.sects); made.push(j.label); }
-      catch(e) { failed.push(j.label + ' (' + e.message + ')'); }
-      // Browsers drop downloads fired back to back, so space them out.
-      await new Promise(function(r){ setTimeout(r, 900); });
+      var pw = null;
+      try {
+        pw = _doPrint(j.codes, notes, j.sects, { auto:true, progress:(i+1)+' of '+jobs.length, title:'WATCH Briefing - ' + new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' - ' + j.label });
+      } catch(e) { failed.push(j.label + ' (' + e.message + ')'); }
+      if (!pw) { if (!failed.length) failed.push(j.label + ' (pop-up blocked)'); break; }
+      made.push(j.label);
+      // One window at a time: wait until this one is saved or cancelled and closed.
+      await new Promise(function(r){ var t = setInterval(function(){ if (pw.closed) { clearInterval(t); r(); } }, 400); });
+      if (window._bulkStop) { window._bulkStop = false; break; }
     }
     _briefScopeLabel = '';
     _restore();
     modal.remove();
     if (isFc && mode === 'area' && made.length) markFcstSent();
 
-    var msg = made.length + ' briefing' + (made.length===1?'':'s') + ' downloaded';
+    var msg = made.length + ' briefing' + (made.length===1?'':'s') + ' opened for PDF';
     if (made.length) msg += ':\n' + made.join(', ');
     if (skipped.length) msg += '\n\nSkipped, nothing to report:\n' + skipped.join(', ');
     if (failed.length) msg += '\n\nFailed:\n' + failed.join('\n');
@@ -8301,45 +8306,6 @@ function openPrintBriefing() {
   }; }
   document.getElementById('bo-docx-all').addEventListener('click', _mkBulk('area'));
   document.getElementById('bo-docx-haz').addEventListener('click', _mkBulk('hazard'));
-
-  document.getElementById('bo-docx').addEventListener('click', async function() {
-    await fetchWPCPolygons();
-    await fetchSPCPolygons();
-    if (!firePolygons && typeof fetchFirePolygons === 'function') { try { await fetchFirePolygons(); } catch (e) {} }
-    if (!winterPolygons && typeof fetchWinterPolygons === 'function') { try { await fetchWinterPolygons(); } catch (e) {} }
-    if (briefDay !== '1' && typeof _extRetryWssi === 'function') { try { await _extRetryWssi(); } catch (e) {} }
-    if (!spcDay1NarrativeText && !wpcRainDiscussionText && !wpcShortRangeText) await fetchNWSNarrativeProducts();
-    var sects = {};
-    sects = _briefReadSects();
-    var scopeEl=document.querySelector('input[name="bo-scope"]:checked');
-    var scope=scopeEl?scopeEl.value:'all';
-    var codes;
-    if(scope==='mine'&&myLocations.size>0) codes=COVERED.filter(function(f){return myLocations.has(f.code);}).map(function(f){return f.code;});
-    else if(scope==='location'&&selected) codes=[selected];
-    else codes=COVERED.map(function(f){return f.code;});
-    _briefScopeLabel = '';
-    if (scope === 'area') {
-      var _an = (document.getElementById('bo-area')||{}).value || '';
-      var _ac = GRID_REGIONS[_an] || [];
-      codes = COVERED.filter(function(f){ return _ac.indexOf(f.code) !== -1; }).map(function(f){ return f.code; });
-      _briefScopeLabel = _an + ' Area';
-    } else if (scope === 'mine') { _briefScopeLabel = 'My Stations'; }
-    if (!codes.length) { alert('No locations in that scope.'); return; }
-    var notesEl=document.getElementById('shift-notes');
-    var notes=notesEl?notesEl.value.trim():'';
-    var _docxBtn = document.getElementById('bo-docx');
-    var _docxOrig = _docxBtn ? _docxBtn.textContent : '';
-    if (_docxBtn) { _docxBtn.disabled = true; _docxBtn.textContent = 'Loading...'; }
-    _prefetchHourly(codes, _docxBtn).then(function() {
-      if (_docxBtn) { _docxBtn.disabled = false; _docxBtn.textContent = _docxOrig; }
-      modal.remove();
-      try {
-        _watchDownloadDocx(codes,notes,sects);
-      } catch(e) {
-        alert('DOCX error: ' + e.message + '\n\n' + e.stack);
-      }
-    });
-  });
 
   document.getElementById('bo-generate').addEventListener('click', async function() {
     await fetchWPCPolygons();
@@ -8853,7 +8819,8 @@ function _getActionHTML(type) {
 }
 
 
-function _doPrint(codes, notes, sections) {
+function _doPrint(codes, notes, sections, opts) {
+  opts = opts || {};
   sections = sections || {spc:true,nhc:true,winter:true,flood:true,wind:true,temp:true,alerts:true};
   var now = new Date();
   var dateStr = now.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
@@ -8925,7 +8892,7 @@ function _doPrint(codes, notes, sections) {
   if (!win) { alert('Please allow popups for this site to generate briefings.'); return; }
   var head = '<!DOCTYPE html><html><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    + '<title>WATCH Briefing — ' + dateStr + '</title>'
+    + '<title>' + (opts.title || ('WATCH Briefing — ' + dateStr)) + '</title>'
     + '<style>'
     + '*{box-sizing:border-box}'
     + 'html{-webkit-text-size-adjust:100%}'
@@ -8962,10 +8929,19 @@ function _doPrint(codes, notes, sections) {
     + '</style></head><body>';
   var toolbar = '<div class="noprint" style="background:#0E2841;color:#fff;padding:8px 16px;margin:-20px -20px 16px;display:flex;justify-content:space-between;align-items:center">'
     + '<span style="font-size:12px;font-weight:700">WATCH Briefing</span>'
+    + (opts.progress ? '<span style="font-size:11px">' + opts.progress + '</span>' : '')
+    + (opts.auto ? '<button onclick="if(window.opener){window.opener._bulkStop=true}window.close()" style="background:#dc2626;color:#fff;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer;margin-right:8px">Stop remaining</button>' : '')
     + '<button onclick="window.print()" style="background:#fff;color:#0E2841;border:none;border-radius:3px;padding:4px 14px;font-size:11px;font-weight:700;cursor:pointer">Print / Save PDF</button>'
     + '</div>';
-  win.document.write(head + toolbar + html + '</body></html>');
+  // Bulk export: open the print dialog on its own, then close the window once it is
+  // saved or cancelled so the next briefing can open. The page title is the
+  // suggested PDF file name.
+  var autoJs = opts.auto
+    ? '<scr' + 'ipt>window.addEventListener("load",function(){setTimeout(function(){window.print()},800)});window.onafterprint=function(){setTimeout(function(){window.close()},300)};<\/scr' + 'ipt>'
+    : '';
+  win.document.write(head + toolbar + html + autoJs + '</body></html>');
   win.document.close();
+  return win;
 }
 
 function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES, sections) {
