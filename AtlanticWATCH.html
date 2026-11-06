@@ -2777,7 +2777,7 @@ function buildExtOutlook(code){
     var snow = Math.max(b.snowTxt, _gSnow[key] || 0, b.snowVcx || 0), ice = Math.max(b.iceTxt, _gIce[key] || 0);
     var wsev = null, wmain = '';
     if (/blizzard|ice storm|freezing rain/i.test(txt) || ice >= EXT_ICE_WARN || snow >= EXT_SNOW_WARN) { wsev = 'WARNING'; wmain = 'Snow, ice or freezing rain in forecast'; }
-    else if (ice >= EXT_ICE_ADV || snow >= EXT_SNOW_ADV || (/snow|sleet|wintry/i.test(txt) && b.pop >= 60)) { wsev = 'ADVISORY'; wmain = 'Winter storm potential' + (b.pop ? ' (' + b.pop + '% PoP)' : ''); }
+    else if (ice >= EXT_ICE_ADV || snow >= EXT_SNOW_ADV || (/snow|sleet|wintry/i.test(txt) && b.pop >= 60 && (snow > 0 || ice > 0))) { wsev = 'ADVISORY'; wmain = 'Winter storm potential' + (b.pop ? ' (' + b.pop + '% PoP)' : ''); }
     else if (/snow|sleet|wintry|freezing drizzle/i.test(txt) && (b.pop >= 30 || snow >= 0.5 || ice > 0)) { wsev = 'MONITOR'; wmain = 'Winter weather in forecast' + (b.pop ? ' (' + b.pop + '% PoP)' : ''); }
     if (wsev) {
       var wbits = [];
@@ -2794,7 +2794,7 @@ function buildExtOutlook(code){
       hz.push({kind:'TROPICAL', sev:'WARNING', detail:'Tropical system referenced in forecast'});
 
     if (/flood|heavy rain|torrential|excessive rain/i.test(txt))
-      hz.push({kind:'RAIN', sev: b.pop>=70?'WARNING':'ADVISORY', detail:'Flooding or heavy rain in forecast'+(b.pop?' ('+b.pop+'% PoP)':'')});
+      hz.push({kind:'RAIN', sev: (b.pop>=70 && /flash flood|excessive rain|flood warning/i.test(txt)) ? 'WARNING' : (b.pop>=70 ? 'ADVISORY' : 'MONITOR'), detail:'Flooding or heavy rain in forecast'+(b.pop?' ('+b.pop+'% PoP)':'')});
 
     if (/thunder/i.test(txt))
       hz.push({kind:'TSTM', sev: b.pop>=60?'ADVISORY':'MONITOR', detail:'Thunderstorms in forecast'+(b.pop?' ('+b.pop+'% PoP)':'')});
@@ -3024,7 +3024,7 @@ function notifyExtendedOutlook(){
 
 function _extKindLabel(k){
   return ({WIND:'High wind', WINTER:'Winter storm', TROPICAL:'Tropical threat', RAIN:'Flooding / heavy rain',
-           TSTM:'Thunderstorms', HEAT:'Extreme heat', COLD:'Extreme cold', SEVERE:'Severe thunderstorms',
+           TSTM:'Thunderstorms', HEAT:'Heat stress', COLD:'Cold stress', SEVERE:'Severe thunderstorms',
            SYSTEM:'Developing system'})[k] || k;
 }
 
@@ -3342,7 +3342,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v85a';
+var WATCH_BUILD = 'v86';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -3479,7 +3479,11 @@ function _bFmtT(dt, code){
   try { return d.toLocaleString('en-US', o); } catch (e) { delete o.timeZone; return d.toLocaleString('en-US', o); }
 }
 function _bAlertTxt(list, code){
-  return list.map(function(a){ return a.event + (a.expires ? ' until '+_bFmtT(a.expires, code) : ''); }).join('; ');
+  return list.map(function(a){
+    var s = a.event + (a.expires ? ' until '+_bFmtT(a.expires, code) : '');
+    if (a.expires) { var ms = new Date(a.expires).getTime() - Date.now(); if (ms > 0 && ms < 7200000) s += ' (ends in ' + (ms < 3600000 ? Math.max(1, Math.round(ms / 60000)) + ' min' : 'under 2 hours') + ')'; }
+    return s;
+  }).join('; ');
 }
 // ERO valid times arrive in UTC; the briefing shows site-local time with the day.
 function _bEroLocal(code, info){
@@ -3514,6 +3518,7 @@ function _bHourly(code){
 }
 function _bHrLabel(iso, code){
   var d = new Date(iso), n = new Date();
+  var _inProg = d.getTime() <= n.getTime() && n.getTime() - d.getTime() < 3600000;
   var z = code && SITE_TZ[code];
   var o = {hour:'numeric',minute:'2-digit',hour12:true,timeZoneName:'short'};
   if (z) o.timeZone = z;
@@ -3523,7 +3528,7 @@ function _bHrLabel(iso, code){
   // site, so no entry in the briefing depends on the reader knowing the date.
   var wo = {weekday:'short'}; if (z) wo.timeZone = z;
   try { t = d.toLocaleDateString('en-US', wo) + ' ' + t; } catch (e) {}
-  return t;
+  return _inProg ? 'this hour (' + t + ')' : t;
 }
 function _bWindMph(p){
   if (!p || !p.windSpeed) return 0;
@@ -4012,11 +4017,11 @@ function _narrativeSummary(txt){
   for (var k=0; k<paras.length; k++){
     if (!/^\.\.\./.test(paras[k]) && paras[k].length > 60 && !/^\$\$/.test(paras[k])) { body = paras[k]; break; }
   }
-  var out = heads.slice(0,6);
+  var out = heads.slice(0,3);
   if (body) out.push(body);
   if (!out.length) out = paras.slice(0,1);
   var s = out.join('\n\n');
-  if (s.length > 1500) s = s.slice(0,1500).replace(/\s+\S*$/,'') + '\u2026';
+  if (s.length > 700) { var cut = s.slice(0,700), kk = cut.lastIndexOf('. '); s = kk > 300 ? cut.slice(0, kk + 1) : cut.replace(/\s+\S*$/,'') + '\u2026'; }
   return s;
 }
 function _briefNarrativeHTML(varName){
@@ -4135,7 +4140,7 @@ var TIER_DOCX = {3:'DC2626',  2:'D97706',   1:'0891B2'};
 // flash flood, winter, coastal (tidal) flood, heat and cold, everything else.
 var BRIEF_FAMILY_ORDER = ['THUNDER','WIND','TROP','FLASH','WINTER','COAST','TEMP','OTHER'];
 var BRIEF_FAMILY_COL   = {THUNDER:'Thunder / lightning', WIND:'Wind', TROP:'Tropical', FLASH:'Flash flood / rain', WINTER:'Winter', COAST:'Coastal flood', TEMP:'Heat / cold', OTHER:'Other'};
-var BRIEF_FAMILY_TXT   = {THUNDER:'thunderstorms and lightning', WIND:'wind', TROP:'tropical', FLASH:'flash flood / heavy rain', WINTER:'winter weather', COAST:'coastal flood (tidal)', TEMP:'heat / cold', OTHER:'fire, dust, air quality or other alerts'};
+var BRIEF_FAMILY_TXT   = {THUNDER:'thunderstorms and lightning', WIND:'wind', TROP:'tropical', FLASH:'flash flood / heavy rain', WINTER:'winter weather', COAST:'coastal flood (tidal)', TEMP:'heat / cold', OTHER:'other alerts'};
 // Optional: manager-area contacts shown in the base index area headers, for example
 // {Carver:'Director: Name, 555-0100'}. Left empty until names are confirmed as stable.
 var AREA_CONTACTS = {};
@@ -4361,7 +4366,26 @@ var _ACT = {
     warn:['Shelter employees indoors when AQI exceeds 200 and limit outdoor task duration below that.',
           'Close hangar doors and disable fresh-air intake fans when smoke is present.',
           'Advise customers to keep aircraft windows and vents closed while parked.',
-          'No compressed air or dry sweeping during ash events. Wet ash before cleanup.']}
+          'No compressed air or dry sweeping during ash events. Wet ash before cleanup.']},
+  fog: {title:'Dense Fog / Low Visibility', color:'#64748b',
+    adv:['Check visibility against operational minimums before each ramp movement and tell the team the expected clearing time.',
+         'Lights and beacons on every vehicle and piece of GSE, high-visibility vests on everyone, and slow all ramp traffic.',
+         'Use a spotter for towing and aircraft marshalling, and keep vehicles in radio contact.'],
+    warn:['Suspend towing and non-essential ramp movement when visibility drops below operational minimums.',
+          'Service and fuel aircraft only where the aircraft and the surrounding ramp are clearly visible.',
+          'Check in with airport operations before resuming normal ramp traffic.']},
+  surf: {title:'High Surf / Rip Currents / Coastal Hazards', color:'#0e7490',
+    adv:['Keep crews and customers away from the shoreline, seawalls and low edges of the ramp that waves or spray can reach.',
+         'Secure loose items and equipment stored near the water.',
+         'Brief the team on wave and rip current hazards before any work near a beach, dock or seawall.'],
+    warn:['Stop work near the shoreline and move vehicles and equipment away from the water.',
+          'Allow no one into the water or onto exposed seawalls or jetties.',
+          'Check in with your manager before resuming work near the water.']},
+  other: {title:'Other NWS Alert', color:'#475569',
+    adv:['Read the full NWS alert text and brief the team on what it means for your site.',
+         'Follow your site procedure for this hazard and check in with your manager if conditions change.'],
+    warn:['Read the full NWS alert now and brief the team.',
+          'Follow your site procedure for this hazard and check in with your manager before normal operations continue.']}
 };
 function _bActionModel(type, tier){
   var A = _ACT[type];
@@ -4433,7 +4457,7 @@ function _bBaseMap(secs){
       if (tier > b.max) b.max = tier;
       // v63: heat and cold share one family in the index; the executive layer needs them apart
       if (F === 'TEMP') {
-        var tk = b.tk || (b.tk = {heat:0, cold:0}), kind = /chillalerts|ext_COLD|wind chill|cold|freez|frost/i.test(hint || '') ? 'cold' : 'heat';
+        var tk = b.tk || (b.tk = {heat:0, cold:0}), kind = _cardTempKind(hint);
         if (tier > tk[kind]) tk[kind] = tier;
       }
     }
@@ -4507,7 +4531,7 @@ function _bTopModel(secs, codes){
     var bx = base[x], by = base[y];
     var nx = BRIEF_FAMILY_ORDER.filter(function(F){ return bx.fam[F] && bx.fam[F].tier >= 2; }).length;
     var ny = BRIEF_FAMILY_ORDER.filter(function(F){ return by.fam[F] && by.fam[F].tier >= 2; }).length;
-    return cons(bx) - cons(by) || by.max - bx.max || ny - nx || (x < y ? -1 : 1);
+    return by.max - bx.max || cons(bx) - cons(by) || ny - nx || (x < y ? -1 : 1);
   }).slice(0, 5);
   lines.push({k:'Sites of greatest concern (ranked by operational consequence)', v:ranked.length ? ranked.map(function(c){
     var b = base[c];
@@ -4515,7 +4539,7 @@ function _bTopModel(secs, codes){
       return TIER_NAME[b.fam[F].tier] + ' ' + BRIEF_FAMILY_TXT[F].split(' (')[0];
     });
     return _bCode(c) + ' (' + parts.join(', ') + ')';
-  }).join('; ') : 'None. Every listed base is MONITOR only.'});
+  }).join('; ') : (bc.length ? 'None. Every listed base is MONITOR only.' : 'None. No base has an active hazard.')});
   if (isFc) {
     var md = _bMultiDay(secs);
     lines.push({k:'Multi-day events', v:md.length ? md.map(function(x){ return x.text; }).join('; ') : 'None. No base has the same hazard on two or more days at ADVISORY or above.'});
@@ -4650,7 +4674,7 @@ function _bExecModel(base, bc, codes, isFc, ranked){
   if (heat.length) safety.push({k:'Heat stress concerns', v:_exL(heat)});
   if (windB.length) safety.push({k:'High wind exposure for outdoor work', v:_exL(windB)});
   if (lightB.length) safety.push({k:'Lightning exposure (outdoor work stops with lightning within 5 miles)', v:_exL(lightB)});
-  var thMin = (briefDay === '1') ? 1 : 2;   // v76: forecast-day Marginal, Slight and 15% SPC rows are MONITOR (awareness only)
+  var thMin = 2;   // v76: forecast-day Marginal, Slight and 15% SPC rows are MONITOR (awareness only)
   var delayB = pick(function(b){ return _exTier(b, 'THUNDER') >= thMin || _exTier(b, 'WIND') >= 3 || _exTier(b, 'FLASH') >= 2 || _exTier(b, 'WINTER') >= 2 || _exTier(b, 'TROP') >= 2; });
   var rampB = pick(function(b){ return _exTier(b, 'FLASH') >= 2 || _exTier(b, 'COAST') >= 2; });
   var escB = pick(function(b){ return _exTier(b, 'THUNDER') >= thMin || _exTier(b, 'FLASH') >= 2 || _exTier(b, 'WIND') >= 3; });
@@ -4671,7 +4695,8 @@ function _bExecModel(base, bc, codes, isFc, ranked){
     ['Heat stress',                   function(b){ return _exTier(b, 'HEAT'); }, 'Ramp crews, fuelers and outdoor staff'],
     ['Cold stress',                   function(b){ return _exTier(b, 'COLD'); }, 'Ramp crews, fuelers and outdoor staff'],
     ['High wind outdoor exposure',    function(b){ return _exTier(b, 'WIND'); }, 'Towing, ladders, loose equipment and aircraft doors'],
-    ['Slip and fall exposure',        function(b){ return Math.max(_exTier(b, 'WINTER'), _exTier(b, 'FLASH'), _exTier(b, 'COAST')); }, 'Ice, snow or standing water on ramp and walkways'],
+    ['Slip and fall exposure',        function(b){ return Math.max(_exTier(b, 'WINTER'), _exTier(b, 'FLASH'), _exTier(b, 'COAST')); }, function(bs){ var ice = bs.some(function(b){ return _exTier(b, 'WINTER') >= 2; }), wet = bs.some(function(b){ return _exTier(b, 'FLASH') >= 2 || _exTier(b, 'COAST') >= 2; });
+      return (ice && wet ? 'Ice, snow or standing water' : ice ? 'Ice or snow' : 'Standing water') + ' on ramp and walkways'; }],
     ['Lightning exposure',            function(b){ return _exTier(b, 'THUNDER'); }, 'Everyone outdoors; fueling stops with lightning within 5 miles']
   ];
   X.wf = []; X.wfQuiet = [];
@@ -4680,7 +4705,7 @@ function _bExecModel(base, bc, codes, isFc, ranked){
     if (!hit.length) { X.wfQuiet.push(w[0]); return; }
     var tiers = {}; hit.forEach(function(c){ var t = w[1](base[c]); (tiers[t] = tiers[t] || []).push(c); });
     Object.keys(tiers).map(Number).sort(function(a, b){ return b - a; }).forEach(function(t){
-      X.wf.push({cat:w[0], tier:t, bases:_exL(tiers[t], 10), why:w[2]});
+      X.wf.push({cat:w[0], tier:t, bases:_exL(tiers[t], 10), why:(typeof w[2] === 'function' ? w[2](tiers[t].map(function(c){ return base[c]; })) : w[2])});
     });
   });
 
@@ -5391,7 +5416,7 @@ function _renderBriefHTML(secs, mapsBySection){
     if (def.grp && def.grp !== lastGrp) {
       lastGrp = def.grp;
       if (def.grp === 'outlook') wpc();
-      html += '<div style="font-size:11px;font-weight:700;color:#0E2841;letter-spacing:.05em;border-bottom:2px solid #0E2841;padding:12px 2px 3px;margin:8px 0 6px">'+BRIEF_GROUP_LABEL[def.grp]+'</div>';
+      html += '<div style="font-size:11px;font-weight:700;color:#0E2841;letter-spacing:.05em;border-bottom:2px solid #0E2841;padding:12px 2px 3px;margin:8px 0 6px;page-break-after:avoid;break-after:avoid">'+BRIEF_GROUP_LABEL[def.grp]+'</div>';
     }
     [def.id].concat(def.ids || []).forEach(function(k){ (mapsBySection[k] || []).forEach(function(m){ html += _watchMapImgHTML(m); }); });
     if (d.html) {
@@ -5399,8 +5424,8 @@ function _renderBriefHTML(secs, mapsBySection){
         + '<div style="background:'+def.bg+';color:'+def.tc+';font-size:11px;font-weight:700;padding:6px 10px;letter-spacing:.04em">'+def.title+'</div>'
         + '<div style="border:1px solid #ddd;border-top:none;padding:10px 12px;font-size:11px">'+d.html+'</div></div>';
     } else {
-      html += '<div style="background:'+def.bg+';color:'+def.tc+';font-size:11px;font-weight:700;padding:6px 10px;letter-spacing:.04em;margin-top:4px">'+def.title+'</div>';
-      if (def.sub) html += '<div style="font-size:10px;color:#556070;font-style:italic;margin:3px 0 6px">'+def.sub+'</div>';
+      html += '<div style="background:'+def.bg+';color:'+def.tc+';font-size:11px;font-weight:700;padding:6px 10px;letter-spacing:.04em;margin-top:4px;page-break-after:avoid;break-after:avoid">'+def.title+'</div>';
+      if (def.sub) html += '<div style="font-size:10px;color:#556070;font-style:italic;margin:3px 0 6px;page-break-after:avoid;break-after:avoid">'+def.sub+'</div>';
       if (d.grid) html += _bGridHTML(d.grid);
       else (d.groups || [{label:null, bg:def.bg, cols:d.cols, rows:d.rows}]).forEach(function(g){
         if (g.listOnly) {
@@ -5410,7 +5435,7 @@ function _renderBriefHTML(secs, mapsBySection){
           return;
         }
         var M = _bTblModel(def, g, d);
-        html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px">';
+        html += '<table style="width:100%;border-collapse:collapse;margin-bottom:10px' + (M.rows.length <= 12 ? ';page-break-inside:avoid;break-inside:avoid' : '') + '">';
         if (g.label) html += '<tr><td colspan="'+M.cols.length+'" style="background:'+(g.bg||def.bg)+';color:#fff;font-weight:700;font-size:11px;padding:5px 8px;border:1px solid '+(g.bg||def.bg)+'">'+_bGroupHead(g)+'</td></tr>';
         html += '<tr style="background:#f0f4f7">'+M.cols.map(function(c,ci){
           return '<th style="border:1px solid #ddd;text-align:left;font-size:10px;color:#556070;padding:4px 6px'+(ci<2?';word-break:normal;overflow-wrap:normal':'')+'">'+c+'</th>';
@@ -7573,7 +7598,26 @@ function _nhcClean(txt){
 function _nhcBasinText(raw){
   var c = _nhcClean(raw);
   if (!c.trim() || !/\bpercent\b|\bchance\b|disturbance|low pressure|centered|located/i.test(c)) return '';
-  return _narrativeSummary(c);
+  var paras = c.split(/\n\s*\n/).map(function(p){ return p.trim(); }).filter(function(p){
+    if (!p || /^(\$\$|&&)/.test(p) || /^forecaster\b/i.test(p)) return false;
+    var top = p.split('\n').slice(0, 4).join(' ');
+    if (p.length < 260 && /tropical weather outlook|hurricane center|issued by nws|^(atlantic|east pacific|central pacific)\s*$/i.test(top)) return false;
+    return true;
+  });
+  if (!paras.length) return '';
+  var s = paras.slice(0, 3).map(function(p){ return p.replace(/\s*\n\s*(?!\*)/g, ' '); }).join('\n\n');
+  if (s.length > 900) { s = s.slice(0, 900); var k = s.lastIndexOf('. '); s = (k > 400 ? s.slice(0, k + 1) : s.replace(/\s+\S*$/, '') + '\u2026'); }
+  return s;
+}
+function _nhcAreaLabel(f){
+  try {
+    var pts = [];
+    (function walk(c){ if (typeof c[0] === 'number') pts.push(c); else c.forEach(walk); })(f.geometry.coordinates);
+    if (!pts.length) return 'Disturbance';
+    var lo = 0, la = 0; pts.forEach(function(p){ lo += p[0]; la += p[1]; }); lo /= pts.length; la /= pts.length;
+    var bas = lo > 0 ? 'Western Pacific' : lo >= -100 ? 'Atlantic' : lo >= -140 ? 'East Pacific' : 'Central Pacific';
+    return bas + ' disturbance near ' + Math.abs(Math.round(la)) + '\u00B0' + (la >= 0 ? 'N' : 'S') + ' ' + Math.abs(Math.round(lo)) + '\u00B0' + (lo >= 0 ? 'E' : 'W');
+  } catch (e) { return 'Disturbance'; }
 }
 function getTropicalOutlookSection() {
   var _twEP = (typeof tropicalOutlookTextEP !== 'undefined') ? tropicalOutlookTextEP : null;
@@ -7602,7 +7646,7 @@ function getTropicalOutlookSection() {
         var col=risk==='high'?'#dc2626':risk==='medium'?'#ea580c':'#ca8a04';
         return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #e8e8e8">'
           +'<span style="font-size:14px">🌀</span>'
-          +'<div style="flex:1"><div style="font-size:11px;font-weight:700">'+(d.Name||'Disturbance')+'</div>'
+          +'<div style="flex:1"><div style="font-size:11px;font-weight:700">'+(d.Name||_nhcAreaLabel(f))+'</div>'
           +'<div style="font-size:10px;color:#556070">'+((d.risk7day||'')+' 7-day risk')+'</div></div>'
           +'<span style="background:'+col+';color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px">'
           +'2-day: '+p2+' | 7-day: '+p7+'</span></div>';
@@ -8550,6 +8594,10 @@ function _cardKindOf(secId, fam, hint) {
   if (fam === 'TEMP') return _cardTempKind(hint);
   if (secId === 'fire') return 'fire';
   if (secId === 'aqi') return 'aqi';
+  if (secId === 'dust') return 'dust';
+  var hh = String(hint || '').split('||')[0];
+  if (/\bfog\b|low visibility|freezing fog/i.test(hh)) return 'fog';
+  if (/surf|rip current|beach hazard|swimmers|high seas|hazardous seas|sneaker/i.test(hh)) return 'surf';
   return 'other';
 }
 function _cardPut(list, kind, tier, txt, until) {
@@ -8607,7 +8655,7 @@ function buildCardPayload() {
   areas['Corporate'] = [];
   codes.forEach(function(c2){ var a = sites[c2].area; (areas[a] = areas[a] || []).push(c2); });
   // Crew actions: the same _ACT lists the Briefing prints.
-  var map = {thunder:'thunderstorm', wind:'wind', heat:'heat', cold:'cold', flood:'flood', winter:'winter', fire:'fire', aqi:'aqi', other:'dust'};
+  var map = {thunder:'thunderstorm', wind:'wind', heat:'heat', cold:'cold', flood:'flood', winter:'winter', fire:'fire', aqi:'aqi', dust:'dust', fog:'fog', surf:'surf', other:'other'};
   var actions = {};
   Object.keys(map).forEach(function(k){ var a = _ACT[map[k]]; if (a) actions[k] = {adv:(a.adv || []).slice(), warn:(a.warn || []).slice()}; });
   function fmt(i){ var d = new Date(now.getTime() + i * 86400000); return d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}); }
@@ -11761,6 +11809,7 @@ function _watchMapsBySection(codes, secs) {
     if (target) { (bySection[target] = bySection[target] || []).push(m); }
     else leftover.push(m);
   });
+  if (codes && codes.length < COVERED_ALL.length) leftover = [];   // v86: a filtered briefing shows only maps for hazards it contains
   return { bySection: bySection, leftover: leftover };
 }
 
