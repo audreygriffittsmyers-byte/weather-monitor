@@ -3342,7 +3342,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v88';
+var WATCH_BUILD = 'v89';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -3766,7 +3766,19 @@ var WATCH_BRIEF_SECTIONS = [
   collect:function(codes){
     var rows=[];
     codes.forEach(function(c){
-      var a=_bAlerts(c, /wind chill|extreme cold|cold weather|freeze|frost/i);
+      var a=_bAlerts(c, /wind chill|extreme cold|cold weather|freeze/i);
+      if (a.length) rows.push(_bRow(c, _bAlertTxt(a, c)));
+    });
+    return {rows:rows, cols:['FBO','City / State','Alert / Status']};
+  }},
+
+// 12b ── Frost (v89: its own section, tier and action; it is not extreme cold) ──
+{ id:'frostalerts', title:'FROST ADVISORIES', sub:'NWS frost products in effect. Frost on aircraft surfaces and ramp.',
+  icon:'\u2744', bg:'#0e7490', tc:'#fff', docxBg:'0E7490', actions:'frost',
+  collect:function(codes){
+    var rows=[];
+    codes.forEach(function(c){
+      var a=_bAlerts(c, /frost/i);
       if (a.length) rows.push(_bRow(c, _bAlertTxt(a, c)));
     });
     return {rows:rows, cols:['FBO','City / State','Alert / Status']};
@@ -3913,7 +3925,7 @@ var WATCH_BRIEF_SECTIONS = [
   collect:function(codes){
     var rows=[];
     codes.forEach(function(c){
-      var a=_bAlerts(c, /snow|ice|freezing rain|sleet|frost/i);
+      var a=_bAlerts(c, /snow|ice|freezing rain|sleet/i);
       var fc=null;
       _bHourly(c).forEach(function(p){ if(!fc && /snow|sleet|freezing|ice/i.test(p.shortForecast||'')) fc=p; });
       if (a.length) rows.push(_bRow(c, _bAlertTxt(a, c), fc?('Forecast '+_bHrLabel(fc.startTime, c)+' \u2014 '+fc.shortForecast):''));
@@ -3977,7 +3989,7 @@ var WATCH_BRIEF_SECTIONS = [
   collect:function(codes){
     // SPC/WPC narratives moved to the hazard sections they actually discuss --
     // this section is NHC only now.
-    var t = (typeof getTropicalOutlookSection==='function') ? (getTropicalOutlookSection()||'') : '';
+    var t = (typeof getTropicalOutlookSection==='function') ? (getTropicalOutlookSection(codes)||'') : '';
     return t ? {html:t} : null;
   }}
 ];
@@ -4029,6 +4041,7 @@ function _briefNarrativeHTML(varName){
   var txt = null;
   try { txt = eval(varName); } catch(e) { txt = null; }
   if (!meta || !txt) return '';
+  txt = _wxScopeText(txt); if (!txt) return '';
   return _narrativeCard(meta[0], meta[1], txt, meta[2]);
 }
 function _briefNarrativeFor(def){
@@ -4037,6 +4050,7 @@ function _briefNarrativeFor(def){
   var txt = null;
   try { txt = eval(def.narrativeVar); } catch(e) { txt = null; }
   if (!meta || !txt) return '';
+  txt = _wxScopeText(txt); if (!txt) return '';
   return _narrativeCard(meta[0], meta[1], txt, meta[2]);
 }
 
@@ -4157,7 +4171,7 @@ var BRIEF_FAMILY_OF = {
   spc:'THUNDER', tsfcst:'THUNDER', lightning:'THUNDER', tsalerts:'THUNDER',
   ero:'FLASH', rainfcst:'FLASH', floodalerts:'FLASH',
   windalerts:'WIND', windcur:'WIND', windfcstsus:'WIND', windfcstgust:'WIND',
-  chillalerts:'TEMP', heatalerts:'TEMP', heatcur:'TEMP', feelfcst:'TEMP',
+  chillalerts:'TEMP', frostalerts:'TEMP', heatalerts:'TEMP', heatcur:'TEMP', feelfcst:'TEMP',
   winteralerts:'WINTER', snowice:'WINTER',
   tropical:'TROP', dust:'OTHER', fire:'OTHER', aqi:'OTHER', otheralerts:'OTHER',
   ext_SEVERE:'THUNDER', ext_TSTM:'THUNDER', ext_WIND:'WIND', ext_WINTER:'WINTER',
@@ -4174,7 +4188,7 @@ var BRIEF_GROUP_LABEL = {
 };
 var BRIEF_ORDER = [
   ['lightning','now'],['tsalerts','now'],['floodalerts','now'],['windalerts','now'],['windcur','now'],
-  ['chillalerts','now'],['heatalerts','now'],['heatcur','now'],['winteralerts','now'],['dust','now'],
+  ['chillalerts','now'],['frostalerts','now'],['heatalerts','now'],['heatcur','now'],['winteralerts','now'],['dust','now'],
   ['fire','now'],['aqi','now'],['tropical','now'],['otheralerts','now'],
   ['tsfcst','forecast'],['windfcstsus','forecast'],['windfcstgust','forecast'],['snowice','forecast'],
   ['rainfcst','aware'],['feelfcst','aware'],
@@ -4222,7 +4236,11 @@ function _bRowTier(id, g, r){
     case 'windcur': return (_bNum(/^(\d+)/, d1) >= BRIEF_WIND_WARN_SUS_MPH || _bNum(/G(\d+)/, d1) >= BRIEF_WIND_WARN_GST_MPH) ? 3 : 2;
     case 'windfcstsus': return _bNum(/^(\d+)/, d1) >= BRIEF_WIND_WARN_SUS_MPH ? 3 : 2;
     case 'windfcstgust': return _bNum(/G(\d+)/, d1) >= BRIEF_WIND_WARN_GST_MPH ? 3 : 2;
-    case 'heatcur': case 'feelfcst': return _bFeelsTier(d1, d2);
+    case 'heatcur': case 'feelfcst': return _bHeatCap(_bFeelsTier(d1, d2), d1, d2);
+    case 'otheralerts':
+      t = _bTextTier(d1);
+      if (t > 1 && d1.split('; ').every(function(x){ return /high surf|rip current|beach hazard|surf advisory/i.test(x) && !/tsunami/i.test(x); })) return 1;   // v89: surf, rip and beach stay MONITOR unless they reach the ramp (merged into the flood or wind row)
+      return t;
     case 'tsfcst': case 'rainfcst': return 1;
     case 'winteralerts':
       t = _bTextTier(d1);
@@ -4367,6 +4385,11 @@ var _ACT = {
           'Close hangar doors and disable fresh-air intake fans when smoke is present.',
           'Advise customers to keep aircraft windows and vents closed while parked.',
           'No compressed air or dry sweeping during ash events. Wet ash before cleanup.']},
+  frost: {title:'Frost', color:'#0e7490',
+    adv:['Check aircraft surfaces for frost before departure and tell customers early if frost removal will be needed.',
+         'Check the ramp and walkways for frost-slick patches and treat them with approved ice melt.',
+         'Drain or protect exposed water lines, lav carts and GSE fluids if a hard freeze is forecast.'],
+    warn:[]},
   fog: {title:'Dense Fog / Low Visibility', color:'#64748b',
     adv:['Check visibility against operational minimums before each ramp movement and tell the team the expected clearing time.',
          'Lights and beacons on every vehicle and piece of GSE, high-visibility vests on everyone, and slow all ramp traffic.',
@@ -4392,7 +4415,7 @@ function _bActionModel(type, tier){
   if (!A || tier < 2) return null;
   return {title:A.title, color:A.color, tier:tier,
           head:'ACTIONS: ' + A.title.toUpperCase() + ' | ' + TIER_NAME[tier] + ' TIER' + (tier >= 3 ? ' (includes ADVISORY actions)' : ''),
-          items: tier >= 3 ? A.adv.concat(A.warn) : A.adv.slice()};
+          items: (tier >= 3 ? A.adv.concat(A.warn) : A.adv.slice()).filter(function(x){ return !(type === 'thunderstorm' && !_briefTorn && /^Tornado warning:/.test(x)); })};
 }
 function _bActionBlockHTML(m){
   if (!m) return '';
@@ -4854,12 +4877,507 @@ function _bTopHTML(top){
   h += _ex.tail;
   return h;
 }
-function _bStandingHTML(){
+function _bStandingHTMLOld(){
   return '<div style="margin:10px 0 14px 0;border:1px solid #0E2841;border-radius:4px;overflow:hidden">'
     + '<div style="background:#0E2841;color:#fff;font-size:10px;font-weight:700;padding:6px 12px;letter-spacing:.04em">STANDING ACTIONS: ALL HAZARDS, ALL TIERS</div>'
     + '<ol style="margin:0;padding:10px 12px 10px 28px">'
     + _STANDING_ACTIONS.map(function(i){ return '<li style="margin-bottom:5px;font-size:11px;color:#1a2a3a;line-height:1.5">'+i+'</li>'; }).join('')
     + '</ol></div>';
+}
+
+// ══ v89 BRIEFING REWORK ═════════════════════════════════════════════════════
+// Page one answers four questions for someone standing on the ramp: what do I
+// prepare for, where, when, and what do I tell customers. Everything that is
+// awareness only moves to one "Also watching" box. National text is cut down to
+// what concerns the bases in the briefing.
+//
+//   BRIEF_HEAT_ROUTINE_MAX_F  Heat index at or below this, with an air temperature under
+//                             GUIDE.heat.high, is "routine hot weather" in the daily briefing
+//                             (listed under Also watching, not counted as a base with actions).
+//                             Set to 0 to put heat index 90 to 99 back at ADVISORY.
+//   NHC_RELEVANT_KM           An NHC disturbance is shown in a single-area briefing only when its
+//                             outline comes within this distance of one of the bases.
+var BRIEF_HEAT_ROUTINE_MAX_F = 99;
+var NHC_RELEVANT_KM = 1200;
+var _briefSnapAt = null;     // one timestamp for a whole bulk run, so every PDF carries the same issue time
+var _briefNoTrim = false;    // true while a per-hazard PDF is built (those sections were ticked on purpose)
+
+function _bScoped(codes){ return !!(codes && codes.length && codes.length < Math.round(COVERED_ALL.length * 0.5)); }
+function _bSingleArea(codes){
+  if (!codes || !codes.length || codes.length > 12) return false;
+  var a = null;
+  for (var i = 0; i < codes.length; i++) {
+    var r = _bRegionOf(codes[i]) || '_corp';
+    if (a === null) a = r; else if (a !== r) return false;
+  }
+  return true;
+}
+function _kmBetween(la1, lo1, la2, lo2){
+  var R = 6371, rad = Math.PI / 180, dLa = (la2 - la1) * rad, dLo = (lo2 - lo1) * rad;
+  var a = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(la1 * rad) * Math.cos(la2 * rad) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+function _bSnapTime(){
+  var d = _briefSnapAt || new Date();
+  try { return d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', timeZoneName:'short'}); } catch (e) { return d.toISOString(); }
+}
+function _bNowNote(){
+  return '<div style="font-size:10px;color:#556070;margin:2px 2px 8px">Observed items and NWS products below are as of ' + _bSnapTime()
+    + '. Conditions change quickly: check the WATCH Live Monitor before acting.</div>';
+}
+
+// ── Prepare-for model ───────────────────────────────────────────────────────
+var _PREP_KIND_OF = {lightning:'lightning', tsalerts:'storm', tsfcst:'ts', spc:'spc', ero:'flood', floodalerts:'flood', rainfcst:'rain',
+  windalerts:'wind', windcur:'wind', windfcstsus:'wind', windfcstgust:'wind', chillalerts:'cold', heatalerts:'heat',
+  winteralerts:'winter', snowice:'winter', frostalerts:'frost', tropical:'tropical', fire:'fire', aqi:'aqi', dust:'dust', otheralerts:'other'};
+var _PREP_GROUP = {lightning:'thunder', storm:'thunder', ts:'thunder', spc:'thunder', flood:'flood', rain:'flood', wind:'wind', cold:'cold', heat:'heat',
+  winter:'winter', frost:'frost', tropical:'tropical', fire:'fire', aqi:'aqi', dust:'dust', other:'other'};
+var _PREP_ORDER = ['thunder','wind','tropical','flood','winter','frost','heat','cold','fire','dust','aqi','other'];
+var _PREP_LABEL = {thunder:'Thunderstorms and lightning', flood:'Flooding and heavy rain', wind:'High wind', winter:'Winter weather', frost:'Freeze',
+  heat:'Heat', cold:'Cold', tropical:'Tropical', fire:'Fire weather', aqi:'Air quality', dust:'Blowing dust', other:'Other NWS alert'};
+var _PREP_ACT = {
+  thunder:{adv:['Brief the team on timing now. Stop fueling and ramp work the moment lightning is within 5 miles.',
+                'Secure loose ramp items and stage GSE so it can be chocked or moved fast.',
+                'Hangar aircraft where able and chock the rest.'],
+           warn:['Move everyone indoors: no one on the ramp, in refuelers, in open structures or near hangar doors.'],
+           stop:'Lightning within 5 miles: all outdoor work and fueling stop.',
+           cust:'Expect ramp and fueling delays. Escort passengers under cover.'},
+  flood:  {adv:['Keep people and equipment out of standing water of unknown depth.',
+                'No fueling or ramp work in standing water. Stay in contact with airport operations.',
+                'Raise power units and tools off low floors. Give customers a dry route to the aircraft.'],
+           warn:['Move everyone to dry indoor areas and keep shelter routes clear.'],
+           stop:'Standing water on the ramp, or a Flash Flood Warning: stop ramp work and fueling there.',
+           cust:'Expect delays and standing water. Offer a dry path to the aircraft.'},
+  wind:   {adv:['Secure cones, chocks, mats, trash cans and hangar doors.',
+                'Chock aircraft and GSE, set brakes and lower air stairs.',
+                'No ladders or aerial lifts.'],
+           warn:['No towing. Halt non-essential outdoor work.'],
+           stop:'Stop ladder and lift work now. Stop towing at warning-level gusts (' + GUIDE.wind.warnGust + '+ mph).',
+           cust:'Expect towing and fueling delays.'},
+  winter: {adv:['Ice cleats and ice melt on walkways. Sign slick areas.',
+                'Store deicers, GPUs and lav carts indoors or covered.',
+                'Plan for deicing demand and slower ground handling.'],
+           warn:['Shelter staff during active freezing rain. No GSE movement without traction.'],
+           stop:'Stop GSE movement, towing and ladder use where traction is lost.',
+           cust:'Expect deicing delays.'},
+  frost:  {adv:['Check aircraft surfaces for frost before departure. Warn customers early if frost removal is needed.',
+                'Check ramp and walkways for frost-slick patches.',
+                'Drain or protect exposed water lines, lav carts and GSE fluids if freezing is forecast.'],
+           warn:['Protect or drain water lines, hydrants and GSE fluids against a hard freeze.'],
+           stop:'', cust:'Frost may need removal before departure.'},
+  heat:   {adv:['Water and shade or cooled breaks every hour. Stock electrolytes and cooling towels.',
+                'Shorten ramp duty cycles and move heavy work to cooler hours.',
+                'Pair crews to watch for heat illness.'],
+           warn:['Limit ramp duty cycles to 30 to 45 minutes at peak heat.'],
+           stop:'Anyone showing heat illness signs: stop work and cool them down.',
+           cust:'Escort passengers promptly. Cabins heat-soak.'},
+  cold:   {adv:['Cold-weather PPE for outdoor work and warm, dry breaks.',
+                'Check GSE starts and fluids for freeze problems.'],
+           warn:['Limit outdoor exposure to under 30 minutes at a time.'],
+           stop:'Anyone with cold stress symptoms: bring them indoors.', cust:''},
+  tropical:{adv:['Follow NHC and NWS products for your base and use the Prep Guide tropical checklist.',
+                 'Review aircraft securing and hangar plans.'],
+            warn:[], stop:'', cust:'Expect schedule changes. Communicate early.'},
+  fire:   {adv:['No hot work or ignition sources on the ramp or near fuel storage.',
+                'Spill kits staged at every fueling point.'], warn:[], stop:'', cust:''},
+  aqi:    {adv:['N95 masks for outdoor ramp work.','Move staff with respiratory conditions indoors.'], warn:[], stop:'', cust:''},
+  dust:   {adv:['Watch visibility against minimums. Eye protection and N95 masks outdoors.',
+                'Cover or hangar aircraft and keep fuel caps covered.'],
+           warn:[], stop:'Visibility below minimums: stop ramp movement and towing.', cust:''},
+  other:  {adv:['Read the full NWS alert text and brief the team on what it means for your site.'], warn:[], stop:'', cust:''}
+};
+
+function _bPrepEntries(secs){
+  var E = {};
+  function add(c, kind, tier, ph, txt, torn){
+    var grp = _PREP_GROUP[kind]; if (!grp) return;
+    var b = E[c] || (E[c] = {code:c, max:0, g:{}});
+    var g = b.g[grp] || (b.g[grp] = {tier:0, lines:[], hasTornado:false});
+    if (tier > g.tier) g.tier = tier;
+    if (tier > b.max) b.max = tier;
+    if (txt && g.lines.length < 6 && !g.lines.some(function(l){ return l.txt === txt; })) g.lines.push({ph:ph, txt:txt});
+    if (/tornado/i.test(txt || '') || torn) g.hasTornado = true;
+  }
+  function first(t){ return String(t || '').split('\n')[0].trim(); }
+  secs.forEach(function(s){
+    var id = s.def.id, d = s.data;
+    if (d.html || d.grid) return;
+    (d.groups || [{rows:d.rows}]).forEach(function(g){
+      if (g.track || g.listOnly) return;
+      (g.rows || []).forEach(function(r){
+        var kind = (id === 'heatcur' || id === 'feelfcst') ? _cardTempKind(id + ' ' + (r.detail || '') + ' ' + (r.detail2 || '')) : _PREP_KIND_OF[id];
+        if (!kind) return;
+        var tier = r.tier || g.tier || 1, d1 = first(r.detail), d2 = first(r.detail2), ph = 1, txt = '';
+        switch (id) {
+          case 'lightning': ph = 0; txt = /PROTOCOL/i.test(d1) ? 'Lightning protocol in effect now' : 'Lightning in the vicinity now'; break;
+          case 'tsfcst': ph = 2; txt = 'Thunderstorms possible from ' + d1.replace(/^First chance\s*/i, ''); break;
+          case 'spc': ph = 2; txt = 'SPC ' + String(g.label || '').charAt(0) + String(g.label || '').slice(1).toLowerCase() + (g.level ? ' (' + g.level + ')' : '') + (d1 ? ': ' + d1 : ''); break;
+          case 'ero': ph = 2; txt = 'WPC excessive rainfall risk: ' + d1 + (d2 ? ' (' + d2 + ')' : ''); break;
+          case 'rainfcst': ph = 2; txt = 'Rain likely, peak ' + d1; break;
+          case 'windcur': ph = 0; txt = 'Wind now ' + d1 + (d2 ? ' ' + d2 : ''); break;
+          case 'heatcur': ph = 0; txt = 'Now ' + d1 + (d2 ? ', ' + d2 : ''); break;
+          case 'windfcstsus': case 'windfcstgust': ph = 2; txt = 'Wind forecast ' + d1 + (d2 ? ', ' + d2.replace(/^Peak at\s*/i, 'peak ') : ''); break;
+          case 'feelfcst': ph = 2; txt = 'Forecast ' + d1 + (d2 ? ', ' + d2 : ''); break;
+          case 'snowice': ph = 2; txt = d1 + (d2 ? ' (' + d2 + ')' : ''); break;
+          default: ph = 1; txt = d1.split('; ').slice(0, 2).join('; ');
+        }
+        add(r.code, kind, tier, ph, txt, id === 'spc' && /TOR/.test(g.probs || ''));
+      });
+    });
+  });
+  return E;
+}
+
+function _bPrepModel(secs){
+  var E = _bPrepEntries(secs), out = [];
+  Object.keys(E).forEach(function(c){
+    var b = E[c];
+    if (b.max < 2) return;
+    var groups = Object.keys(b.g).filter(function(k){ return b.g[k].tier >= 2; }).sort(function(x, y){
+      return b.g[y].tier - b.g[x].tier || _PREP_ORDER.indexOf(x) - _PREP_ORDER.indexOf(y);
+    });
+    if (!groups.length) return;
+    var gl = groups.map(function(k){
+      var g = b.g[k], P = {0:[], 1:[], 2:[]};
+      g.lines.forEach(function(l){ P[l.ph].push(l.txt); });
+      return {key:k, label:_PREP_LABEL[k], tier:g.tier, when:P[0].concat(P[1], P[2]).slice(0, 4), tornado:g.hasTornado};
+    });
+    // actions: round robin across the hazards so a second hazard is not crowded out
+    var lists = gl.map(function(g){
+      var A = _PREP_ACT[g.key] || _PREP_ACT.other, L = [];
+      if (g.key === 'thunder' && g.tornado) L.push('If a Tornado Warning is issued for your airport, go to your interior shelter at once.');
+      if (g.tier >= 3 && A.warn.length) L.push(A.warn[0]);
+      return L.concat(A.adv);
+    });
+    var acts = [], i = 0;
+    while (acts.length < 4 && lists.some(function(L){ return i < L.length; })) {
+      lists.forEach(function(L){ if (i < L.length && acts.length < 4 && acts.indexOf(L[i]) === -1) acts.push(L[i]); });
+      i++;
+    }
+    var stops = [], custs = [];
+    gl.forEach(function(g){
+      var A = _PREP_ACT[g.key] || _PREP_ACT.other;
+      if (A.stop && stops.indexOf(A.stop) === -1 && stops.length < 2) stops.push(A.stop);
+      if (A.cust && custs.indexOf(A.cust) === -1 && custs.length < 2) custs.push(A.cust);
+    });
+    var f = _bFbo(c);
+    out.push({code:c, city:(f.city || '') + (f.state ? ', ' + f.state : ''), max:b.max, n:gl.length,
+              ord:Math.min.apply(null, gl.filter(function(g){ return g.tier === b.max; }).map(function(g){ return _PREP_ORDER.indexOf(g.key); })),
+              groups:gl.slice(0, 3), more:gl.length - Math.min(3, gl.length), acts:acts, stop:stops.join(' '), cust:custs.join(' ')});
+  });
+  out.sort(function(a, b){ return b.max - a.max || a.ord - b.ord || b.n - a.n || (a.code < b.code ? -1 : 1); });
+  return out;
+}
+
+function _bPrepHTML(top){
+  var P = top.prep;
+  if (!P) return '';
+  var hd = '<div style="background:#b91c1c;color:#fff;font-size:12px;font-weight:700;padding:7px 12px;letter-spacing:.06em">PREPARE FOR</div>';
+  if (!P.length) {
+    return '<div style="border:2px solid #16a34a;border-radius:4px;margin:0 0 12px 0;overflow:hidden">'
+      + '<div style="background:#16a34a;color:#fff;font-size:12px;font-weight:700;padding:7px 12px;letter-spacing:.06em">NO PREPARATION NEEDED</div>'
+      + '<div style="padding:8px 12px;font-size:11px">No base in this briefing has an ADVISORY or WARNING hazard in the next 24 hours.</div></div>';
+  }
+  function chip(t){ return '<span style="background:' + TIER_BG[t] + ';color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:6px">' + TIER_NAME[t] + '</span>'; }
+  var full = [], compact = [];
+  P.forEach(function(b){ if ((top.single || b.max >= 3) && full.length < 8) full.push(b); else compact.push(b); });
+  var h = '<div style="border:2px solid #b91c1c;border-radius:4px;margin:0 0 12px 0;overflow:hidden">' + hd
+    + '<div style="padding:6px 12px 2px;font-size:10px;color:#556070">Most serious first. What to get ready, when it happens, when to stop work, and what to tell customers. Full checklists follow further down.</div>'
+    + '<div style="padding:6px 12px 8px">';
+  full.forEach(function(b){
+    h += '<div style="border:1px solid #c8d0d8;border-left:5px solid ' + TIER_BG[b.max] + ';border-radius:3px;margin:0 0 8px 0;padding:6px 10px;font-size:11px;line-height:1.5;page-break-inside:avoid;break-inside:avoid">'
+      + '<div><strong style="font-size:13px;color:#0E2841">' + _bCode(b.code) + '</strong> <span style="color:#556070">' + b.city + '</span>' + chip(b.max) + '</div>';
+    b.groups.forEach(function(g){
+      h += '<div style="margin-top:2px"><strong>' + g.label + ' (' + TIER_NAME[g.tier] + '):</strong> ' + (g.when.length ? g.when.join('; ') : 'See hazard section below') + '</div>';
+    });
+    if (b.more > 0) h += '<div style="color:#556070">+' + b.more + ' more hazard' + (b.more !== 1 ? 's' : '') + ' listed below.</div>';
+    h += '<div style="margin-top:4px"><strong>Do now:</strong></div><ol style="margin:1px 0 2px 0;padding-left:20px">'
+      + b.acts.map(function(a){ return '<li>' + a + '</li>'; }).join('') + '</ol>';
+    if (b.stop) h += '<div><strong>Stop work:</strong> ' + b.stop + '</div>';
+    if (b.cust) h += '<div><strong>Customers:</strong> ' + b.cust + '</div>';
+    h += '</div>';
+  });
+  if (compact.length) {
+    h += '<div style="font-size:10px;font-weight:700;color:#0E2841;margin:6px 0 3px">ALSO PREPARE (ADVISORY)</div>';
+    compact.slice(0, 24).forEach(function(b){
+      var g = b.groups[0];
+      h += '<div style="font-size:11px;line-height:1.5;border-top:1px solid #e8e8e8;padding:3px 0"><strong>' + _bCode(b.code) + '</strong> <span style="color:#556070">' + b.city + '</span>'
+        + chip(b.max) + ' <strong>' + g.label + ':</strong> ' + (g.when[0] || '') + (b.more + b.groups.length > 1 ? ' (+' + (b.more + b.groups.length - 1) + ' more)' : '')
+        + (b.acts[0] ? ' <span style="color:#556070">Do: ' + b.acts[0] + '</span>' : '') + '</div>';
+    });
+    if (compact.length > 24) h += '<div style="font-size:10px;color:#556070">+' + (compact.length - 24) + ' more bases: see the Base Index.</div>';
+  }
+  return h + '</div></div>';
+}
+
+// ── Trim awareness-only rows out of the hazard sections ──────────────────────
+var _BRIEF_TRIM_ROWS = {tsfcst:1, rainfcst:1, feelfcst:1, heatcur:1, otheralerts:1, frostalerts:1, snowice:1};
+function _bHeatCap(t, d1, d2){
+  if (t !== 2 || !BRIEF_HEAT_ROUTINE_MAX_F) return t;
+  var hm = String(d2 || '').match(/Heat index (-?\d+)/), tm = String(d1 || '').match(/^(-?\d+)/);
+  if (!hm || !tm) return t;
+  return (Number(tm[1]) < GUIDE.heat.high && Number(hm[1]) <= BRIEF_HEAT_ROUTINE_MAX_F) ? 1 : t;
+}
+function _bSecWith(s, patch){
+  var d = {}; Object.keys(s.data).forEach(function(k){ d[k] = s.data[k]; });
+  Object.keys(patch).forEach(function(k){ d[k] = patch[k]; });
+  var smax = 0, omax = 0;
+  (d.groups ? d.groups : [{rows:d.rows}]).forEach(function(g){
+    if (g.track) return;
+    var gm = 0;
+    g.rows.forEach(function(r){ var t = r.tier || g.tier || 1; if (t > gm) gm = t; if (!r.coastal && t > omax) omax = t; });
+    if (gm > smax) smax = gm;
+  });
+  return {def:s.def, data:d, tier:smax, opTier:omax};
+}
+function _bWatchAdd(W, id, r, g){
+  var c = r.code, d1 = String(r.detail || ''), d2 = String(r.detail2 || '');
+  if (id === 'tsfcst') W.ts.push({code:c, txt:_bTsMarker(r)});
+  else if (id === 'spc') { if (g && g.listOnly) W.gen.push(c); else W.mrgl.push(c); }
+  else if (id === 'ero' || id === 'rainfcst') { if (W.rain.indexOf(c) === -1) W.rain.push(c); }
+  else if (id === 'frostalerts') W.frost.push(c + ' (' + d1.split('; ')[0].replace(/\s+until\s.*$/i, '') + ')');
+  else if (id === 'heatcur' || id === 'feelfcst') {
+    var m = d2.match(/Heat index (\d+)/);
+    if (m && Number(m[1]) >= GUIDE.heat.high) W.heat.push({code:c, hi:Number(m[1])});
+  }
+  else if (id === 'otheralerts') W.stmt.push(c + ' ' + d1.replace(/\s+until\s.*?(?=;|$)/ig, '').replace(/;\s*/g, ', '));
+  else if (id === 'snowice') W.other.push(c + ' ' + (d1 || d2).split('\n')[0]);
+}
+function _bTrimSecs(secs, codes, noTrim){
+  if (briefDay !== '1' || _briefNoTrim || noTrim) return {secs:secs, watch:null};
+  var W = {ts:[], rain:[], frost:[], heat:[], stmt:[], other:[], gen:[], mrgl:[], tropical:''}, out = [];
+  secs.forEach(function(s){
+    var id = s.def.id, d = s.data;
+    if (d.html || d.grid) { out.push(s); return; }
+    if (_BRIEF_TRIM_ROWS[id] && d.rows) {
+      var keep = [];
+      d.rows.forEach(function(r){ if ((r.tier || 1) >= 2) keep.push(r); else _bWatchAdd(W, id, r, null); });
+      if (keep.length) out.push(_bSecWith(s, {rows:keep}));
+      return;
+    }
+    if ((id === 'spc' || id === 'ero') && d.groups) {
+      var gs = [];
+      d.groups.forEach(function(g){
+        var drop = (id === 'spc' && (g.listOnly || (g.tier || 1) < 2)) || (id === 'ero' && (g.tier || 1) < 2);
+        if (drop) g.rows.forEach(function(r){ _bWatchAdd(W, id, r, g); }); else gs.push(g);
+      });
+      if (gs.length) out.push(_bSecWith(s, {groups:gs}));
+      return;
+    }
+    out.push(s);
+  });
+  try {
+    var rel = _nhcRelevant(codes);
+    if (rel && !rel.any && ((nhcDisturbances && nhcDisturbances.length) || tropicalOutlookText)) W.tropical = 'No NHC tropical system within about ' + NHC_RELEVANT_KM.toLocaleString('en-US') + ' km of these bases.';
+  } catch (e) {}
+  return {secs:out, watch:W};
+}
+var _briefTorn = true;   // false only when a daily briefing has no tornado alert and no SPC tornado probability
+function _bTornCapable(secs){
+  var t = false;
+  secs.forEach(function(s){
+    var d = s.data;
+    if (s.def.id === 'spc' && d.groups) d.groups.forEach(function(g){ if (/TOR/.test(g.probs || '')) t = true; });
+    if (s.def.id === 'tsalerts' && d.rows) d.rows.forEach(function(r){ if (/tornado/i.test(r.detail || '')) t = true; });
+  });
+  return t;
+}
+function _bPrepare(secs, codes, noTrim){
+  var top = _bTopModel(secs, codes), daily = (briefDay === '1' && !_briefNoTrim && !noTrim);
+  _briefTorn = daily ? _bTornCapable(secs) : true;
+  var tr = _bTrimSecs(secs, codes, noTrim);
+  top.watch = tr.watch;
+  top.prep = daily ? _bPrepModel(secs) : null;
+  top.single = _bSingleArea(codes);
+  return {top:top, secs:tr.secs};
+}
+function _bWatchHTML(W, single){
+  if (!W) return '';
+  var L = [];
+  function list(a, n){ return a.slice(0, n).join(', ') + (a.length > n ? ' +' + (a.length - n) + ' more' : ''); }
+  if (W.ts.length) L.push('<strong>Thunderstorms possible (lightning stops fueling):</strong> ' + list(W.ts.map(function(x){ return _bCode(x.code) + ' ' + x.txt.replace(/^TS\s*/, ''); }), 14));
+  if (W.frost.length) L.push('<strong>Frost (check aircraft surfaces before departure):</strong> ' + list(W.frost, 10));
+  if (W.heat.length) {
+    var best = {}; W.heat.forEach(function(x){ if (!best[x.code] || x.hi > best[x.code]) best[x.code] = x.hi; });
+    L.push('<strong>Routine hot weather (water, shade, buddy checks):</strong> ' + list(Object.keys(best).sort().map(function(c){ return _bCode(c) + ' heat index ' + best[c]; }), 12));
+  }
+  if (W.rain.length) L.push('<strong>Rain likely or marginal rainfall risk (no flood action needed):</strong> ' + (W.rain.length <= 12 ? list(W.rain.map(_bCode), 12) : W.rain.length + ' bases (see the Live Monitor)'));
+  if (W.mrgl.length) L.push('<strong>SPC Marginal risk (isolated strong storms, no organized severe threat):</strong> ' + (W.mrgl.length <= 12 ? list(W.mrgl.map(_bCode), 12) : W.mrgl.length + ' bases'));
+  if (W.gen.length) L.push('<strong>General thunderstorm area, no organized severe threat:</strong> ' + (W.gen.length <= 12 ? list(W.gen.map(_bCode), 12) : W.gen.length + ' bases'));
+  if (W.stmt.length) L.push('<strong>Statements with no ramp impact:</strong> ' + list(W.stmt, 8));
+  if (W.other.length) L.push('<strong>Other awareness:</strong> ' + list(W.other, 8));
+  if (W.tropical) L.push('<strong>Tropical:</strong> ' + W.tropical);
+  if (!L.length) return '';
+  return '<div style="border:1px solid #c8d0d8;border-radius:4px;margin:0 0 10px 0;overflow:hidden">'
+    + '<div style="background:#556070;color:#fff;font-size:10px;font-weight:700;padding:5px 12px;letter-spacing:.05em">ALSO WATCHING (AWARENESS ONLY, NO ACTION NEEDED UNLESS CONDITIONS CHANGE)</div>'
+    + '<div style="padding:6px 12px;font-size:10px;line-height:1.6;color:#1a2a3a">' + L.map(function(x){ return '<div style="margin:0 0 3px 0">' + x + '</div>'; }).join('') + '</div></div>';
+}
+
+// ── Top of the briefing ─────────────────────────────────────────────────────
+function _bRegionalBox(X){
+  if (!X) return '';
+  var rg = '';
+  if (!X.regions.length) rg = '<div>No region has a base with actions.</div>';
+  else {
+    rg = '<table style="width:100%;border-collapse:collapse;margin:0"><tr><th style="' + _EX_TH + ';width:26%">Region</th><th style="' + _EX_TH + ';width:20%">Locations impacted</th><th style="' + _EX_TH + '">Primary concern</th></tr>'
+      + X.regions.map(function(r){
+          var fill = r.max >= 3 ? TIER_FILL[3] : (r.max >= 2 ? TIER_FILL[2] : '#fff4cc');
+          return '<tr><td style="' + _EX_TD + ';font-weight:700;background:' + fill + '">' + r.name + '</td>'
+            + '<td style="' + _EX_TD + '">' + (r.hit ? r.hit + ' of ' + r.total : '0 of ' + r.total) + (r.ts ? ' (+' + r.ts + ' thunderstorms possible)' : '') + '</td>'
+            + '<td style="' + _EX_TD + '">' + (r.fams.length ? r.fams.join(' and ') : '') + '</td></tr>';
+        }).join('') + '</table>';
+    if (X.quiet.length) rg += '<div style="font-size:9px;color:#556070;margin-top:4px">No bases with actions: ' + X.quiet.join(', ') + '</div>';
+  }
+  return _exBox('REGIONAL SNAPSHOT', rg, '#1a6ba0');
+}
+function _bIndexHTML(top){
+  var ix = top.index, h = '';
+  if (!ix.regions.length) return h;
+  h += '<div style="background:#0E2841;color:#fff;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.05em">BASE INDEX BY AREA (ADVISORY AND ABOVE; TS = THUNDERSTORMS FORECAST)</div>';
+  h += '<table style="width:100%;border-collapse:collapse;margin:0 0 6px 0"><tr style="background:#f0f4f7">'
+    + '<th style="border:1px solid #ddd;text-align:left;font-size:10px;color:#556070;padding:3px 6px;width:22%">Base</th>'
+    + ix.cols.map(function(F){ return '<th style="border:1px solid #ddd;text-align:center;font-size:10px;color:#556070;padding:3px 4px">' + BRIEF_FAMILY_COL[F] + '</th>'; }).join('') + '</tr>';
+  ix.regions.forEach(function(rg){
+    h += '<tr><td colspan="' + (ix.cols.length + 1) + '" style="background:#e3e8ed;border:1px solid #ddd;font-weight:700;font-size:10px;padding:3px 6px;color:#0E2841">' + rg.name + '</td></tr>';
+    rg.rows.forEach(function(r){
+      h += '<tr><td style="border:1px solid #ddd;padding:3px 6px;font-size:10px"><strong>' + _bCode(r.code) + '</strong> <span style="color:#556070">' + r.city + '</span></td>'
+        + r.cells.map(function(c){
+            return '<td style="border:1px solid #ddd;padding:3px 4px;text-align:center;font-size:10px;font-weight:700'
+              + (c.tier ? ';background:' + TIER_FILL[c.tier] + ';color:#1a2a3a' : (c.ts ? ';background:#fff4cc;color:#1a2a3a' : '')) + '">' + _bNl(c.txt) + '</td>';
+          }).join('') + '</tr>';
+    });
+  });
+  return h + '</table>';
+}
+function _bTopHTMLv89(top){
+  var keep = top.single ? ['Top tier (WARNING)', 'Next tier (ADVISORY)']
+    : ['Top tier (WARNING)', 'Next tier (ADVISORY)', 'Sites of greatest concern (ranked by operational consequence)', 'Coverage'];
+  if (top.isFc) keep = keep.concat(['Multi-day events', 'Change since last issue']);
+  if (briefDay !== '1') keep.push('SPC outlook');
+  var lines = top.lines.filter(function(l){ return keep.indexOf(l.k) !== -1; });
+  var h = '';
+  if (!(top.prep && top.single)) h += '<div style="border:2px solid #0E2841;border-radius:4px;margin:0 0 12px 0;overflow:hidden">'
+    + '<div style="background:#0E2841;color:#fff;font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.05em">SUMMARY: WHAT MATTERS MOST</div>'
+    + '<div style="padding:8px 12px;font-size:11px;line-height:1.55">'
+    + lines.map(function(l){ return '<div style="margin:0 0 3px 0"><strong>' + l.k + ':</strong> ' + l.v + '</div>'; }).join('')
+    + '</div></div>';
+  h += _bPrepHTML(top);
+  if ((_briefScopeCodes || []).indexOf('BDA') !== -1) h += '<div style="font-size:10px;color:#556070;margin:0 0 8px 2px">\u2020 BDA is model-only (no NWS product). Official Bermuda forecasts and warnings: <a href="https://www.weather.bm/" style="color:#1a6ba0">Bermuda Weather Service (weather.bm)</a>.</div>';
+  if (!top.single) h += _bRegionalBox(top.exec) + _bIndexHTML(top);
+  if (top.watch) h += _bWatchHTML(top.watch, top.single);
+  else if (top.index.monOnly.length) h += '<div style="font-size:10px;color:#556070;margin:0 0 10px 0;overflow-wrap:anywhere"><strong>Awareness only (MONITOR, no actions):</strong> ' + top.index.monOnly.map(_bCode).join(' \u00B7 ') + '</div>';
+  h += _bStandingHTML();
+  return h;
+}
+
+// ── National text, cut down to the bases in the briefing ─────────────────────
+var _WX_REGIONS = [
+  [/new england/i, ['CT','MA','RI','VT','NH','ME']],
+  [/mid[- ]atlantic/i, ['NY','NJ','PA','DE','MD','VA','DC','WV']],
+  [/northeast/i, ['ME','NH','VT','MA','RI','CT','NY','NJ','PA']],
+  [/southeast/i, ['NC','SC','GA','FL','AL','MS','TN','VA']],
+  [/carolinas?/i, ['NC','SC']],
+  [/florida/i, ['FL']],
+  [/gulf coast|northern gulf|central gulf|western gulf/i, ['TX','LA','MS','AL','FL']],
+  [/texas/i, ['TX']],
+  [/southern plains|central plains|northern plains|\bplains\b/i, ['TX','OK','KS','NE','SD','ND','MO','IA','AR']],
+  [/mississippi valley/i, ['LA','MS','AR','MO','TN','IL','IA','KY']],
+  [/tennessee valley/i, ['TN','AL','MS','KY']],
+  [/ohio valley/i, ['OH','IN','KY','WV','IL']],
+  [/great lakes|midwest/i, ['MN','WI','MI','IL','IN','OH','IA','NY','PA']],
+  [/rockies|rocky mountain|intermountain/i, ['CO','WY','MT','UT','ID','NM']],
+  [/great basin/i, ['NV','UT']],
+  [/desert southwest|\bsouthwest\b|four corners/i, ['AZ','NM','NV','CA','TX']],
+  [/california|west coast/i, ['CA','OR','WA']],
+  [/pacific northwest|\bnorthwest\b/i, ['WA','OR','ID']],
+  [/alaska/i, ['AK']],
+  [/hawai/i, ['HI']],
+  [/east coast|atlantic coast|eastern seaboard/i, ['ME','NH','VT','MA','RI','CT','NY','NJ','PA','DE','MD','VA','NC','SC','GA','FL','DC']]
+];
+function _wxStatesOf(text){
+  // "southeastern New England" and "South Texas" name the state area, not the compass region
+  var t = String(text || '').replace(/\b(?:north|south|east|west|central)(?:east|west)?(?:ern)?\s+(new england|texas|florida|california|alaska|hawaii)/ig, '$1');
+  var out = {};
+  _WX_REGIONS.forEach(function(p){ if (p[0].test(t)) p[1].forEach(function(s){ out[s] = 1; }); });
+  return Object.keys(out);
+}
+function _wxScopeStates(codes){
+  var S = {};
+  (codes || []).forEach(function(c){ var f = _bFbo(c); if (f && f.state) S[f.state] = 1; });
+  return S;
+}
+// An item that names no region we recognise is kept (fail open). One that names regions is kept only if a base sits in one.
+function _wxRelevant(text, scope){
+  var H = _wxStatesOf(text);
+  if (!H.length) return true;
+  return H.some(function(s){ return scope[s]; });
+}
+
+// ── NHC outlook: only systems near the bases in the briefing ─────────────────
+function _nhcBasinOf(lo, la){
+  if (lo > 0) return 'Western Pacific';
+  if (la <= 16.5 && lo < -89) return lo >= -140 ? 'East Pacific' : 'Central Pacific';   // Pacific side of Central America
+  return lo >= -100 ? 'Atlantic' : lo >= -140 ? 'East Pacific' : 'Central Pacific';
+}
+function _nhcRelevant(codes){
+  if (!_bScoped(codes)) return null;
+  var feats = (nhcDisturbances || []).filter(function(f){ return (f.properties || {})._kind !== 'point'; });
+  if (!feats.length) return null;
+  var bases = (codes || []).map(function(c){ return COORDS[c]; }).filter(Boolean);
+  if (!bases.length) return null;
+  var out = {areas:[], basins:{}, any:false};
+  feats.forEach(function(f){
+    var pts = [];
+    try { (function walk(c){ if (typeof c[0] === 'number') pts.push(c); else c.forEach(walk); })(f.geometry.coordinates); } catch (e) {}
+    if (!pts.length) { out.areas.push(f); out.any = true; return; }
+    var best = 1e9, lo = 0, la = 0;
+    pts.forEach(function(p){ lo += p[0]; la += p[1]; bases.forEach(function(b){ var k = _kmBetween(b[0], b[1], p[1], p[0]); if (k < best) best = k; }); });
+    if (best <= NHC_RELEVANT_KM) { out.areas.push(f); out.any = true; out.basins[_nhcBasinOf(lo / pts.length, la / pts.length)] = true; }
+  });
+  return out;
+}
+
+// ── Compact standing actions and legend ──────────────────────────────────────
+function _bStandingHTML(){
+  return '<div style="margin:6px 0 12px 0;border:1px solid #0E2841;border-radius:4px;padding:6px 12px;font-size:10px;line-height:1.5;color:#1a2a3a">'
+    + '<strong>STANDING ACTIONS, EVERY HAZARD:</strong> review the Prep Guide for full checklists; brief your whole team before the threat arrives and do not wait for a watch or warning; '
+    + 'employee safety comes first and anyone may stop work.</div>';
+}
+function _bLegendHTML(hasIntl, isFc){
+  if (isFc) return _bLegendHTMLFull(hasIntl, isFc);
+  var L = ['<strong>WARNING</strong> = act now. <strong>ADVISORY</strong> = prepare. <strong>MONITOR</strong> = awareness only, no action. Tiers are WATCH labels; NWS and SPC product names are quoted as issued, and local NWS offices set their own criteria.',
+    'Company thresholds: heat index ' + GUIDE.heat.moderate + '/' + GUIDE.heat.high + '/' + GUIDE.heat.veryHigh + '°F and cold ' + GUIDE.cold.monitor + '/' + GUIDE.cold.advisory + '/' + GUIDE.cold.warning + '°F (monitor/advisory/warning); wind follows the NWS baseline (advisory ' + GUIDE.wind.advSus + ' sustained or ' + GUIDE.wind.advGust + ' gust mph, warning ' + GUIDE.wind.warnSus + ' or ' + GUIDE.wind.warnGust + '). Times are local to each base.'];
+  if (hasIntl) L.push('† Model-only base (BDA, GCM, SXM, PLS): no NWS product exists, so no official alert will appear. Data is METAR and forecast model only; treat as guidance.');
+  return '<div style="border-top:1px solid #c8d0d8;margin-top:12px;padding-top:6px;font-size:9px;color:#556070;line-height:1.5">'
+    + L.map(function(t){ return '<div style="margin-bottom:3px">' + t + '</div>'; }).join('') + '</div>';
+}
+
+// ── National text scoped to the bases in the briefing ────────────────────────
+function _wxScopeText(txt){
+  if (!txt || !_bScoped(_briefScopeCodes)) return txt;
+  var scope = _wxScopeStates(_briefScopeCodes);
+  var paras = String(txt).replace(/\r\n/g, '\n').split(/\n\s*\n/), vi = -1;
+  paras.forEach(function(p, i){ if (vi < 0 && /^valid\s/im.test(p)) vi = i; });
+  var kept = [], body = 0;
+  paras.forEach(function(p, i){
+    var t = p.trim(); if (!t) return;
+    if (i <= Math.max(vi, 0)) { kept.push(p); return; }
+    if (/^\$\$/.test(t) || /^forecaster/i.test(t)) { kept.push(p); return; }
+    if (_wxRelevant(t, scope)) { kept.push(p); if (t.length > 60) body++; }
+  });
+  return body ? kept.join('\n\n') : '';
+}
+function _bNarrowed(sel){
+  if (!sel || briefDay !== '1') return false;
+  var act = {};
+  try { _briefSelCodes().forEach(function(x){ act[x.id] = x.active; }); } catch (e) { return false; }
+  return Object.keys(sel).some(function(k){ return sel[k] === false && act[k]; });
+}
+function _bAllClearBox(codes){
+  var L = codes.slice().sort().map(function(c){ var f = _bFbo(c); return '<span style="display:inline-block;margin:0 10px 3px 0"><strong>' + _bCode(c) + '</strong> <span style="color:#556070">' + (f.city || '') + (f.state ? ', ' + f.state : '') + '</span></span>'; }).join('');
+  return '<div style="border:2px solid #16a34a;border-radius:4px;margin:0 0 12px 0;overflow:hidden">'
+    + '<div style="background:#16a34a;color:#fff;font-size:12px;font-weight:700;padding:7px 12px;letter-spacing:.06em">NO PREPARATION NEEDED</div>'
+    + '<div style="padding:8px 12px;font-size:11px;line-height:1.6">No base below has an ADVISORY or WARNING hazard' + (briefDay === '1' ? ' in the next 24 hours' : ' in the forecast period') + '. Bases covered by this notice:<div style="margin-top:4px;font-size:10px">' + L + '</div></div></div>';
 }
 
 // ── Legend and reading guide (footer) ───────────────────────────────────────
@@ -4881,7 +5399,7 @@ function _bLegendLines(hasIntl, isFc){
   if (hasIntl) L.push('\u2020 Model-only base (BDA, GCM, SXM, PLS): no NWS product exists for this location, so no official alert will appear. Data is METAR and forecast model only; treat as guidance.');
   return L;
 }
-function _bLegendHTML(hasIntl, isFc){
+function _bLegendHTMLFull(hasIntl, isFc){
   return '<div style="border-top:1px solid #c8d0d8;margin-top:12px;padding-top:6px;font-size:9px;color:#556070;line-height:1.5">'
     + '<div style="font-weight:700;margin-bottom:2px">LEGEND AND READING GUIDE</div>'
     + _bLegendLines(hasIntl, isFc).map(function(t){ return '<div style="margin-bottom:3px">'+t+'</div>'; }).join('') + '</div>';
@@ -5070,6 +5588,7 @@ var SRC_L = {
   fire:   {label:'SPC Fire Weather Outlook', url:'https://www.spc.noaa.gov/products/fire_wx/'},
   alerts: {label:'NWS active alerts', url:'https://alerts.weather.gov/'},
   nws:    {label:'NWS forecasts', url:'https://forecast.weather.gov/'},
+  bws:    {label:'Bermuda Weather Service (official forecasts for BDA)', url:'https://www.weather.bm/'},
   vcx:    {label:'Visual Crossing (international sites: BDA, GCM, SXM, PLS)', url:'https://www.visualcrossing.com/weather-forecast'},
   metar:  {label:'Aviation Weather METAR', url:'https://aviationweather.gov/data/metar/'},
   taf:    {label:'Aviation Weather TAF', url:'https://aviationweather.gov/data/taf/'},
@@ -5084,7 +5603,7 @@ var BRIEF_SRC = {
   spc:['spc1'], tsfcst:['nws','spc1'], lightning:['metar'], tsalerts:['alerts'],
   ero:['ero'], rainfcst:['nws'], floodalerts:['alerts'],
   windalerts:['alerts'], windcur:['metar'], windfcstsus:['nws'], windfcstgust:['nws'],
-  chillalerts:['alerts'], heatalerts:['alerts'], heatcur:['metar'], feelfcst:['nws'],
+  chillalerts:['alerts'], frostalerts:['alerts'], heatalerts:['alerts'], heatcur:['metar'], feelfcst:['nws'],
   dust:['alerts','metar'], fire:['alerts','fire'], aqi:['airnow','alerts'],
   winteralerts:['alerts','wssi'], snowice:['nws','winter'],
   tropical:['nhc'], nhc:['nhc'], otheralerts:['alerts'],
@@ -5098,7 +5617,7 @@ function _bSrcLinks(def){
   var _intlIn = (_briefScopeCodes || []).some(function(c){ return INTL_CODES.has(c); });
   [def.id].concat(def.ids || []).forEach(function(id){
     (BRIEF_SRC[id] || []).forEach(function(k){
-      if (k === 'nws' && _intlIn) { add('nws'); add('vcx'); return; }   // v82: international forecasts come from Visual Crossing
+      if (k === 'nws' && _intlIn) { add('nws'); add('vcx'); if ((_briefScopeCodes || []).indexOf('BDA') !== -1) add('bws'); return; }   // v82: international forecasts come from Visual Crossing
       if (k !== '@spc') { add(k); return; }
       var days = {}; (_briefDayLeads(briefDay) || []).forEach(function(l){ days[l + 1] = 1; });
       Object.keys(days).forEach(function(d){ add(Number(d) <= 3 ? 'spc' + d : 'spc48'); });
@@ -5505,13 +6024,14 @@ function _generateSummaryInner(content, ts, status) {
   });
 
   _briefScopeCodes = fboList.map(function(f){ return f.code; });
-  var _mg = _watchMapsBySection(fboList.map(function(f){ return f.code; }), secs);
-  var html = _renderBriefLive(_bConsolidateWind(secs), _mg.bySection);
+  var _pp = secs.length ? _bPrepare(secs, codes) : null, _vs = _pp ? _pp.secs : secs;
+  var _mg = _watchMapsBySection(fboList.map(function(f){ return f.code; }), _vs);
+  var html = _vs.length ? _renderBriefLive(_bConsolidateWind(_vs), _mg.bySection) : '';
   if (_mg.leftover.length) {
     html = '<div style="margin-bottom:12px">' + _mg.leftover.map(_watchMapImgHTML).join('') + '</div>' + html;
   }
-  var _liveTop = secs.length ? _bTopModel(secs, codes) : null;
-  if (_liveTop) html = _bTopHTML(_liveTop) + html;
+  var _liveTop = _pp ? _pp.top : null;
+  if (_liveTop) html = (briefDay === '1' ? _bNowNote() : '') + _bTopHTMLv89(_liveTop) + html;
 
   var _gaps = _briefDataGaps(codes);
   var _gapSet = new Set(_gaps.map(function(g){ return g.code; }));
@@ -7615,11 +8135,11 @@ function _nhcAreaLabel(f){
     (function walk(c){ if (typeof c[0] === 'number') pts.push(c); else c.forEach(walk); })(f.geometry.coordinates);
     if (!pts.length) return 'Disturbance';
     var lo = 0, la = 0; pts.forEach(function(p){ lo += p[0]; la += p[1]; }); lo /= pts.length; la /= pts.length;
-    var bas = lo > 0 ? 'Western Pacific' : lo >= -100 ? 'Atlantic' : lo >= -140 ? 'East Pacific' : 'Central Pacific';
+    var bas = _nhcBasinOf(lo, la);
     return bas + ' disturbance near ' + Math.abs(Math.round(la)) + '\u00B0' + (la >= 0 ? 'N' : 'S') + ' ' + Math.abs(Math.round(lo)) + '\u00B0' + (lo >= 0 ? 'E' : 'W');
   } catch (e) { return 'Disturbance'; }
 }
-function getTropicalOutlookSection() {
+function getTropicalOutlookSection(codes) {
   var _twEP = (typeof tropicalOutlookTextEP !== 'undefined') ? tropicalOutlookTextEP : null;
   var _twCP = (typeof tropicalOutlookTextCP !== 'undefined') ? tropicalOutlookTextCP : null;
   var hasAny = (tropicalOutlookText && /percent|developing|tropical/i.test(tropicalOutlookText))
@@ -7629,6 +8149,15 @@ function getTropicalOutlookSection() {
   if (!hasAny) return '';
   var areas = (nhcDisturbances || []).filter(function(f){ return (f.properties||{})._kind!=='point'; });
   var atl = _nhcBasinText(tropicalOutlookText), ep = _nhcBasinText(_twEP), cp = _nhcBasinText(_twCP);
+  if (codes && _bScoped(codes)) {   // v89: a single-area briefing shows only systems near its bases
+    var _rel = _nhcRelevant(codes), _bb = {};
+    if (_rel) { if (!_rel.any) return ''; areas = _rel.areas; _bb = _rel.basins; }
+    else { areas = []; codes.forEach(function(c){ var p = COORDS[c]; if (p) _bb[_nhcBasinOf(p[1], p[0])] = true; }); }
+    if (!_bb['Atlantic']) atl = '';
+    if (!_bb['East Pacific']) ep = '';
+    if (!_bb['Central Pacific']) cp = '';
+    if (!areas.length && !atl && !ep && !cp) return '';
+  }
   var head = '<div style="background:#fff;border:1px solid #1e3a5f;border-radius:6px;padding:12px 16px;margin-bottom:12px">'
     + '<div style="font-size:9px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">🌀 NHC Tropical Weather Outlook</div>';
   if (!areas.length && !atl && !ep && !cp) {
@@ -8836,7 +9365,7 @@ function openPrintBriefing() {
         { label:'High Wind',               ids:['windalerts','windcur','windfcstsus','windfcstgust'] },
         { label:'Rain and Flooding',       ids:['rainfcst','ero','floodalerts'] },
         { label:'Thunderstorms and Severe',ids:['spc','tsfcst','tsalerts','lightning'] },
-        { label:'Temperature',             ids:['heatalerts','heatcur','chillalerts','feelfcst'] },
+        { label:'Temperature',             ids:['heatalerts','heatcur','chillalerts','frostalerts','feelfcst'] },
         { label:'Winter Weather',          ids:['snowice','winteralerts'] }
       ];
       var used = {};
@@ -8864,13 +9393,14 @@ function openPrintBriefing() {
     }
 
     window._bulkStop = false;
+    _briefSnapAt = new Date(); _briefNoTrim = (mode !== 'area');   // v89: one issue time for every PDF in the run; hazard PDFs keep every row
     var made = [], skipped = [], failed = [];
     for (var i = 0; i < jobs.length; i++) {
       var j = jobs[i];
       btn.textContent = 'Building ' + (i+1) + '/' + jobs.length + ' — ' + j.label;
       var secs = [];
       try { secs = collectSectionsForDay(j.codes, j.sects); } catch(e) { secs = []; }
-      var keepEmpty = isFc && mode === 'area';
+      var keepEmpty = mode === 'area';   // v89: an area with nothing to report still gets a short notice naming every base
       if (!j.codes.length || (!secs.length && !keepEmpty && !_briefDataGaps(j.codes).length)) { skipped.push(j.label); continue; }
       _briefScopeLabel = j.label;
       var pw = null;
@@ -8884,6 +9414,7 @@ function openPrintBriefing() {
       if (window._bulkStop) { window._bulkStop = false; break; }
     }
     _briefScopeLabel = '';
+    _briefSnapAt = null; _briefNoTrim = false;
     _restore();
     modal.remove();
     if (isFc && mode === 'area' && made.length) markFcstSent();
@@ -9417,7 +9948,7 @@ function _getActionHTML(type) {
 function _doPrint(codes, notes, sections, opts) {
   opts = opts || {};
   sections = sections || {spc:true,nhc:true,winter:true,flood:true,wind:true,temp:true,alerts:true};
-  var now = new Date();
+  var now = _briefSnapAt || new Date();
   var dateStr = now.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
   var utc = now.toISOString().replace('T',' ').substring(0,16)+'Z';
 
@@ -9541,7 +10072,7 @@ function _doPrint(codes, notes, sections, opts) {
 
 function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES, sections) {
   var secs = collectSectionsForDay(codes, sections);
-  var _top = _bTopModel(secs, codes);
+  var _pp = _bPrepare(secs, codes, _bNarrowed(sections)), _top = _pp.top, _vs = _pp.secs;
   var html = '';
 
   html += '<table class="wx-hdr" style="border:none;margin-bottom:12px;width:100%"><tr><td style="background:#0E2841;padding:12px 16px;border:none">'
@@ -9550,17 +10081,14 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
     +'<div style="color:#c8d0d8;font-size:11px;margin-top:2px;overflow-wrap:anywhere">'+_top.counts.act+' base'+(_top.counts.act!==1?'s':'')+' with actions ('+_top.counts.W+' WARNING, '+_top.counts.A+' ADVISORY) \u00B7 '+_top.counts.M+' awareness only</div>'
     +'</td></tr></table>';
 
-  html += '<p style="font-size:10px;color:#556070;margin:0 0 10px 0">' + _briefIssueMeta() + '</p>';
-  html += '<p style="margin:0 0 10px 0">Team,</p>';
-  var _np = buildBriefNarrativeParts(secs);
-  if (briefDay === 'fc') html += '<p style="margin:0 0 6px 0">Forecast briefing for ' + _fcstRangeText() + '.</p>';
-  html += _bTopHTML(_top);
-  if (_np.outro) html += '<p style="margin:0 0 10px 0">'+_np.outro+'</p>';
+  html += '<p style="font-size:10px;color:#556070;margin:0 0 4px 0">' + _briefIssueMeta() + '</p>';
+  if (briefDay === '1') html += _bNowNote();
   var _pGaps = _briefDataGaps(codes);
   if (_pGaps.length) html += '<p style="background:#fff0f0;border-left:4px solid #dc2626;padding:8px 12px;margin:0 0 10px 0;font-weight:700;color:#7f1d1d">' + _briefGapText(_pGaps) + '</p>';
   var _pPg = _briefProductGapText();
   if (_pPg) html += '<p style="background:#fff7ed;border-left:4px solid #ea580c;padding:8px 12px;margin:0 0 10px 0;font-weight:700;color:#9a3412">' + _pPg + '</p>';
-  html += '<p style="margin:0 0 16px 0;font-style:italic;font-weight:700">'+_briefIssuedLine()+' Local Management and supervisors at all impacted locations should monitor weather.gov and their local NWS office frequently for watches, warnings, and updates.</p>';
+  if (briefDay === 'fc') html += '<p style="margin:0 0 6px 0">Forecast briefing for ' + _fcstRangeText() + '.</p>';
+  html += _bTopHTMLv89(_top);
   // v54: the WPC Short Range Discussion sits with the outlooks (daily briefing) or
   // after the grids (forecast briefing); _renderBriefHTML places it.
 
@@ -9569,15 +10097,15 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   }
 
   _briefScopeCodes = codes;
-  var _mg = _watchMapsBySection(codes, secs);
+  var _mg = _watchMapsBySection(codes, _vs);
   if (_mg.leftover.length) {
     html += '<div style="margin-bottom:14px">'
       + '<div style="background:#0E2841;color:#fff;font-weight:700;font-size:12px;padding:6px 12px;letter-spacing:.05em">HAZARD MAPS</div>'
       + _mg.leftover.map(_watchMapImgHTML).join('') + '</div>';
   }
-  html += _renderBriefHTML(_bConsolidateWind(secs), _mg.bySection);
+  if (_vs.length) html += _renderBriefHTML(_bConsolidateWind(_vs), _mg.bySection);
 
-  html += '<div style="background:#f2f4f6;padding:10px 12px;margin-top:16px;font-size:11px"><strong>Supervisors:</strong> Brief your team on all active hazards covered in this briefing before their shift begins. Do not wait for a formal watch, warning, or advisory to be issued before completing preparations \u2014 act on the forecast. Review posted action items, confirm all employees know shelter locations and safety protocols, verify ramp and equipment readiness, and ensure staff are checking in with each other throughout the shift. Employee safety is the top priority under all conditions.</div>';
+  html += '<p style="margin:12px 0 0 0;font-size:10px;font-style:italic;color:#556070">'+_briefIssuedLine()+' Local management and supervisors should monitor weather.gov and their local NWS office for watches, warnings and updates.</p>';
   html += '<div style="background:#0E2841;color:#fff;text-align:center;font-weight:700;padding:8px;margin-top:8px;font-size:11px">Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.</div>';
   html += _bLegendHTML(_top.hasIntl, _top.isFc);
   html += '<div style="font-size:9px;color:#666;font-style:italic;margin-top:8px">DISCLAIMER: This briefing is intended for internal use only. It is based on information available at the time of issuance and is subject to change. It does not supersede official National Weather Service watches, warnings, or advisories. All operational decisions remain the responsibility of local management.</div>';
@@ -9603,28 +10131,7 @@ function _buildAllClearBrief(codes, notes, dateStr, utc) {
   html += '<p style="font-style:italic">' + _briefIssuedLine() + '</p>';
   if (notes) html += '<div style="background:#f0f4f7;border-left:4px solid #0E2841;padding:8px 12px;margin-bottom:16px"><strong>Shift Notes:</strong> '+notes+'</div>';
 
-  // Summary table
-  var withObs = codes.filter(function(c){return obsData[c];});
-  if (withObs.length) {
-    html += '<table><tr style="background:#f0f4f7">'
-    +'<th style="border:1px solid #ddd;text-align:left">FBO</th>'
-    +'<th style="border:1px solid #ddd;text-align:left">Location</th>'
-    +'<th style="border:1px solid #ddd;text-align:center">Cat</th>'
-    +'<th style="border:1px solid #ddd;text-align:left">Conditions</th>'
-    +'<th style="border:1px solid #ddd;text-align:left">Obs Age</th></tr>';
-    withObs.forEach(function(code) {
-      var obs=obsData[code]; var fbo=COVERED.find(function(f){return f.code===code;})||{city:'',state:''};
-      var fc=obs.flightCat||'--'; var FC_COLOR={VFR:'#16a34a',MVFR:'#2563eb',IFR:'#dc2626',LIFR:'#7c3aed'};
-      var cond=[]; if(obs.tempF!=null)cond.push(obs.tempF+'\u00b0F'); if(obs.windKts!=null)cond.push(windDirLabel(obs.windDir)+' '+obs.windKts+'kt'); if(obs.visib!=null)cond.push(obs.visib+'SM');
-      var bg = withObs.indexOf(code)%2===0?'#fff':'#f9f9f9';
-      html += '<tr style="background:'+bg+'"><td style="border:1px solid #ddd;font-weight:700">'+code+'</td>'
-    +'<td style="border:1px solid #ddd">'+fbo.city+', '+fbo.state+'</td>'
-    +'<td style="border:1px solid #ddd;text-align:center;color:'+(FC_COLOR[fc]||'#000')+';font-weight:700">'+fc+'</td>'
-    +'<td style="border:1px solid #ddd">'+cond.join(' \u00b7 ')+'</td>'
-    +'<td style="border:1px solid #ddd;color:#8a9aaa;font-style:italic">'+(obs.obsTime?fmtAge(obs.obsTime):'--')+'</td></tr>';
-    });
-    html += '</table>';
-  }
+  html += _bAllClearBox(codes);
   html += '<div style="background:#0E2841;color:#fff;font-weight:700;font-size:11px;padding:8px 14px;margin:16px 0;text-align:center">Safety is Paramount. Take all necessary precautions and remain alert to changing conditions.</div>';
   html += '<p style="font-size:9px;color:#8a9aaa;border-top:1px solid #ddd;padding-top:8px">Generated '+utc+' by WATCH \u2014 Atlantic Aviation \u2014 Internal Use Only | Build '+WATCH_BUILD+'</p>';
   return html;
@@ -11616,7 +12123,7 @@ function _watchBuildHazardMaps(codes) {
   if (coldLegend.length) pushRegional(
     { key: 'cold', thumb: true, title: 'Forecast Wind Chill / Cold \u2014 Next 24h',
       subtitle: 'Lowest apparent temperature by location',
-      sectionIds: ['chillalerts','feelfcst','heatcur','heatalerts'] },
+      sectionIds: ['chillalerts','frostalerts','feelfcst','heatcur','heatalerts'] },
     [],
     function (c) { var b = _band(coldVal(c), COLD_BANDS); return b ? b[1] : null; },
     coldLegend);
@@ -11798,7 +12305,7 @@ function _watchMapsBySection(codes, secs) {
   // Real feel is awareness only. Its maps appear only when a heat or cold product or
   // current heat risk section is in this brief.
   maps = maps.filter(function (m) {
-    if (/^(heat|cold)_/.test(m.key)) return !!(present.heatcur || present.heatalerts || present.chillalerts);
+    if (/^(heat|cold)_/.test(m.key)) return !!(present.heatcur || present.heatalerts || present.chillalerts || present.frostalerts);
     return true;
   });
   var bySection = {}, leftover = [];
