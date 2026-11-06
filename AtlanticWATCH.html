@@ -3342,7 +3342,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v91';
+var WATCH_BUILD = 'v93';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -5021,7 +5021,7 @@ function _bPrepEntries(secs){
           case 'snowice': ph = 2; txt = d1 + (d2 ? ' (' + d2 + ')' : ''); break;
           default: ph = 1; txt = d1.split('; ').slice(0, 2).join('; ');
         }
-        add(r.code, kind, tier, ph, txt, id === 'spc' && /TOR/.test(g.probs || ''));
+        add(r.code, kind, tier, ph, txt, id === 'spc' && _bTorSig(g.probs));
       });
     });
   });
@@ -5173,12 +5173,13 @@ function _bTrimSecs(secs, codes, noTrim){
   } catch (e) {}
   return {secs:out, watch:W};
 }
+function _bTorSig(p){ var m = /TOR (\d+)%/.exec(p || ''); return !!(m && Number(m[1]) >= 5); }   // v92: SPC's lowest tornado contour (2%) alone does not add tornado steps
 var _briefTorn = true;   // false only when a daily briefing has no tornado alert and no SPC tornado probability
 function _bTornCapable(secs){
   var t = false;
   secs.forEach(function(s){
     var d = s.data;
-    if (s.def.id === 'spc' && d.groups) d.groups.forEach(function(g){ if (/TOR/.test(g.probs || '')) t = true; });
+    if (s.def.id === 'spc' && d.groups) d.groups.forEach(function(g){ if (_bTorSig(g.probs)) t = true; });
     if (s.def.id === 'tsalerts' && d.rows) d.rows.forEach(function(r){ if (/tornado/i.test(r.detail || '')) t = true; });
   });
   return t;
@@ -5351,6 +5352,23 @@ function _nhcRelevant(codes){
   return out;
 }
 
+// v93: maps are chosen from the full section list, so trimming a section to the Also watching box
+// (general thunder, marginal risk, marginal rainfall) no longer drops its SPC or WPC map.
+function _bMapsFor(codes, secs, vs){
+  var mg = _watchMapsBySection(codes, secs);
+  if (vs === secs) return mg;
+  var present = {}; vs.forEach(function(s){ present[s.def.id] = 1; });
+  var by = {}, left = mg.leftover.slice();
+  Object.keys(mg.bySection).forEach(function(k){
+    mg.bySection[k].forEach(function(m){
+      var t = present[k] ? k : null;
+      if (!t) (m.sectionIds || []).forEach(function(id){ if (!t && present[id]) t = id; });
+      if (t) (by[t] = by[t] || []).push(m);
+      else if (/^(spc|ero)_/.test(m.key)) left.push(m);
+    });
+  });
+  return {bySection:by, leftover:left};
+}
 // ── Compact standing actions and legend ──────────────────────────────────────
 function _bStandingHTML(){
   return '<div style="margin:6px 0 12px 0;border:1px solid #0E2841;border-radius:4px;padding:6px 12px;font-size:10px;line-height:1.5;color:#1a2a3a">'
@@ -5377,7 +5395,7 @@ function _wxScopeText(txt){
     var t = p.trim(); if (!t) return;
     if (i <= Math.max(vi, 0)) { kept.push(p); return; }
     if (/^\$\$/.test(t) || /^forecaster/i.test(t)) { kept.push(p); return; }
-    if (_wxRelevant(t, scope)) { kept.push(p); if (t.length > 60) body++; }
+    if (_wxRelevant(t, scope)) { kept.push(p); if (t.length > 60 && _wxStatesOf(t).length) body++; }   // v92: only a paragraph that names the area counts, so a CONUS-only discussion leaves nothing for Alaska or Hawaii
   });
   return body ? kept.join('\n\n') : '';
 }
@@ -6039,7 +6057,7 @@ function _generateSummaryInner(content, ts, status) {
 
   _briefScopeCodes = fboList.map(function(f){ return f.code; });
   var _pp = secs.length ? _bPrepare(secs, codes) : null, _vs = _pp ? _pp.secs : secs;
-  var _mg = _watchMapsBySection(fboList.map(function(f){ return f.code; }), _vs);
+  var _mg = _bMapsFor(fboList.map(function(f){ return f.code; }), secs, _vs);
   var html = _vs.length ? _renderBriefLive(_bConsolidateWind(_vs), _mg.bySection) : '';
   if (_mg.leftover.length) {
     html = '<div style="margin-bottom:12px">' + _mg.leftover.map(_watchMapImgHTML).join('') + '</div>' + html;
@@ -10112,7 +10130,7 @@ function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, aler
   }
 
   _briefScopeCodes = codes;
-  var _mg = _watchMapsBySection(codes, _vs);
+  var _mg = _bMapsFor(codes, secs, _vs);
   if (_mg.leftover.length) {
     html += '<div style="margin-bottom:14px">'
       + '<div style="background:#0E2841;color:#fff;font-weight:700;font-size:12px;padding:6px 12px;letter-spacing:.05em">HAZARD MAPS</div>'
