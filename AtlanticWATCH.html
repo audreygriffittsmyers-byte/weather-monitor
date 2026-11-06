@@ -3342,7 +3342,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v86';
+var WATCH_BUILD = 'v88';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -4594,7 +4594,7 @@ function _bTopModel(secs, codes){
 // company policy.
 //
 // LEADERSHIP_REGIONS: leadership region name -> manager areas it contains, for example
-//   {'Southeast':['Hartman','Therrien'], 'Hawaii':['Read'], 'Alaska':['Hill']}
+//   {'Southeast':['Hartmann','Therrien'], 'Hawaii':['Read'], 'Alaska':['Hill']}
 // Left empty, the Regional Snapshot rolls up by manager area.
 var LEADERSHIP_REGIONS = {};
 var HAZARD_IMPACTS = {
@@ -7971,10 +7971,10 @@ var GRID_REGIONS = {
   'Kurgan':      ['OKC','MKC','PWA','TUL','MDW','UES','PWK','LNK','OMA','SBN','ANE'],
   'Neds':        ['PIT','AGC','MMU','SDF','CLE'],
   'Butterworth': ['PHL','PNE','PHF','ILG'],
-  'Rose':        ['BDA','ELM','SWF','HPN','IAD','FRG','OXC'],
-  'Phillips':    ['HYA','BDR','BAF','BDL','PVD','ORH','BED','TEB'],
+  'Rose':        ['ELM','SWF','HPN','IAD','FRG','OXC'],
+  'Phillips':    ['HYA','BDR','BAF','BDL','PVD','ORH','BED','TEB','BDA'],
   'Mayle':       ['RDU','BNA','PDK','BHM','CHS','JZI','JAN','MSY'],
-  'Hartman':     ['DTS','SGJ','MCO','ORL','SRQ'],
+  'Hartmann':    ['DTS','SGJ','MCO','ORL','SRQ'],
   'Therrien':    ['OPF','SUA','DJT','BCT','FXE','PLS','GCM','SXM'],
   'Vertiport':   ['6N5'],
 };
