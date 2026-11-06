@@ -3342,7 +3342,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v89';
+var WATCH_BUILD = 'v91';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -4419,7 +4419,7 @@ function _bActionModel(type, tier){
 }
 function _bActionBlockHTML(m){
   if (!m) return '';
-  return '<div style="margin:10px 0 14px 0;border:1px solid '+m.color+';border-radius:4px;overflow:hidden">'
+  return '<div style="page-break-inside:avoid;break-inside:avoid;margin:10px 0 14px 0;border:1px solid '+m.color+';border-radius:4px;overflow:hidden">'
     + '<div style="background:'+m.color+';color:#fff;font-size:10px;font-weight:700;padding:6px 12px;letter-spacing:.04em">'+m.head+'</div>'
     + '<ol style="margin:0;padding:10px 12px 10px 28px">'
     + m.items.map(function(i){ return '<li style="margin-bottom:5px;font-size:11px;color:#1a2a3a;line-height:1.5">'+i+'</li>'; }).join('')
@@ -4933,7 +4933,7 @@ var _PREP_KIND_OF = {lightning:'lightning', tsalerts:'storm', tsfcst:'ts', spc:'
 var _PREP_GROUP = {lightning:'thunder', storm:'thunder', ts:'thunder', spc:'thunder', flood:'flood', rain:'flood', wind:'wind', cold:'cold', heat:'heat',
   winter:'winter', frost:'frost', tropical:'tropical', fire:'fire', aqi:'aqi', dust:'dust', other:'other'};
 var _PREP_ORDER = ['thunder','wind','tropical','flood','winter','frost','heat','cold','fire','dust','aqi','other'];
-var _PREP_LABEL = {thunder:'Thunderstorms and lightning', flood:'Flooding and heavy rain', wind:'High wind', winter:'Winter weather', frost:'Freeze',
+var _PREP_LABEL = {thunder:'Thunderstorms and lightning', flood:'Flooding and heavy rain', wind:'High wind', winter:'Winter weather', frost:'Frost',
   heat:'Heat', cold:'Cold', tropical:'Tropical', fire:'Fire weather', aqi:'Air quality', dust:'Blowing dust', other:'Other NWS alert'};
 var _PREP_ACT = {
   thunder:{adv:['Brief the team on timing now. Stop fueling and ramp work the moment lightning is within 5 miles.',
@@ -4966,7 +4966,7 @@ var _PREP_ACT = {
            warn:['Protect or drain water lines, hydrants and GSE fluids against a hard freeze.'],
            stop:'', cust:'Frost may need removal before departure.'},
   heat:   {adv:['Water and shade or cooled breaks every hour. Stock electrolytes and cooling towels.',
-                'Shorten ramp duty cycles and move heavy work to cooler hours.',
+                'Move heavy work to cooler hours.',
                 'Pair crews to watch for heat illness.'],
            warn:['Limit ramp duty cycles to 30 to 45 minutes at peak heat.'],
            stop:'Anyone showing heat illness signs: stop work and cool them down.',
@@ -5145,7 +5145,7 @@ function _bWatchAdd(W, id, r, g){
 }
 function _bTrimSecs(secs, codes, noTrim){
   if (briefDay !== '1' || _briefNoTrim || noTrim) return {secs:secs, watch:null};
-  var W = {ts:[], rain:[], frost:[], heat:[], stmt:[], other:[], gen:[], mrgl:[], tropical:''}, out = [];
+  var W = {ts:[], rain:[], frost:[], heat:[], stmt:[], other:[], gen:[], mrgl:[], tropical:'', tropNear:[]}, out = [];
   secs.forEach(function(s){
     var id = s.def.id, d = s.data;
     if (d.html || d.grid) { out.push(s); return; }
@@ -5168,6 +5168,7 @@ function _bTrimSecs(secs, codes, noTrim){
   });
   try {
     var rel = _nhcRelevant(codes);
+    if (rel && rel.any) rel.areas.forEach(function(f){ var p = f.properties || {}; W.tropNear.push((p.Name || _nhcAreaLabel(f)) + ', ' + (p.prob7day || '?') + ' chance of development in 7 days'); });
     if (rel && !rel.any && ((nhcDisturbances && nhcDisturbances.length) || tropicalOutlookText)) W.tropical = 'No NHC tropical system within about ' + NHC_RELEVANT_KM.toLocaleString('en-US') + ' km of these bases.';
   } catch (e) {}
   return {secs:out, watch:W};
@@ -5188,6 +5189,18 @@ function _bPrepare(secs, codes, noTrim){
   var tr = _bTrimSecs(secs, codes, noTrim);
   top.watch = tr.watch;
   top.prep = daily ? _bPrepModel(secs) : null;
+  if (top.prep && top.watch) {   // v90: a base already in the Prepare box is not listed again as awareness for the same hazard
+    var has = {};
+    top.prep.forEach(function(b){ has[b.code] = {}; b.groups.forEach(function(g){ has[b.code][g.key] = 1; }); });
+    function no(c, k){ return !(has[c] && has[c][k]); }
+    var W = top.watch;
+    W.ts = W.ts.filter(function(x){ return no(x.code, 'thunder'); });
+    W.gen = W.gen.filter(function(c){ return no(c, 'thunder'); });
+    W.mrgl = W.mrgl.filter(function(c){ return no(c, 'thunder'); });
+    W.rain = W.rain.filter(function(c){ return no(c, 'flood'); });
+    W.heat = W.heat.filter(function(x){ return no(x.code, 'heat'); });
+    W.frost = W.frost.filter(function(x){ return no(String(x).split(' ')[0], 'frost'); });
+  }
   top.single = _bSingleArea(codes);
   return {top:top, secs:tr.secs};
 }
@@ -5206,6 +5219,7 @@ function _bWatchHTML(W, single){
   if (W.gen.length) L.push('<strong>General thunderstorm area, no organized severe threat:</strong> ' + (W.gen.length <= 12 ? list(W.gen.map(_bCode), 12) : W.gen.length + ' bases'));
   if (W.stmt.length) L.push('<strong>Statements with no ramp impact:</strong> ' + list(W.stmt, 8));
   if (W.other.length) L.push('<strong>Other awareness:</strong> ' + list(W.other, 8));
+  if (W.tropNear.length) L.push('<strong>Tropical, near these bases:</strong> ' + W.tropNear.slice(0, 3).join('; ') + '. See the NHC outlook below.');
   if (W.tropical) L.push('<strong>Tropical:</strong> ' + W.tropical);
   if (!L.length) return '';
   return '<div style="border:1px solid #c8d0d8;border-radius:4px;margin:0 0 10px 0;overflow:hidden">'
@@ -10072,6 +10086,7 @@ function _doPrint(codes, notes, sections, opts) {
 
 function _buildAlertBrief(codes, notes, dateStr, utc, zoneMap, activeZones, alertCodes, hazardSet, SPC_ZONES, sections) {
   var secs = collectSectionsForDay(codes, sections);
+  _briefScopeCodes = codes;   // v90: set before anything reads it (the BDA note used the previous briefing's scope)
   var _pp = _bPrepare(secs, codes, _bNarrowed(sections)), _top = _pp.top, _vs = _pp.secs;
   var html = '';
 
@@ -11894,6 +11909,7 @@ function _watchBuildHazardMaps(codes) {
         legend.push({ color: t.color, label: t.label });
       });
       var regionCodes = _codesInRegion(codes, rk);
+      if (!regionCodes.length) return;   // v91: no briefed base in this frame (Hill, Alaska only, was getting a CONUS map)
       var flagged = regionCodes.filter(function (c) { return siteColorFn && siteColorFn(c); });
       // Skip a panel with no polygons and no impacted sites. Regional panels
       // (Alaska, Hawaii, offshore) are also skipped when no site there is highlighted:
@@ -12242,7 +12258,10 @@ function _watchBuildHazardMaps(codes) {
   // v55: basins with a site under a tropical product keep their map. With none, one
   // thumbnail of the busiest basin carries the outlook; the rest are dropped.
   var anyUnder = tropMaps.some(function (m) { return m.nFlagged > 0; });
+  var _tmBasins = null;
+  if (_bScoped(codes)) { _tmBasins = {}; codes.forEach(function (c) { var p = COORDS[c]; if (p) _tmBasins[{'Atlantic':'atlantic','East Pacific':'eastpacific','Central Pacific':'pacific'}[_nhcBasinOf(p[1], p[0])]] = true; }); }   // v90: single-area briefs keep only their own basin's map
   if (anyUnder) tropMaps = tropMaps.filter(function (m) { return m.nFlagged > 0; });
+  else if (_tmBasins) { tropMaps = tropMaps.filter(function (m) { return _tmBasins[m.key.replace('tropical_', '')]; }).slice(0, 1); tropMaps.forEach(function (m) { m.regional = true; }); }
   else { tropMaps.sort(function (a, b) { return b.nObj - a.nObj; }); tropMaps = tropMaps.slice(0, 1); tropMaps.forEach(function (m) { m.regional = true; }); }
   tropMaps.forEach(function (m) { maps.push(m); });
 
