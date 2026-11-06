@@ -124,7 +124,7 @@ var TIER = {
   2: {word:'advisory', Word:'Advisory', fill:C.mellow, ink:C.twilight, means:'Get ready. Brief your team and prepare the ramp.'},
   1: {word:'monitor',  Word:'Monitor',  fill:C.jade,   ink:'#FFFFFF', means:'Stay aware. No change to operations yet. Keep watching the forecast.'}
 };
-var KIND_ORDER = ['thunder','wind','tropical','flood','winter','coastal','heat','cold','fire','aqi','other'];
+var KIND_ORDER = ['thunder','wind','tropical','flood','winter','coastal','heat','cold','fire','aqi','dust','fog','surf','other'];
 var KIND = {
   thunder:{label:'Thunderstorms and lightning', short:'Thunderstorms', map:/^spc$/},
   wind:   {label:'High winds',                  short:'High wind',     map:/^wind/},
@@ -136,6 +136,9 @@ var KIND = {
   cold:   {label:'Cold stress',                short:'Cold',          map:/^cold/},
   fire:   {label:'Fire weather',                short:'Fire weather',  map:/^fire$/},
   aqi:    {label:'Poor air quality',            short:'Air quality',   map:/^aqi/},
+  dust:   {label:'Blowing dust',                short:'Dust',          map:null},
+  fog:    {label:'Dense fog',                   short:'Fog',           map:null},
+  surf:   {label:'High surf and coastal hazards', short:'High surf',   map:null},
   other:  {label:'Other weather alerts',        short:'Other alerts',  map:null}
 };
 var FALLBACK_ACT = {
@@ -222,13 +225,14 @@ function gapOf(code, p){ var s = DATA.sites[code] || {}; return p === 0 ? !!s.ga
 function siteName(code){ var s = DATA.sites[code] || {}; return s.city ? s.city + (s.state ? ', ' + s.state : '') : ''; }
 function periodName(p){ return DATA.periods[p].name; }
 function periodDate(p){ return DATA.periods[p].sub; }
-function actionsFor(kind, tier){
+function actionsFor(kind, tier, long){
   var a = (DATA.actions && DATA.actions[kind]) || FALLBACK_ACT[kind] || FALLBACK_ACT.other;
   var list = tier >= 3 ? (a.warn && a.warn.length ? a.warn : a.adv) : tier === 2 ? a.adv : MONITOR_ACT;
-  return (list || MONITOR_ACT).map(shortAct);
+  return (list || MONITOR_ACT).map(function(t){ return shortAct(t, long); });
 }
-function shortAct(t){
+function shortAct(t, long){
   t = String(t || '').replace(/\s+/g, ' ').trim();
+  if (long) { var m2 = t.match(/^(.{40,230}?[.!?])(\s|$)/); if (m2 && m2[1].length < t.length) { var m3 = t.match(/^(.{40,230}?[.!?]\s+[^.!?]{8,}?[.!?])(\s|$)/); if (m3 && m3[1].length <= 230) return m3[1]; } }
   var m = t.match(/^(.{40,150}?[.!?])(\s|$)/);
   return m ? m[1] : (t.length > 150 ? t.slice(0, 147).replace(/[ ,;:]+$/, '') + '…' : t);
 }
@@ -414,12 +418,12 @@ function cardLocOverview(code){
   s += R(40, 450, 1120, 100, {fill:C.wash, rx:8});
   if (top) {
     s += T(56, 476, 'What to do: ' + KIND[top.k].label.toLowerCase() + ', ' + TIER[top.t].word, {fam:HEAD, size:20, fill:C.twilight});
-    var acts = actionsFor(top.k, top.t).slice(0, 2);
+    var acts = actionsFor(top.k, top.t).slice(0, 3);
     acts.forEach(function(a, i){
-      var ls = wrap(a, 15, 400, BODY, 510, 2);
-      var ax = 56 + i * 556;
+      var ls = wrap(a, 14, 400, BODY, 318, 3);
+      var ax = 56 + i * 368;
       s += '<circle cx="' + (ax + 9) + '" cy="' + (497) + '" r="10" fill="' + C.blue + '"/>' + T(ax + 9, 502, String(i + 1), {size:13, weight:700, fill:'#fff', anchor:'middle'});
-      ls.forEach(function(l, j){ s += T(ax + 28, 502 + j * 18, l, {size:15, fill:C.twilight}); });
+      ls.forEach(function(l, j){ s += T(ax + 28, 502 + j * 17, l, {size:14, fill:C.twilight}); });
     });
   } else {
     s += T(56, 484, 'Nothing to act on right now.', {fam:HEAD, size:20, fill:C.twilight});
@@ -457,13 +461,16 @@ function cardLocDetail(code, p){
   s += T(742, 226, 'What to do', {fam:HEAD, size:24, fill:C.twilight});
   s += T(742, 248, KIND[top.k].label + ', ' + TIER[top.t].word, {size:14, weight:600, fill:C.jade});
   var ay = 278;
-  actionsFor(top.k, top.t).slice(0, 4).forEach(function(a, i){
-    var ls = wrap(a, 16, 400, BODY, 370, 3);
-    if (ay + ls.length * 20 > 548) return;
+  var allActs = actionsFor(top.k, top.t, true), shownActs = 0;
+  allActs.slice(0, 5).forEach(function(a, i){
+    var ls = wrap(a, 16, 400, BODY, 370, 4);
+    if (ay + ls.length * 20 > 528) return;
+    shownActs++;
     s += '<circle cx="753" cy="' + (ay - 5) + '" r="11" fill="' + C.blue + '"/>' + T(753, ay, String(i + 1), {size:14, weight:700, fill:'#fff', anchor:'middle'});
     ls.forEach(function(l, j){ s += T(774, ay + j * 20, l, {size:16, fill:C.twilight}); });
     ay += ls.length * 20 + 12;
   });
+  if (shownActs < allActs.length) s += T(742, 545, (allActs.length - shownActs) + ' more action' + (allActs.length - shownActs !== 1 ? 's' : '') + ' in the briefing.', {size:13, fill:C.tarmac, italic:true});
   return {svg:frame(s, ''), name:'WATCH_' + code.replace(/\W+/g, '') + '_' + ['24h','48h','72h'][p], title:code + ': ' + periodName(p).toLowerCase()};
 }
 
