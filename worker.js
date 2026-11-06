@@ -8,7 +8,7 @@ const CORS = {
 const GEOJSON = { ...CORS, 'Content-Type': 'application/json' };
 const TEXT    = { ...CORS, 'Content-Type': 'text/plain' };
 const UA = 'AtlanticAviation-WATCH/1.0 (ops@atlanticaviation.com)';
-const WORKER_BUILD = '82';
+const WORKER_BUILD = '85';
 
 // Relay an upstream response WITHOUT laundering failures into HTTP 200.
 // Before v46 every route returned 200 regardless of upstream status, and the app
@@ -521,6 +521,29 @@ const handler = {
 
 
 
+    // v85: lightning strikes near a list of sites (AccuWeather Lightning API). The key stays in the Worker secret
+    // ACCUWEATHER_KEY and is never returned. Optional variable ACCU_HOST (default api.accuweather.com; the vendor docs use
+    // apidev.accuweather.com for development).
+    if (type === 'lightning') {
+      if (!env || !env.ACCUWEATHER_KEY) return new Response(JSON.stringify({ error: 'not_configured' }), { status: 503, headers: GEOJSON });
+      const sites = (url.searchParams.get('sites') || '').split('|').filter(Boolean).slice(0, 40);
+      const radius = Math.min(25, Math.max(1, Number(url.searchParams.get('radius')) || 10));
+      const mReq = Number(url.searchParams.get('minutes'));
+      const minutes = [5, 15, 30, 60, 120].indexOf(mReq) >= 0 ? mReq : 15;
+      const results = new Array(sites.length);
+      let next = 0;
+      async function worker() {
+        while (next < sites.length) {
+          const i = next++;
+          const m = /^(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)$/.exec(sites[i]);
+          if (!m) { results[i] = { error: 'bad_site' }; continue; }
+          results[i] = await lightningForSite(Number(m[1]), Number(m[2]), minutes, radius, env);
+        }
+      }
+      await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+      return new Response(JSON.stringify({ ok: true, fetched: Date.now(), minutes: minutes, radius: radius, results: results }), { headers: GEOJSON });
+    }
+
     // v82: api.weather.gov through one shared cache. Only these exact paths are relayed.
     if (type === 'nws') {
       const path = url.searchParams.get('path') || '';
@@ -541,6 +564,50 @@ const handler = {
     return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), { status: 400, headers: GEOJSON });
   }
 };
+
+// ── v85: lightning strikes ───────────────────────────────────────────────────────────────
+function milesBetween(lat1, lon1, lat2, lon2) {
+  const R = 3958.8, rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+const _lightningMem = new Map();   // per-instance copy of the answer for 60 s (the Cache API is not available everywhere)
+async function lightningForSite(lat, lon, minutes, radius, env) {
+  const ck = [lat.toFixed(3), lon.toFixed(3), minutes, radius].join('/');
+  const now = Date.now(), hit = _lightningMem.get(ck);
+  if (hit && now - hit.t < 60000) return hit.v;
+  const host = (env.ACCU_HOST || 'api.accuweather.com').replace(/[^a-z0-9.\-]/gi, '');
+  const u = 'https://' + host + '/lightning/v1/' + minutes + 'min/geoposition/radius.geojson?apikey=' + encodeURIComponent(env.ACCUWEATHER_KEY)
+          + '&q=' + lat.toFixed(4) + ',' + lon.toFixed(4) + '&distanceRadius=' + radius;
+  let res;
+  try { res = await fetch(u, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } }); }
+  catch (e) { return { error: 'unreachable' }; }
+  if (res.status === 401 || res.status === 403) return { error: 'key_rejected' };
+  if (res.status === 429) return { error: 'rate_limited' };
+  if (!res.ok) return { error: 'upstream_' + res.status };
+  let j;
+  try { j = await res.json(); } catch (e) { return { error: 'bad_response' }; }
+  const feats = (j && Array.isArray(j.features)) ? j.features : [];
+  let n5 = 0, n10 = 0, cg10 = 0, nearMi = null, lastTs = 0;
+  const strikes = [];
+  feats.forEach(function (f) {
+    const c = f && f.geometry && f.geometry.coordinates, p = (f && f.properties) || {};
+    if (!c || c.length < 2) return;
+    const d = milesBetween(lat, lon, c[1], c[0]), ts = Date.parse(p.date);
+    if (d > radius + 0.5) return;
+    if (d <= 5) n5++;
+    if (d <= 10) { n10++; if (p.strikeType === 'cg') cg10++; }
+    if (nearMi === null || d < nearMi) nearMi = d;
+    if (ts && ts > lastTs) lastTs = ts;
+    strikes.push([Number(c[1].toFixed(3)), Number(c[0].toFixed(3)), ts ? Math.max(0, Math.round((now - ts) / 6000) / 10) : null, p.strikeType || '']);
+  });
+  strikes.sort(function (a, b) { return (a[2] == null ? 999 : a[2]) - (b[2] == null ? 999 : b[2]); });
+  const out = { n5: n5, n10: n10, cg10: cg10, nearMi: nearMi === null ? null : Math.round(nearMi * 10) / 10, lastTs: lastTs || null, capped: feats.length >= 5000, strikes: strikes.slice(0, 30) };
+  _lightningMem.set(ck, { t: now, v: out });
+  if (_lightningMem.size > 600) { for (const [k, v] of _lightningMem) if (now - v.t > 60000) _lightningMem.delete(k); }
+  return out;
+}
 
 // ── v82: who may call this Worker, and how often ─────────────────────────────────────
 // Browsers always send an Origin header on cross-site requests; a page on any other site is refused.
