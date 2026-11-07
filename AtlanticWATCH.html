@@ -221,6 +221,7 @@
       <div style="font-size:9px;color:#c8d4de;letter-spacing:.14em;text-transform:uppercase">Weather Awareness Tactical Command Hub</div>
     </div>
     <div style="flex:1"></div>
+    <span id="build-chip" title="Build loaded in this window" style="font-size:9px;font-weight:700;color:#c8d4de;font-family:monospace;letter-spacing:.04em;margin-right:6px;flex-shrink:0;border:1px solid #ffffff44;border-radius:3px;padding:1px 5px;cursor:default"></span>
     <div id="zulu-clock" style="font-size:10px;font-weight:700;color:#4fc3f7;letter-spacing:.06em;font-family:monospace;margin-right:4px;flex-shrink:0" class="zulu-display">0000Z</div>
     <div id="header-tools">
     <div id="status-badges" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap"></div>
@@ -3342,7 +3343,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v93';
+var WATCH_BUILD = 'v95';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -3622,18 +3623,6 @@ var WATCH_BRIEF_SECTIONS = [
       if (hit) rows.push(_bRow(c, 'First chance '+_bHrLabel(hit.startTime, c), hit.shortForecast||''));
     });
     return {rows:rows, cols:['FBO','City / State','First Chance / Forecast']};
-  }},
-
-// 3 ── Lightning protocol (current observed) ─────────────────────────────────
-{ id:'lightning', title:'LIGHTNING PROTOCOL', sub:'Observed thunderstorm / lightning conditions at station',
-  icon:'\u26A1', bg:'#dc2626', tc:'#fff', docxBg:'DC2626', actions:'thunderstorm',
-  collect:function(codes){
-    var rows=[];
-    codes.forEach(function(c){
-      var lt = (typeof getLightningStatus==='function') ? getLightningStatus(c) : null;
-      if (lt && (lt.level==='active'||lt.level==='vcts'||lt.level==='cb')) rows.push(_bRow(c, lt.label, lt.msg));
-    });
-    return {rows:rows, cols:['FBO','City / State','Status']};
   }},
 
 // 4 ── Active convective NWS alerts ──────────────────────────────────────────
@@ -4187,7 +4176,7 @@ var BRIEF_GROUP_LABEL = {
   outlook:  'OUTLOOKS: SPC, WPC and NHC guidance'
 };
 var BRIEF_ORDER = [
-  ['lightning','now'],['tsalerts','now'],['floodalerts','now'],['windalerts','now'],['windcur','now'],
+  ['tsalerts','now'],['floodalerts','now'],['windalerts','now'],['windcur','now'],
   ['chillalerts','now'],['frostalerts','now'],['heatalerts','now'],['heatcur','now'],['winteralerts','now'],['dust','now'],
   ['fire','now'],['aqi','now'],['tropical','now'],['otheralerts','now'],
   ['tsfcst','forecast'],['windfcstsus','forecast'],['windfcstgust','forecast'],['snowice','forecast'],
@@ -10077,7 +10066,8 @@ function _doPrint(codes, notes, sections, opts) {
     +   'td,th{font-size:12px;padding:5px 6px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}'
     +   'td:first-child,th:first-child{width:14%}'
     + '}'
-    + '@media print{.noprint{display:none!important}body{padding:10px;max-width:100%;font-size:11px}'
+    + '.wb-run{display:none}'
+    + '@media print{.wb-run{display:block;position:fixed;bottom:0;right:0;font-size:8px;color:#6b7a8a;font-family:Arial,sans-serif}.noprint{display:none!important}body{padding:10px;max-width:100%;font-size:11px}'
     +   'table{display:table;table-layout:fixed;overflow:visible}td,th{white-space:normal;font-size:11px}'
     +   'tr,img{page-break-inside:avoid}img{max-width:100%!important;height:auto}}'
     + '@page{margin:12mm}'
@@ -10097,7 +10087,7 @@ function _doPrint(codes, notes, sections, opts) {
   var autoJs = opts.auto
     ? '<scr' + 'ipt>window.addEventListener("load",function(){setTimeout(function(){window.print()},800)});window.onafterprint=function(){setTimeout(function(){window.close()},300)};<\/scr' + 'ipt>'
     : '';
-  win.document.write(head + toolbar + html + autoJs + '</body></html>');
+  win.document.write(head + toolbar + html + '<div class="wb-run">WATCH build ' + WATCH_BUILD + '</div>' + autoJs + '</body></html>');
   win.document.close();
   return win;
 }
@@ -12394,6 +12384,27 @@ function _populateAreaScope() {
     sel.appendChild(o);
   });
 }
+
+// ── Build stamp (v95) ─────────────────────────────────────────────────────────
+// The chip in the header shows the build this window is running. version.json in the
+// repo says which build is published; a mismatch turns the chip amber.
+function watchCheckBuild(){
+  var el = document.getElementById('build-chip');
+  if (!el) return;
+  el.textContent = WATCH_BUILD;
+  el.title = 'Build loaded in this window: ' + WATCH_BUILD;
+  try {
+    fetch('version.json?t=' + Date.now(), {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(v){
+      if (!v || !v.build) { el.title += ' (published version could not be read)'; return; }
+      if (v.build === WATCH_BUILD) { el.title += ' (matches version.json)'; el.style.color = '#7fe0a0'; return; }
+      el.textContent = WATCH_BUILD + ' ≠ ' + v.build;
+      el.style.background = '#d97706'; el.style.color = '#fff'; el.style.borderColor = '#d97706'; el.style.cursor = 'pointer';
+      el.title = 'This window runs ' + WATCH_BUILD + ' but version.json says ' + v.build + '. Tap to reload. If it stays this way, check the upload.';
+      el.onclick = function(){ location.reload(); };
+    }).catch(function(){ el.title += ' (published version could not be read)'; });
+  } catch (e) {}
+}
+window.addEventListener('load', watchCheckBuild);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadMyLocations();
