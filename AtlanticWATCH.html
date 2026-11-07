@@ -3343,7 +3343,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v95';
+var WATCH_BUILD = 'v96';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -11897,6 +11897,22 @@ function _watchMapSites(codes, colorFn) {
 // Build the set of maps that apply right now. One map per hazard per region,
 // the way NWS publishes them. Alaska and Hawaii get their own panels instead of
 // being dropped, because a national frame cannot show them at a usable scale.
+// v96: which basin panel a disturbance area belongs on. The Atlantic panel box reaches -99, so a
+// Pacific-side system near 10N 89W was drawn on the Atlantic map and the East Pacific panel never
+// appeared. Same centroid rule as the briefing's own label ("East Pacific disturbance near ...").
+function _bAreaBasinKey(f){
+  try {
+    var pts = [];
+    (function walk(c){ if (typeof c[0] === 'number') pts.push(c); else c.forEach(walk); })(f.geometry.coordinates);
+    if (!pts.length) return null;
+    var lo = 0, la = 0; pts.forEach(function(p){ lo += p[0]; la += p[1]; });
+    return {'Atlantic':'atlantic', 'East Pacific':'eastpacific', 'Central Pacific':'pacific'}[_nhcBasinOf(lo / pts.length, la / pts.length)] || null;
+  } catch (e) { return null; }
+}
+function _bAreaOnBasin(f, rk){
+  var k = _bAreaBasinKey(f);
+  return k ? k === rk : _bboxHits(_featBBox(f), MAP_REGIONS[rk]);   // no basin from the centroid (e.g. Western Pacific): keep the box rule. The map frame follows the feature, not the box.
+}
 function _watchBuildHazardMaps(codes) {
   var maps = [];
   // Bermuda, Grand Cayman, Turks & Caicos and Sint Maarten sit outside every
@@ -12198,7 +12214,7 @@ function _watchBuildHazardMaps(codes) {
   var tropMaps = [];
   ['atlantic', 'eastpacific', 'pacific'].forEach(function (rk) {
     var rCones = _featsInRegion(cones, rk);
-    var rAreas = _featsInRegion(gtwoAreas, rk);
+    var rAreas = gtwoAreas.filter(function (f) { return f.geometry && _bAreaOnBasin(f, rk); });
     var rTracks = (tracks || []).filter(function (f) {
       if (!f.geometry) return false;
       var b = [180, 90, -180, -90], cs = f.geometry.coordinates || [];
@@ -12254,6 +12270,8 @@ function _watchBuildHazardMaps(codes) {
     tropMaps.push({
       nFlagged: tSites.filter(function (s) { return s.label; }).length,
       nObj: rCones.length + rAreas.length,
+      nCones: rCones.length,
+      maxProb: rAreas.reduce(function (a, f) { var p = f.properties || {}; return Math.max(a, parseInt(String(p.prob7day || p.prob2day || '0').replace('%', ''), 10) || 0); }, 0),
       key: 'tropical_' + rk,
       sectionIds: ['tropical','nhc'],
       title: 'NHC Tropical Outlook \u2014 ' + ({atlantic:'Atlantic Basin', eastpacific:'East Pacific', pacific:'Central Pacific'}[rk] || rk),
@@ -12268,9 +12286,15 @@ function _watchBuildHazardMaps(codes) {
   var anyUnder = tropMaps.some(function (m) { return m.nFlagged > 0; });
   var _tmBasins = null;
   if (_bScoped(codes)) { _tmBasins = {}; codes.forEach(function (c) { var p = COORDS[c]; if (p) _tmBasins[{'Atlantic':'atlantic','East Pacific':'eastpacific','Central Pacific':'pacific'}[_nhcBasinOf(p[1], p[0])]] = true; }); }   // v90: single-area briefs keep only their own basin's map
-  if (anyUnder) tropMaps = tropMaps.filter(function (m) { return m.nFlagged > 0; });
+  // v96: in an all-areas briefing a basin with an active-storm cone keeps its map even when no base is inside the cone (a cone near Hawaii was dropped for the Atlantic thumbnail)
+  if (anyUnder) tropMaps = tropMaps.filter(function (m) { return m.nFlagged > 0 || (!_tmBasins && m.nCones > 0); });
   else if (_tmBasins) { tropMaps = tropMaps.filter(function (m) { return _tmBasins[m.key.replace('tropical_', '')]; }).slice(0, 1); tropMaps.forEach(function (m) { m.regional = true; }); }
-  else { tropMaps.sort(function (a, b) { return b.nObj - a.nObj; }); tropMaps = tropMaps.slice(0, 1); tropMaps.forEach(function (m) { m.regional = true; }); }
+  else {
+    var _coneMaps = tropMaps.filter(function (m) { return m.nCones > 0; });
+    var _restMaps = tropMaps.filter(function (m) { return !m.nCones; }).sort(function (a, b) { return b.nObj - a.nObj || b.maxProb - a.maxProb; }).slice(0, 1);
+    _restMaps.forEach(function (m) { m.regional = true; });
+    tropMaps = _coneMaps.concat(_restMaps);
+  }
   tropMaps.forEach(function (m) { maps.push(m); });
 
   return maps;
