@@ -247,6 +247,7 @@
     <button class="tab" data-tab="grid" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Overview</button>
     <button class="tab" data-tab="outlook" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Extended Risk</button>
     <button class="tab" data-tab="build" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Briefing</button>
+    <button class="tab" data-tab="news" style="background:transparent;border:none;border-bottom:2px solid transparent;color:#7a9ab8;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Newsletter</button>
   </div>
 
   <!-- BODY -->
@@ -307,6 +308,28 @@
               <div style="font-size:12px">Click a location to see hazard details</div>
               <div style="font-size:11px;margin-top:4px;color:#c8d0d8">or click Load All to scan all FBOs</div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Daily forecast newsletter panel (v97) -->
+      <div id="panel-news" style="display:none;height:100%;overflow-y:auto;background:#E8E8E8">
+        <div style="background:#0E2841;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:10">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:#ffffff;letter-spacing:.04em">DAILY FORECAST NEWSLETTER</div>
+            <div id="news-status" style="font-size:10px;color:#7a9ab8;margin-top:4px">Forecast hazards for today and the next four days, by region, area and hazard.</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="news-tier" onchange="nlRender()" style="background:#1a3a5c;color:#7a9ab8;border:1px solid #2a5a8c;border-radius:3px;font-size:10px;padding:3px 6px;cursor:pointer"><option value="1">Monitor and above</option><option value="2">Advisory and above</option></select>
+            <button id="news-build-btn" onclick="nlBuild()" style="background:#ffffff;border:none;color:#0E2841;border-radius:4px;padding:5px 14px;font-size:10px;font-weight:700;cursor:pointer">Build newsletter</button>
+            <button id="news-print-btn" onclick="nlPrint()" disabled style="background:#1a6ba0;border:none;color:#fff;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer;opacity:.5">Print / PDF</button>
+            <button id="news-dl-btn" onclick="nlDownload()" disabled style="background:#1a6ba0;border:none;color:#fff;border-radius:4px;padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer;opacity:.5">Download HTML</button>
+          </div>
+        </div>
+        <div id="news-content" style="padding:16px 20px">
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:#8a9aaa;text-align:center">
+            <div style="font-size:32px;margin-bottom:10px">&#128240;</div>
+            <div style="font-size:13px">Tap Build newsletter to prepare today's issue. It checks the forecast data, builds every region and draws the maps, which can take a minute or two.</div>
           </div>
         </div>
       </div>
@@ -2094,9 +2117,11 @@ function switchTab(tab) {
   document.getElementById('panel-build').style.display   = tab === 'build'   ? '' : 'none';
   document.getElementById('panel-grid').style.display    = tab === 'grid'    ? '' : 'none';
   document.getElementById('panel-outlook').style.display = tab === 'outlook' ? '' : 'none';
+  document.getElementById('panel-news').style.display    = tab === 'news'    ? '' : 'none';
   if (tab === 'build') generateSummary();
   if (tab === 'grid')  renderOpsGrid();
   if (tab === 'outlook') renderOutlookTab();
+  if (tab === 'news') nlOnShow();
   if (tab === 'map') {
     setTimeout(() => {
       initMap();
@@ -2668,12 +2693,12 @@ function _extSpcFor(code, spcDay){
     var sev = EXT_SPC_TIER[lab] || 'MONITOR';
     var lvl = {MRGL:1, SLGT:2, ENH:3, MDT:4, HIGH:5}[lab];
     var nice = (SPC_LABEL_MAP[lab] && SPC_LABEL_MAP[lab].label) || lab;
-    return {kind:'SEVERE', sev:sev, detail:'SPC '+nice+' risk'+(lvl ? ' (level '+lvl+' of 5)' : '')};
+    return {kind:'SEVERE', sev:sev, detail:'SPC '+nice+' risk'+(lvl ? ' (level '+lvl+' of 5)' : ''), m:{txt:nice}};
   }
   var best = _spcProbAt(code, spcDay);
   if (best < EXT_SPC_MIN_PROB) return null;
   return {kind:'SEVERE', sev:(best >= EXT_SPC_PROB_ADV ? 'ADVISORY' : 'MONITOR'),
-          detail:'SPC Day '+spcDay+' severe probability '+best+'%'};
+          detail:'SPC Day '+spcDay+' severe probability '+best+'%', m:{txt:best+'%'}};
 }
 
 // v71: what SPC says for each day, including "nothing" and "could not load", so silence is never ambiguous.
@@ -2725,8 +2750,17 @@ function _spcStripHTML(){
     + '<a href="https://www.spc.noaa.gov/products/outlook/" target="_blank" style="color:#1a6ba0">SPC outlooks</a></div></div>';
 }
 
+// v97: half of the day a forecast time falls in at the site ('d' 06:00-17:59, 'n' otherwise), for hourly records with no isDaytime.
+function _extHourPart(d, code){
+  var h;
+  try { h = parseInt(d.toLocaleString('en-US', {hour:'numeric', hour12:false, timeZone:SITE_TZ[code] || undefined}), 10); } catch (e) { h = d.getHours(); }
+  return (h >= 6 && h < 18) ? 'd' : 'n';
+}
+function _extPartOf(o){ return (o.d && o.n) ? '' : (o.d ? 'Day' : (o.n ? 'Night' : '')); }
 // Per-location 7-day hazard picture, built from the NWS periods already held.
-function buildExtOutlook(code){
+function buildExtOutlook(code, opt){
+  opt = opt || {};   // v97: {minLead, maxLead, allKinds}; the newsletter asks for leads 0-4 and every hazard kind
+  var _minLead = opt.minLead != null ? opt.minLead : 1, _maxLead = opt.maxLead != null ? opt.maxLead : EXT_MAX_LEAD;
   // International sites have no NWS gridpoint; Visual Crossing supplies hourly
   // records with the same field names, so the same bucketing works on both.
   var periods = (forecastData[code] && forecastData[code].length)
@@ -2740,9 +2774,10 @@ function buildExtOutlook(code){
     if (isNaN(d)) return;
     var lead = _siteDayLead(d, code);              // v82: the site's own calendar day, not the viewer's
     var key = _extDateKey(_bLeadDate(lead));
-    if (lead < 1 || lead > EXT_MAX_LEAD) return;   // day-of is covered elsewhere
+    if (lead < _minLead || lead > _maxLead) return;   // day-of is covered elsewhere unless the caller asks for it (v97)
     if (!byDay[key]) byDay[key] = {dateKey:key, lead:lead, label:'', sus:0, gust:0, pop:0,
-                                   hi:-999, lo:999, txt:'', names:{}, snowTxt:0, iceTxt:0, snowVcx:0, hiIdx:-999, coldIdx:999};
+                                   hi:-999, lo:999, txt:'', names:{}, snowTxt:0, iceTxt:0, snowVcx:0, hiIdx:-999, coldIdx:999,
+                                   pt:{tstm:{d:0,n:0}, wind:{d:0,n:0}, rain:{d:0,n:0}, winter:{d:0,n:0}}};
     var b = byDay[key];
     if (!b.label) b.label = (p.isDaytime !== false && p.name)
       ? p.name
@@ -2759,6 +2794,13 @@ function buildExtOutlook(code){
     b.iceTxt  += _extTextIce(p.detailedForecast || '');
     if (p.temperature != null) { var _ff = _pFeels(p); b.hiIdx = Math.max(b.hiIdx, _ff.hi != null ? _ff.hi : p.temperature); b.coldIdx = Math.min(b.coldIdx, _ff.wc != null && _ff.wc < p.temperature ? _ff.wc : p.temperature); }
     b.snowVcx += Number(p._vcxSnow) || 0;   // Visual Crossing hourly snow (inches) for BDA, GCM, SXM, PLS
+    // v97: which half of the day each hazard text falls in (newsletter timing tag)
+    var _pp = (p.isDaytime === false) ? 'n' : (p.isDaytime === true ? 'd' : _extHourPart(d, code));
+    if (/thunder/i.test(t)) b.pt.tstm[_pp]++;
+    if (/flood|heavy rain|torrential|excessive rain/i.test(t)) b.pt.rain[_pp]++;
+    if (/snow|sleet|wintry|freezing|ice/i.test(t)) b.pt.winter[_pp]++;
+    var _pg = Math.max(_extMph(p.windGust), _extMph(p._vcxGust), _extTextGust(t), _extGridGust(code, p.startTime, p.endTime));
+    if (_extMph(p.windSpeed) >= GUIDE.wind.advSus || _pg >= GUIDE.wind.advGust) b.pt.wind[_pp]++;
     var nm = _extStormName(t);
     if (nm) b.names[nm] = 1;
   });
@@ -2812,7 +2854,16 @@ function buildExtOutlook(code){
     var names = Object.keys(b.names);
     if (names.length && /outbreak|derecho/i.test(names[0]))
       hz.push({kind:'SEVERE', sev:'WARNING', detail:names[0]+' referenced in forecast'});
-    hz = hz.filter(function(h){ return EXT_KINDS_ON[h.kind]; });
+    // v97: numbers behind each hazard line, for the newsletter. Existing consumers read kind, sev and detail only.
+    hz.forEach(function(h){
+      if (h.kind === 'WIND') { h.m = {sus:b.sus, gust:b.gust}; h.part = _extPartOf(b.pt.wind); }
+      else if (h.kind === 'WINTER') { h.m = {snow:snow, ice:ice, pop:b.pop}; h.part = _extPartOf(b.pt.winter); }
+      else if (h.kind === 'RAIN') { h.m = {pop:b.pop}; h.part = _extPartOf(b.pt.rain); }
+      else if (h.kind === 'TSTM') { h.m = {pop:b.pop}; h.part = _extPartOf(b.pt.tstm); }
+      else if (h.kind === 'HEAT') h.m = {v:Math.round(_hv)};
+      else if (h.kind === 'COLD') h.m = {v:Math.round(_cv)};
+    });
+    hz = hz.filter(function(h){ return opt.allKinds || EXT_KINDS_ON[h.kind]; });
     if (names.length) {
       hz.forEach(function(h){ h.storm = names[0]; });
       if (!hz.length) hz.push({kind:'SYSTEM', sev:'MONITOR', detail:names[0]+' referenced in forecast', storm:names[0]});
@@ -3343,7 +3394,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v96';
+var WATCH_BUILD = 'v97';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -11694,7 +11745,7 @@ function _hexA(hex, a) {
 function _watchRenderHazardMap(opts) {
   opts = opts || {};
   var W = opts.width || 1100, H = opts.height || 700;
-  var SC = 2; // draw at 2x so text and hairlines stay sharp in print and Word
+  var SC = opts.scale || 2; // draw at 2x so text and hairlines stay sharp in print and Word (v97: newsletter maps pass 1.5)
   var cv = document.createElement('canvas');
   cv.width = W * SC; cv.height = H * SC;
   var ctx = cv.getContext('2d');
@@ -11874,7 +11925,7 @@ function _watchRenderHazardMap(opts) {
   ctx.fillRect(0, H - FOOT, W, FOOT);
   ctx.fillStyle = '#64748b';
   ctx.font = '400 9px Arial, sans-serif';
-  ctx.fillText('WATCH \u2014 Atlantic Aviation \u2014 Internal Use Only. Decision support only; does not supersede NWS products.', 10, H - 7);
+  ctx.fillText(opts.footer || 'WATCH \u2014 Atlantic Aviation \u2014 Internal Use Only. Decision support only; does not supersede NWS products.', 10, H - 7);
   var stamp = new Date().toISOString().slice(0, 16).replace('T', ' ') + 'Z';
   var sw = ctx.measureText(stamp).width;
   ctx.fillText(stamp, W - sw - 10, H - 7);
@@ -12407,6 +12458,712 @@ function _populateAreaScope() {
     o.textContent = r + ' area';
     sel.appendChild(o);
   });
+}
+
+// ══ DAILY FORECAST NEWSLETTER (v97) ═════════════════════════════════════════
+// Additive feature. Forecast hazards only: today (what is still ahead) plus the next four days, by region, then
+// area, then hazard. No active NWS alerts and no observations are read. Written for readers who do not have WATCH,
+// so nothing in the output refers to the app. Every section can be removed before printing or downloading.
+// Values come from the same engine as Extended Risk (buildExtOutlook, called with leads 0 to 4 and every hazard kind),
+// plus SPC, WPC ERO, SPC fire and WPC WSSI polygons for each day, so a table cell and its map cannot disagree.
+
+var NL_DAYS = 5;                    // today + 4
+var NL_TSTM_MIN_POP = 40;           // a plain "thunderstorms" mention below this chance of precipitation is left out
+var NL_FCST_MAX_AGE_MIN = 180;      // forecasts older than this are re-pulled before a build
+var NL_TITLE = 'Daily Forecast Outlook';
+var NL_MAP_FOOT = 'Forecast outlook. Decision support only. Official products: weather.gov, spc.noaa.gov, wpc.ncep.noaa.gov, nhc.noaa.gov.';
+var NL_TIER_NAME = { 1:'Monitor', 2:'Advisory', 3:'Warning' };
+var NL_TIER_CLR  = { 1:'#0891b2', 2:'#d97706', 3:'#dc2626' };
+// Owner-defined leadership regions (8 Nov 2026). These follow manager assignments, not geography:
+// Archuleta (Texas, Arkansas) sits in Pacific West. EAS(Corp) has no area and is not in the newsletter.
+var NL_REGIONS = [
+  { key:'PW', name:'Pacific West',     areas:['Archuleta','Read','Broderick','Wheeler'] },
+  { key:'MC', name:'Mountain Central', areas:['Hill','Strohl','Carver','Kurgan','Morse'] },
+  { key:'NE', name:'Northeast',        areas:['Neds','Phillips','Rose','Butterworth','Vertiport'] },
+  { key:'SE', name:'Southeast',        areas:['Mayle','Hartmann','Therrien'] }
+];
+var NL_HAZ = [
+  { k:'STORMS', short:'Thunderstorms / severe', label:'Thunderstorms and severe weather', src:['spc1','spc2','spc3','spc48','nws'] },
+  { k:'WIND', short:'Wind', label:'Wind (mph)',                       src:['nws'] },
+  { k:'RAIN', short:'Heavy rain / flooding', label:'Heavy rain and flooding',          src:['ero','nws'] },
+  { k:'WINTER', short:'Winter weather', label:'Winter weather',                   src:['wssi','winter','nws'] },
+  { k:'FIRE', short:'Fire weather', label:'Fire weather',                     src:['fire'] },
+  { k:'HEAT', short:'Heat', label:'Heat, feels-like (°F)',       src:['heat','nws'] },
+  { k:'COLD', short:'Cold', label:'Cold, feels-like (°F)',       src:['nws'] },
+  { k:'TROPICAL', short:'Tropical', label:'Tropical',                         src:['nhc','nws'] }
+];
+var NL = { model:null, removed:{}, busy:false, minTier:1 };
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function _nlHasFcst(c){
+  return !!((forecastData[c] && forecastData[c].length) || (vcxData[c] && vcxData[c].hours && vcxData[c].hours.length));
+}
+function _nlCodesAll(){
+  var out = [];
+  NL_REGIONS.forEach(function(R){ R.areas.forEach(function(a){ (GRID_REGIONS[a] || []).forEach(function(c){ if (COORDS[c] && out.indexOf(c) === -1) out.push(c); }); }); });
+  return out;
+}
+function _nlDay(i){
+  var d = _bLeadDate(i);
+  return { wd: i === 0 ? 'Today' : d.toLocaleDateString('en-US', {weekday:'short'}),
+           dm: d.toLocaleDateString('en-US', {month:'short', day:'numeric'}),
+           long: d.toLocaleDateString('en-US', {weekday:'long', month:'short', day:'numeric'}) };
+}
+function _nlSiteUrl(code){
+  var c = COORDS[code]; if (!c) return '';
+  return INTL_CODES.has(code) ? 'https://www.visualcrossing.com/weather-forecast/' + c[0].toFixed(3) + ',' + c[1].toFixed(3) + '/us'
+                              : 'https://forecast.weather.gov/MapClick.php?lat=' + c[0].toFixed(4) + '&lon=' + c[1].toFixed(4);
+}
+function _nlLink(l){ return '<a href="' + l.url + '" target="_blank" rel="noopener">' + _esc(l.label) + '</a>'; }
+function _nlSrcLine(keys, extra){
+  var seen = {}, out = [];
+  keys.forEach(function(k){ var l = SRC_L[k]; if (l && !seen[l.url]) { seen[l.url] = 1; out.push(_nlLink(l)); } });
+  return '<div class="nl-src">Source: ' + out.join(' &middot; ') + (extra ? ' &middot; ' + extra : '') + '</div>';
+}
+function _nlYield(){ return new Promise(function(r){ setTimeout(r, 0); }); }
+
+// ── Data readiness ──────────────────────────────────────────────────────────
+async function _nlEnsureData(say){
+  var codes = _nlCodesAll();
+  var age = _ageMin(WATCH_FRESH.fcst.ok);
+  var stale = age === null || age > NL_FCST_MAX_AGE_MIN;
+  var list = stale ? codes : codes.filter(function(c){ return !_nlHasFcst(c); });
+  var BATCH = 8, done = 0;
+  for (var i = 0; i < list.length; i += BATCH) {
+    await Promise.all(list.slice(i, i + BATCH).map(function(c){ return fetch7Day(c).catch(function(){}); }));
+    done = Math.min(list.length, i + BATCH);
+    say('Forecasts ' + done + ' of ' + list.length + '...');
+  }
+  var us = codes.filter(function(c){ return !INTL_CODES.has(c); });
+  for (var d = 1; d <= 3; d++) {
+    var need = us.filter(function(c){ return !(spcData[d] && spcData[d][c] && spcData[d][c].st === 'ok'); });
+    for (var j = 0; j < need.length; j += 8) {
+      say('SPC Day ' + d + ': ' + Math.min(need.length, j + 8) + ' of ' + need.length + '...');
+      await Promise.all(need.slice(j, j + 8).map(function(c){ return fetchSPC(c, d).catch(function(){}); }));
+    }
+  }
+  await fetchSpcExtPolys();
+}
+
+async function _nlPolys(){
+  var P = { spc:{}, ero:{}, fire:{}, wssi:{}, eroOk:{}, fireOk:{}, wssiOk:{} };
+  var jobs = [];
+  for (var d = 1; d <= NL_DAYS; d++) (function(d){
+    var k = String(d);
+    jobs.push(fetchSPCPolyDay(k).then(function(g){ P.spc[d] = (g && g.features) || []; }).catch(function(){ P.spc[d] = []; }));
+    jobs.push(fetchWPCPolyDay(k).then(function(g){ P.ero[d] = (g && g.features) || []; P.eroOk[d] = !!eroPolyCache[k]; }).catch(function(){ P.ero[d] = []; P.eroOk[d] = false; }));
+    jobs.push(fetchFirePolyDay(k).then(function(g){ P.fire[d] = (g && g.features) || []; P.fireOk[d] = !!firePolyCache[k]; }).catch(function(){ P.fire[d] = []; P.fireOk[d] = false; }));
+    if (d <= 3) jobs.push(fetchWinterPolyDay(k).then(function(g){ P.wssi[d] = (g && g.features) || []; P.wssiOk[d] = !!winterPolyCache[k]; }).catch(function(){ P.wssi[d] = []; P.wssiOk[d] = false; }));
+  })(d);
+  await Promise.all(jobs);
+  return P;
+}
+
+// ── Polygon products: one definition drives both the per-site value and the map ─────────
+// keyOf(props) names the tier a feature carries (null = not shown). tier = planning tier of that key.
+var NL_PRODUCTS = [
+  { id:'spc', days:[1,2,3], title:'SPC Convective Outlook', sub:'Categorical severe thunderstorm risk',
+    order:['MRGL','SLGT','ENH','MDT','HIGH'], tier:{MRGL:1, SLGT:1, ENH:2, MDT:3, HIGH:3},
+    feats:function(P, d){ return P.spc[d] || []; },
+    keyOf:function(p){ var l = String((p && (p.label || p.LABEL)) || '').toUpperCase(); return (l !== 'TSTM' && SPC_POLY_STYLE[l]) ? l : null; },
+    style:function(k){ return SPC_POLY_STYLE[k]; }, label:function(k){ return (SPC_LABEL_MAP[k] && SPC_LABEL_MAP[k].label) + ' risk'; },
+    src:function(d){ return 'spc' + d; } },
+  { id:'spcp', days:[4,5], title:'SPC Severe Outlook', sub:'Probability of severe weather within 25 miles',
+    order:['P15','P30'], tier:{P15:1, P30:2},
+    feats:function(P, d){ return P.spc[d] || []; },
+    keyOf:function(p){ var n = Number(p && (p.dn != null ? p.dn : p.DN)); return n >= 30 ? 'P30' : (n >= 15 ? 'P15' : null); },
+    style:function(k){ return k === 'P30' ? SPC_PROB_STYLE[0][1] : SPC_PROB_STYLE[1][1]; }, label:function(k){ return k === 'P30' ? '30% severe probability' : '15% severe probability'; },
+    src:function(d){ return 'spc48'; } },
+  { id:'ero', days:[1,2,3,4,5], title:'WPC Excessive Rainfall Outlook', sub:'Risk of rainfall exceeding flash flood guidance',
+    order:['MRGL','SLGT','MDT','HIGH'], tier:{MRGL:1, SLGT:2, MDT:3, HIGH:3},
+    feats:function(P, d){ return P.ero[d] || []; },
+    keyOf:function(p){ return _eroTierFromProps(p); },
+    style:function(k){ return WPC_POLY_STYLE[{MRGL:'MARGINAL', SLGT:'SLIGHT', MDT:'MODERATE', HIGH:'HIGH'}[k]]; }, label:function(k){ return ERO_TIER_LABEL[k].charAt(0) + ERO_TIER_LABEL[k].slice(1).toLowerCase() + ' risk'; },
+    src:function(d){ return 'ero'; } },
+  { id:'wssi', days:[1,2,3], title:'WPC Winter Storm Severity Index', sub:'Expected winter weather impacts',
+    order:['MINOR','MODERATE','MAJOR','EXTREME'], tier:{MINOR:1, MODERATE:2, MAJOR:3, EXTREME:3},
+    feats:function(P, d){ return P.wssi[d] || []; },
+    keyOf:function(p){ var k = _winterImpactKey(p); return (k === 'MINOR' || k === 'MODERATE' || k === 'MAJOR' || k === 'EXTREME') ? k : null; },
+    style:function(k){ return WINTER_STYLE[k]; }, label:function(k){ return WINTER_TIER_LABEL[k]; },
+    src:function(d){ return 'wssi'; } },
+  { id:'fire', days:[1,2,3,4,5], title:'SPC Fire Weather Outlook', sub:'Elevated to extreme fire weather risk',
+    order:['ELEVATED','CRITICAL','EXTREME'], tier:{ELEVATED:1, CRITICAL:2, EXTREME:3},
+    feats:function(P, d){ return P.fire[d] || []; },
+    keyOf:function(p){ return _fireTier(p); },
+    style:function(k){ return FIRE_POLY_STYLE[k]; }, label:function(k){ return k.charAt(0) + k.slice(1).toLowerCase() + ' fire weather'; },
+    src:function(d){ return 'fire'; } }
+];
+function _nlProd(id){ for (var i = 0; i < NL_PRODUCTS.length; i++) if (NL_PRODUCTS[i].id === id) return NL_PRODUCTS[i]; return null; }
+
+// Highest-ranked key of product pr whose polygon contains the site, or null.
+function _nlKeyAt(code, feats, pr){
+  var c = COORDS[code]; if (!c) return null;
+  var pt = [c[1], c[0]], best = -1;
+  feats.forEach(function(f){
+    var k = pr.keyOf(f.properties); if (!k) return;
+    var r = pr.order.indexOf(k); if (r <= best) return;
+    if (_pointInPolygonGeom(pt, f.geometry)) best = r;
+  });
+  return best >= 0 ? pr.order[best] : null;
+}
+
+// ── Per-site model ──────────────────────────────────────────────────────────
+function _nlCell(day, k){ return day[k] || (day[k] = { t:0 }); }
+function _nlAddHaz(day, h){
+  var t = EXT_RANK[h.sev] || 1, m = h.m || {}, c;
+  if (h.kind === 'SEVERE') { c = _nlCell(day, 'STORMS'); c.sev = m.txt || ''; c.t = Math.max(c.t, t); }
+  else if (h.kind === 'TSTM') { if (!(m.pop >= NL_TSTM_MIN_POP)) return; c = _nlCell(day, 'STORMS'); c.pop = m.pop; c.part = h.part || ''; c.t = Math.max(c.t, t); }
+  else if (h.kind === 'WIND') { c = _nlCell(day, 'WIND'); c.sus = m.sus; c.gust = m.gust; c.part = h.part || ''; c.t = Math.max(c.t, t); }
+  else if (h.kind === 'RAIN') { c = _nlCell(day, 'RAIN'); c.pop = m.pop; c.part = h.part || ''; c.t = Math.max(c.t, t); }
+  else if (h.kind === 'WINTER') { c = _nlCell(day, 'WINTER'); c.snow = m.snow; c.ice = m.ice; c.pop = m.pop; c.part = h.part || ''; c.t = Math.max(c.t, t); }
+  else if (h.kind === 'HEAT') { c = _nlCell(day, 'HEAT'); c.v = m.v; c.t = Math.max(c.t, t); }
+  else if (h.kind === 'COLD') { c = _nlCell(day, 'COLD'); c.v = m.v; c.t = Math.max(c.t, t); }
+  else if (h.kind === 'TROPICAL') { c = _nlCell(day, 'TROPICAL'); c.txt = 'In forecast text'; c.t = Math.max(c.t, t); }
+}
+function _nlTropAt(code){
+  var c = COORDS[code]; if (!c) return null;
+  var pt = [c[1], c[0]], best = null;
+  (nhcConeFeatures || []).forEach(function(f){
+    if (!_pointInPolygonGeom(pt, f.geometry)) return;
+    var cls = f._stormClass || '';
+    var t = /^(HU|TY|TS|STS)$/.test(cls) ? 3 : 2;
+    if (!best || t > best.t) best = { t:t, x:'Inside forecast cone: ' + (f._stormName || 'active storm') + ((NHC_LABELS[cls]) ? ' (' + NHC_LABELS[cls] + ')' : '') };
+  });
+  if (best) return best;
+  (nhcDisturbances || []).forEach(function(f){
+    var p = f.properties || {};
+    if (p._kind === 'point' || !f.geometry || !_pointInPolygonGeom(pt, f.geometry)) return;
+    var pr = parseInt(String(p.prob7day || p.prob2day || '0').replace('%', ''), 10) || 0;
+    var t = pr >= 70 ? 2 : 1;
+    if (!best || t > best.t) best = { t:t, x:'In area of possible development' + (pr ? ', ' + pr + '% in 7 days' : '') };
+  });
+  return best;
+}
+function _nlSite(code, P){
+  var days = [], i;
+  for (i = 0; i < NL_DAYS; i++) days.push({});
+  var out = { ok: _nlHasFcst(code), days:days, trop:null };
+  if (out.ok) {
+    var ex = [];
+    try { ex = buildExtOutlook(code, { minLead:0, maxLead:NL_DAYS - 1, allKinds:true }); } catch (e) { out.ok = false; }
+    ex.forEach(function(d){
+      if (d.lead < 0 || d.lead >= NL_DAYS) return;
+      d.hazards.forEach(function(h){ _nlAddHaz(days[d.lead], h); });
+    });
+  }
+  if (!INTL_CODES.has(code)) {
+    // Polygon products, independent of the site forecast. ERO feeds the rain row, WSSI the winter row.
+    for (i = 0; i < NL_DAYS; i++) {
+      var d1 = i + 1;
+      var ke = _nlKeyAt(code, P.ero[d1] || [], _nlProd('ero'));
+      if (ke) { var c1 = _nlCell(days[i], 'RAIN'); c1.ero = ERO_TIER_LABEL[ke].charAt(0) + ERO_TIER_LABEL[ke].slice(1).toLowerCase(); c1.t = Math.max(c1.t, _nlProd('ero').tier[ke]); }
+      var kf = _nlKeyAt(code, P.fire[d1] || [], _nlProd('fire'));
+      if (kf) { var c2 = _nlCell(days[i], 'FIRE'); c2.lvl = kf.charAt(0) + kf.slice(1).toLowerCase(); c2.t = Math.max(c2.t, _nlProd('fire').tier[kf]); }
+      if (d1 <= 3) {
+        var kw = _nlKeyAt(code, P.wssi[d1] || [], _nlProd('wssi'));
+        if (kw) { var c3 = _nlCell(days[i], 'WINTER'); c3.wssi = WINTER_TIER_LABEL[kw].replace(/ Impacts$/, ''); c3.t = Math.max(c3.t, _nlProd('wssi').tier[kw]); }
+      }
+    }
+  }
+  out.trop = _nlTropAt(code);
+  return out;
+}
+
+function _nlModel(P){
+  var m = { issued:new Date(), regions:[], notes:[] };
+  NL_REGIONS.forEach(function(R){
+    var reg = { key:R.key, name:R.name, areas:[], codes:[], maps:[] };
+    R.areas.forEach(function(an){
+      var codes = (GRID_REGIONS[an] || []).filter(function(c){ return COORDS[c]; });
+      var area = { name:an, codes:codes, sites:{} };
+      codes.forEach(function(c){ area.sites[c] = _nlSite(c, P); });
+      reg.areas.push(area);
+      reg.codes = reg.codes.concat(codes);
+    });
+    m.regions.push(reg);
+  });
+  // Data notes: any source that did not load is stated, never read as an all-clear.
+  var codes = _nlCodesAll(), us = codes.filter(function(c){ return !INTL_CODES.has(c); });
+  var noF = codes.filter(function(c){ return !_nlHasFcst(c); });
+  if (noF.length) m.notes.push('Forecast data unavailable for ' + noF.join(', ') + '. These sites are not an all-clear.');
+  for (var d = 1; d <= 3; d++) {
+    var ok = us.filter(function(c){ return spcData[d] && spcData[d][c] && spcData[d][c].st === 'ok'; }).length;
+    if (ok < us.length * 0.9) m.notes.push('SPC Day ' + d + ' risk loaded for ' + ok + ' of ' + us.length + ' US sites. Severe weather for that day may be missing; check spc.noaa.gov.');
+  }
+  [4, 5].forEach(function(d){ if (SPC_EXT_ST[d] !== 'ok') m.notes.push('SPC Day ' + d + ' outlook ' + (SPC_EXT_ST[d] === 'stale' ? 'could not be refreshed; earlier data shown' : 'unavailable') + '; check spc.noaa.gov.'); });
+  var miss = function(o, label, days){ var b = days.filter(function(d){ return !o[d]; }); if (b.length) m.notes.push(label + ' Day ' + b.join(', ') + ' unavailable. This is not an all-clear; check the official product.'); };
+  miss(P.eroOk, 'WPC Excessive Rainfall Outlook', [1,2,3,4,5]);
+  miss(P.fireOk, 'SPC Fire Weather Outlook', [1,2,3,4,5]);
+  miss(P.wssiOk, 'WPC Winter Storm Severity Index', [1,2,3]);
+  return m;
+}
+
+// ── Map building ────────────────────────────────────────────────────────────
+function _nlFrames(codes){
+  var out = [];
+  var cs = _codesInRegion(codes, 'conus');
+  if (cs.length) {
+    var sites = _watchMapSites(cs, function(){ return '#334155'; });
+    out.push({ k:'conus', codes:cs, bounds:_autoBounds([], [], sites, 10, MAP_REGIONS.conus), ord:0 });
+  }
+  var ak = _codesInRegion(codes, 'alaska');  if (ak.length) out.push({ k:'alaska',  codes:ak, bounds:MAP_REGIONS.alaska,  ord:1 });
+  var hi = _codesInRegion(codes, 'hawaii');  if (hi.length) out.push({ k:'hawaii',  codes:hi, bounds:MAP_REGIONS.hawaii,  ord:2 });
+  var of = _codesInRegion(codes, 'offshore');
+  if (of.length) out.push({ k:'offshore', codes:of, bounds:_autoBounds([], [], _watchMapSites(of, function(){ return '#334155'; }), 16, MAP_REGIONS.offshore), ord:3 });
+  return out;
+}
+function _nlInBounds(f, b){ return f.geometry && _bboxHits(_featBBox(f), b); }
+function _nlRender(spec){
+  spec.footer = NL_MAP_FOOT; spec.width = 760; spec.height = 500; spec.scale = 1.5;
+  return _watchRenderHazardMap(spec);
+}
+function _nlSuffix(fr){ return REGION_LABEL[fr.k] ? ', ' + REGION_LABEL[fr.k] : ''; }
+
+function _nlPolyMap(reg, fr, pr, d, P, ordBase){
+  var feats = pr.feats(P, d), tiers = [], legend = [], seen = {};
+  pr.order.forEach(function(k){
+    var fs = feats.filter(function(f){ return pr.keyOf(f.properties) === k && _nlInBounds(f, fr.bounds); });
+    if (!fs.length) return;
+    var st = pr.style(k) || {};
+    tiers.push({ features:fs, color:st.color, alpha:st.fillOpacity, weight:st.weight });
+    legend.push({ color:st.color, label:pr.label(k) });
+  });
+  var maxT = 0;
+  var sites = _watchMapSites(fr.codes, function(c){
+    var k = _nlKeyAt(c, feats, pr);
+    if (!k) return null;
+    maxT = Math.max(maxT, pr.tier[k]);
+    return (pr.style(k) || {}).color || '#334155';
+  });
+  if (!maxT) return null;                                   // no site of this region is flagged: no map
+  var di = _nlDay(d - 1);
+  var title = pr.title + ', Day ' + d + ' (' + di.wd + (d === 1 ? '' : ' ' + di.dm.replace(/^\w+ /, '')) + ')' + _nlSuffix(fr);
+  var url = _nlRender({ title:title, subtitle:pr.sub, bounds:fr.bounds, layers:tiers, legend:legend, sites:sites });
+  if (!url) return null;
+  return { id:reg.key + ':m:' + pr.id + d + ':' + fr.k, title:title, dataUrl:url, tier:maxT, src:[pr.src(d)], ord:ordBase * 100 + d * 10 + fr.ord };
+}
+
+var NL_VALUE_MAPS = [
+  { id:'wind', kind:'WIND', title:'Forecast Wind', sub:'Peak sustained wind or gust by location, mph', src:['nws'],
+    bands:function(){ return [[GUIDE.wind.advSus, '#fde047', 'Peak ' + GUIDE.wind.advSus + '-' + (GUIDE.wind.advGust - 1) + ' mph'], [GUIDE.wind.advGust, '#fb923c', 'Peak ' + GUIDE.wind.advGust + '-' + (GUIDE.wind.warnGust - 1) + ' mph'], [GUIDE.wind.warnGust, '#7f1d1d', 'Peak ' + GUIDE.wind.warnGust + ' mph+']]; },
+    val:function(c){ var s = (c.sus != null && c.sus >= GUIDE.wind.advSus) ? c.sus : -1, g = (c.gust != null && c.gust >= GUIDE.wind.advGust) ? c.gust : -1, v = Math.max(s, g); return v > 0 ? v : null; } },
+  { id:'heat', kind:'HEAT', title:'Forecast Heat', sub:'Peak heat index or air temperature by location, °F', src:['heat','nws'],
+    bands:function(){ return [[GUIDE.heat.moderate, '#fde047', 'Feels like ' + GUIDE.heat.moderate + '-' + (GUIDE.heat.high - 1) + '°F'], [GUIDE.heat.high, '#fb923c', 'Feels like ' + GUIDE.heat.high + '-' + (GUIDE.heat.veryHigh - 1) + '°F'], [GUIDE.heat.veryHigh, '#7f1d1d', 'Feels like ' + GUIDE.heat.veryHigh + '°F+']]; },
+    val:function(c){ return (c.v != null && c.v >= GUIDE.heat.moderate) ? c.v : null; } },
+  { id:'cold', kind:'COLD', title:'Forecast Cold', sub:'Lowest wind chill or air temperature by location, °F', src:['nws'],
+    bands:function(){ return [[-999, '#1e3a8a', 'Feels like ' + GUIDE.cold.warning + '°F or colder'], [GUIDE.cold.warning + 1, '#2563eb', 'Feels like ' + (GUIDE.cold.warning + 1) + ' to ' + GUIDE.cold.advisory + '°F'], [GUIDE.cold.advisory + 1, '#7dd3fc', 'Feels like ' + (GUIDE.cold.advisory + 1) + ' to ' + GUIDE.cold.monitor + '°F']]; },
+    val:function(c){ return (c.v != null && c.v <= GUIDE.cold.monitor) ? c.v : null; } }
+];
+function _nlValueMap(reg, fr, vm, i, area_sites, ordBase){
+  var bands = vm.bands(), used = {}, maxT = 0;
+  var sites = _watchMapSites(fr.codes, function(c){
+    var s = area_sites[c], cell = s && s.days[i][vm.kind];
+    if (!cell) return null;
+    var b = _band(vm.val(cell), bands);
+    if (!b) return null;
+    used[b[2]] = b[1]; maxT = Math.max(maxT, cell.t);
+    return b[1];
+  });
+  if (!maxT) return null;
+  var legend = bands.filter(function(b){ return used[b[2]]; }).map(function(b){ return { color:b[1], label:b[2] }; });
+  var di = _nlDay(i);
+  var title = vm.title + ', ' + (i === 0 ? 'Today' : di.wd + ' ' + di.dm.replace(/^\w+ /, '')) + _nlSuffix(fr);
+  var url = _nlRender({ title:title, subtitle:vm.sub, bounds:fr.bounds, layers:[], legend:legend, sites:sites });
+  if (!url) return null;
+  return { id:reg.key + ':m:' + vm.id + (i + 1) + ':' + fr.k, title:title, dataUrl:url, tier:maxT, src:vm.src, ord:ordBase * 100 + (i + 1) * 10 + fr.ord };
+}
+// A cone is drawn on a region's page only when part of it is within the same distance the briefing uses (NHC_RELEVANT_KM) of one of the region's sites.
+function _nlNear(f, codes){
+  var pts = [];
+  try { (function walk(c){ if (typeof c[0] === 'number') pts.push(c); else c.forEach(walk); })(f.geometry.coordinates); } catch (e) { return true; }
+  if (!pts.length) return true;
+  return codes.some(function(code){
+    var b = COORDS[code]; if (!b) return false;
+    return pts.some(function(p){ return _kmBetween(b[0], b[1], p[1], p[0]) <= NHC_RELEVANT_KM; });
+  });
+}
+function _nlTropMaps(reg){
+  var out = [], cones = nhcConeFeatures || [], tracks = nhcTrackFeatures || [];
+  var rel = _nhcRelevant(reg.codes);
+  var relAreas = rel ? rel.areas : [];
+  var BK = { 'Atlantic':'atlantic', 'East Pacific':'eastpacific', 'Central Pacific':'pacific' };
+  var basins = {};
+  reg.codes.forEach(function(c){ var p = COORDS[c]; if (p) basins[BK[_nhcBasinOf(p[1], p[0])]] = true; });
+  ['atlantic', 'eastpacific', 'pacific'].forEach(function(rk, idx){
+    if (!basins[rk]) return;
+    var rCones = _featsInRegion(cones, rk).filter(function(f){ return _nlNear(f, reg.codes); });
+    var rAreas = relAreas.filter(function(f){ return f.geometry && _bAreaOnBasin(f, rk); });
+    if (!rCones.length && !rAreas.length) return;
+    var layers = [], seen = {}, legend = [];
+    rAreas.forEach(function(f){
+      var p = f.properties || {}, pr = parseInt(String(p.prob7day || p.prob2day || '0').replace('%', ''), 10) || 0;
+      var col = pr >= 70 ? '#dc2626' : pr >= 40 ? '#ea580c' : '#eab308';
+      layers.push({ features:[f], color:col, alpha:0.20, weight:2, dash:[6, 4] });
+      seen[pr >= 70 ? 'Development: High (70%+)' : pr >= 40 ? 'Development: Medium (40-60%)' : 'Development: Low (<40%)'] = col;
+    });
+    rCones.forEach(function(f){
+      var cls = f._stormClass || '', col = NHC_COLORS[cls] || f._stormColor || '#ef4444';
+      layers.push({ features:[f], color:col, alpha:0.16, weight:2.4, dash:[7, 3] });
+      seen[(f._stormName || 'Active storm') + ' - ' + (NHC_LABELS[cls] || 'Tropical system') + ' cone'] = col;
+    });
+    Object.keys(seen).forEach(function(k){ legend.push({ color:seen[k], label:k }); });
+    var rTracks = tracks.filter(function(f){
+      if (!f.geometry) return false;
+      var b = [180, 90, -180, -90], cs = f.geometry.coordinates || [];
+      var flat = (f.geometry.type === 'MultiLineString') ? [].concat.apply([], cs) : cs;
+      flat.forEach(function(p){ if (!p || p.length < 2) return; b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]); });
+      return _bboxHits(b, MAP_REGIONS[rk]);
+    });
+    var inBasin = reg.codes.filter(function(c){ var p = COORDS[c]; return p && BK[_nhcBasinOf(p[1], p[0])] === rk; });
+    var maxT = 0;
+    var sites = _watchMapSites(inBasin, function(c){ var t = _nlTropAt(c); if (!t) return null; maxT = Math.max(maxT, t.t); return '#7c3aed'; });
+    var title = 'NHC Tropical Outlook - ' + ({ atlantic:'Atlantic Basin', eastpacific:'East Pacific', pacific:'Central Pacific' }[rk]);
+    var url = _nlRender({ title:title, subtitle:rCones.length ? 'Active storm forecast cones and areas of potential development' : 'Areas of potential tropical development',
+                          bounds:_autoBounds(rCones.concat(rAreas), rTracks, sites, 14, MAP_REGIONS[rk]), layers:layers, legend:legend, tracks:rTracks, sites:sites });
+    if (url) out.push({ id:reg.key + ':m:trop:' + rk, title:title, dataUrl:url, tier:Math.max(1, maxT), src:['nhc'], ord:900 + idx });
+  });
+  return out;
+}
+async function _nlAddMaps(model, P, say){
+  for (var ri = 0; ri < model.regions.length; ri++) {
+    var reg = model.regions[ri];
+    say('Drawing maps: ' + reg.name + '...');
+    await _nlYield();
+    var maps = [], frames = _nlFrames(reg.codes);
+    var allSites = {};
+    reg.areas.forEach(function(a){ Object.keys(a.sites).forEach(function(c){ allSites[c] = a.sites[c]; }); });
+    frames.forEach(function(fr){
+      NL_PRODUCTS.forEach(function(pr, pi){
+        pr.days.forEach(function(d){ try { var m = _nlPolyMap(reg, fr, pr, d, P, pi + 1); if (m) maps.push(m); } catch (e) { console.warn('newsletter map ' + pr.id + d, e); } });
+      });
+      NL_VALUE_MAPS.forEach(function(vm, vi){
+        for (var i = 0; i < NL_DAYS; i++) { try { var m = _nlValueMap(reg, fr, vm, i, allSites, 10 + vi); if (m) maps.push(m); } catch (e) { console.warn('newsletter map ' + vm.id + i, e); } }
+      });
+    });
+    try { maps = maps.concat(_nlTropMaps(reg)); } catch (e) { console.warn('newsletter tropical map', e); }
+    maps.sort(function(a, b){ return a.ord - b.ord; });
+    reg.maps = maps;
+  }
+}
+
+// ── Build ───────────────────────────────────────────────────────────────────
+async function nlBuild(){
+  if (NL.busy) return;
+  NL.busy = true;
+  var st = document.getElementById('news-status'), host = document.getElementById('news-content'), btn = document.getElementById('news-build-btn');
+  function say(t){ if (st) st.textContent = t; }
+  if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
+  try {
+    say('Checking forecast data...');
+    await _nlEnsureData(say);
+    say('Loading outlook polygons...');
+    var P = await _nlPolys();
+    say('Building site forecasts...');
+    await _nlYield();
+    var model = _nlModel(P);
+    await _nlAddMaps(model, P, say);
+    NL.model = model;
+    NL.removed = {};
+    nlRender();
+    say('Built ' + model.issued.toLocaleString('en-US', {weekday:'short', hour:'numeric', minute:'2-digit'}) + '. Tap Remove on any section you do not want, then print or download.');
+  } catch (e) {
+    console.error('newsletter build failed', e);
+    if (host) host.innerHTML = '<div style="padding:20px;color:#c0392b;font-size:12px"><b>Newsletter error:</b> ' + _esc(e && e.message) + '</div>';
+    say('Build failed');
+  } finally {
+    NL.busy = false;
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  }
+}
+
+// ── Rendering ───────────────────────────────────────────────────────────────
+function _nlCellHTML(k, c){
+  var L = [], g, s;
+  if (k === 'STORMS') { if (c.sev) L.push(/%$/.test(c.sev) ? c.sev + ' severe' : c.sev); if (c.pop != null) L.push(c.pop + '% storms'); }
+  else if (k === 'WIND') { g = c.gust || 0; s = c.sus || 0; if (g > s && g > 0) { L.push('Gust ' + g); if (s >= GUIDE.wind.advSus) L.push('Sust ' + s); } else L.push('Wind ' + s); }
+  else if (k === 'RAIN') { if (c.ero) L.push('ERO ' + c.ero); if (c.pop != null && c.pop > 0) L.push('Rain ' + c.pop + '%'); }
+  else if (k === 'WINTER') {
+    if (c.snow > 0) L.push('Snow ' + _fmtIn(c.snow) + ' in');
+    if (c.ice > 0) L.push('Ice ' + (Math.round(c.ice * 100) / 100) + ' in');
+    if (c.wssi) L.push('WSSI ' + c.wssi);
+    if (!L.length) L.push('Wintry' + (c.pop ? ' ' + c.pop + '%' : ''));
+  }
+  else if (k === 'FIRE') L.push(c.lvl);
+  else if (k === 'HEAT' || k === 'COLD') L.push(c.v + '°');
+  else if (k === 'TROPICAL') L.push(c.txt);
+  var h = L.map(_esc).join('<br>');
+  if (c.part && (k === 'STORMS' || k === 'WIND' || k === 'RAIN' || k === 'WINTER')) h += '<br><i>' + c.part + '</i>';
+  return h;
+}
+function _nlWorst(site, i){
+  var w = 0, d = site.days[i];
+  Object.keys(d).forEach(function(k){ if (d[k].t >= NL.minTier && d[k].t > w) w = d[k].t; });
+  return w;
+}
+function _nlSec(id, label, inner, ctl, cls){
+  if (NL.removed[id]) return '';
+  return '<section class="nl-sec' + (cls ? ' ' + cls : '') + '" data-nl="' + id + '">'
+    + (ctl ? '<button class="nl-x" onclick="nlRemove(\'' + id + '\',this)" data-label="' + _esc(label) + '">✕ Remove</button>' : '') + inner + '</section>';
+}
+function _nlDayHeads(){
+  var h = '';
+  for (var i = 0; i < NL_DAYS; i++) { var d = _nlDay(i); h += '<th class="nl-d">' + d.wd + '<small>' + d.dm + '</small></th>'; }
+  return h;
+}
+function _nlRows(area, hz){
+  var rows = [];
+  area.codes.forEach(function(code){
+    var s = area.sites[code], cells = [], mx = 0, i;
+    for (i = 0; i < NL_DAYS; i++) { var c = s.days[i][hz.k]; if (c && c.t >= NL.minTier) { cells.push(c); mx = Math.max(mx, c.t); } else cells.push(null); }
+    if (mx) rows.push({ code:code, cells:cells, mx:mx });
+  });
+  rows.sort(function(a, b){ return b.mx - a.mx || a.code.localeCompare(b.code); });
+  return rows;
+}
+function _nlTable(hz, rows){
+  var body = rows.map(function(r){
+    var f = _bFbo(r.code);
+    return '<tr><th class="nl-site"><a href="' + _nlSiteUrl(r.code) + '" target="_blank" rel="noopener">' + _esc(r.code) + '</a><span>' + _esc(f.city || '') + '</span></th>'
+      + r.cells.map(function(c){ return c ? '<td class="nl-c t' + c.t + '">' + _nlCellHTML(hz.k, c) + '</td>' : '<td class="nl-c"></td>'; }).join('') + '</tr>';
+  }).join('');
+  return '<table class="nl-t"><thead><tr><th class="nl-site">Site</th>' + _nlDayHeads() + '</tr></thead><tbody>' + body + '</tbody></table>';
+}
+// Tropical: a cone or development area covers the whole period, so sites sharing the same text are grouped on one line.
+function _nlTropBlock(reg, area, hz, ctl){
+  var groups = {}, order = [];
+  area.codes.forEach(function(code){
+    var t = area.sites[code].trop;
+    if (!t || t.t < NL.minTier) return;
+    var k = t.t + '|' + t.x;
+    if (!groups[k]) { groups[k] = { t:t.t, x:t.x, codes:[] }; order.push(k); }
+    groups[k].codes.push(code);
+  });
+  var rows = _nlRows(area, hz);
+  if (!order.length && !rows.length) return '';
+  order.sort(function(a, b){ return groups[b].t - groups[a].t; });
+  var html = '<div class="nl-bh">' + _esc(hz.label) + '</div>';
+  order.forEach(function(k){
+    var g = groups[k];
+    html += '<div class="nl-trop t' + g.t + '"><b>' + _esc(g.x) + '</b><br>' + g.codes.map(function(c){ return '<a href="' + _nlSiteUrl(c) + '" target="_blank" rel="noopener">' + _esc(c) + '</a>'; }).join(', ') + '</div>';
+  });
+  if (rows.length) html += _nlTable(hz, rows);
+  html += _nlSrcLine(hz.src, 'site codes link to each site’s forecast');
+  return _nlSec(reg.key + ':' + area.name + ':' + hz.k, area.name + ': ' + hz.label, html, ctl, 'nl-block');
+}
+function _nlHazBlock(reg, area, hz, ctl){
+  if (hz.k === 'TROPICAL') return _nlTropBlock(reg, area, hz, ctl);
+  var rows = _nlRows(area, hz);
+  if (!rows.length) return '';
+  var html = '<div class="nl-bh">' + _esc(hz.label) + '</div>' + _nlTable(hz, rows) + _nlSrcLine(hz.src, 'site codes link to each site’s forecast');
+  return _nlSec(reg.key + ':' + area.name + ':' + hz.k, area.name + ': ' + hz.label, html, ctl, 'nl-block');
+}
+function _nlAreaHTML(reg, area, ctl){
+  var clear = [], gaps = [], worst = 0;
+  area.codes.forEach(function(code){
+    var s = area.sites[code], any = false, i;
+    for (i = 0; i < NL_DAYS; i++) { var w = _nlWorst(s, i); if (w) { any = true; worst = Math.max(worst, w); } }
+    if (s.trop && s.trop.t >= NL.minTier) { any = true; worst = Math.max(worst, s.trop.t); }
+    if (!s.ok) gaps.push(code);
+    else if (!any) clear.push(code);
+  });
+  var blocks = NL_HAZ.map(function(hz){ return _nlHazBlock(reg, area, hz, ctl); }).join('');
+  var inner = '<h3 class="nl-area">' + _esc(area.name) + ' <span>' + area.codes.length + ' site' + (area.codes.length === 1 ? '' : 's') + '</span>'
+    + (worst ? '<b class="nl-chip" style="background:' + NL_TIER_CLR[worst] + '">' + NL_TIER_NAME[worst] + '</b>' : '') + '</h3>';
+  var withData = area.codes.length - gaps.length;
+  inner += blocks || (withData ? '<div class="nl-none">No forecast hazards at this level' + (gaps.length ? ' for the sites with data' : ' for any site in this area') + ' through ' + _esc(_nlDay(NL_DAYS - 1).long) + '.</div>' : '');
+  var intl = area.codes.filter(function(c){ return INTL_CODES.has(c); });
+  if (blocks && clear.length) inner += '<div class="nl-none"><b>No forecast hazards:</b> ' + clear.map(_esc).join(', ') + '</div>';
+  if (gaps.length) inner += '<div class="nl-gap"><b>Forecast data unavailable (not an all-clear):</b> ' + gaps.map(_esc).join(', ') + '</div>';
+  if (intl.length) {
+    var links = [];
+    if (intl.indexOf('BDA') !== -1) links.push(_nlLink(SRC_L.bws));
+    links.push(_nlLink(SRC_L.vcx));
+    inner += '<div class="nl-src">' + intl.map(_esc).join(', ') + ': outside NWS, SPC and WPC coverage. Forecasts come from Visual Crossing, which is not an official forecast. ' + links.join(' &middot; ') + '</div>';
+  }
+  return _nlSec(reg.key + ':' + area.name, area.name + ' area', inner, ctl, 'nl-areasec');
+}
+function _nlMatrix(rows){
+  var h = '<table class="nl-t nl-mx"><thead><tr><th class="nl-site"></th>' + _nlDayHeads() + '</tr></thead><tbody>';
+  rows.forEach(function(r){
+    h += '<tr><th class="nl-site">' + _esc(r.label) + '</th>';
+    for (var i = 0; i < NL_DAYS; i++) {
+      var n = 0, w = 0;
+      r.sites.forEach(function(s){ var x = _nlWorst(s, i); if (x) { n++; w = Math.max(w, x); } });
+      h += w ? '<td class="nl-c t' + w + '"><b>' + n + '</b></td>' : '<td class="nl-c">&ndash;</td>';
+    }
+    h += '</tr>';
+  });
+  return h + '</tbody></table>';
+}
+function _nlRegionHTML(reg, ctl){
+  var h = '<h2 class="nl-reg">' + _esc(reg.name) + '<small>' + reg.areas.map(function(a){ return _esc(a.name); }).join(' &middot; ') + '</small></h2>';
+  h += '<div class="nl-cap">Sites with a forecast hazard, by area</div>' + _nlMatrix(reg.areas.map(function(a){ return { label:a.name, sites:a.codes.map(function(c){ return a.sites[c]; }) }; }));
+  h += reg.areas.map(function(a){ return _nlAreaHTML(reg, a, ctl); }).join('');
+  var maps = reg.maps.filter(function(m){ return m.tier >= NL.minTier; });
+  if (maps.length) {
+    var figs = maps.map(function(m){
+      var srcs = _nlSrcLine(m.src, '');
+      return _nlSec(m.id, m.title, '<figure><img src="' + m.dataUrl + '" alt="' + _esc(m.title) + '"/><figcaption>' + _esc(m.title) + srcs + '</figcaption></figure>', ctl, 'nl-fig');
+    }).join('');
+    h += _nlSec(reg.key + ':maps', reg.name + ' maps', '<h3 class="nl-area">Maps</h3><div class="nl-mapgrid">' + figs + '</div>', ctl, 'nl-mapsec');
+  }
+  return _nlSec(reg.key, reg.name + ' region', h, ctl, 'nl-regsec');
+}
+function _nlHeadlines(m){
+  var map = {};
+  m.regions.forEach(function(reg){
+    reg.areas.forEach(function(a){
+      a.codes.forEach(function(code){
+        var s = a.sites[code];
+        for (var i = 0; i < NL_DAYS; i++) Object.keys(s.days[i]).forEach(function(k){
+          var c = s.days[i][k]; if (c.t < 2) return;
+          var key = reg.key + '|' + i + '|' + k;
+          var e = map[key] || (map[key] = { reg:reg.name, i:i, k:k, t:0, codes:[] });
+          e.t = Math.max(e.t, c.t); e.codes.push(code);
+        });
+      });
+    });
+  });
+  var list = Object.keys(map).map(function(k){ return map[k]; }).sort(function(a, b){ return b.t - a.t || a.i - b.i || b.codes.length - a.codes.length; }).slice(0, 10);
+  var trop = [];
+  m.regions.forEach(function(reg){ reg.areas.forEach(function(a){ a.codes.forEach(function(code){ var t = a.sites[code].trop; if (t && t.t >= 2) trop.push({ code:code, t:t }); }); }); });
+  var lab = {}; NL_HAZ.forEach(function(h){ lab[h.k] = h.short; });
+  var h = '';
+  if (trop.length) h += '<li><b class="nl-chip" style="background:' + NL_TIER_CLR[Math.max.apply(null, trop.map(function(x){ return x.t.t; }))] + '">Tropical</b> ' + trop.slice(0, 8).map(function(x){ return _esc(x.code); }).join(', ') + (trop.length > 8 ? ' +' + (trop.length - 8) : '') + ': ' + _esc(trop[0].t.x) + '</li>';
+  list.forEach(function(e){
+    h += '<li><b class="nl-chip" style="background:' + NL_TIER_CLR[e.t] + '">' + NL_TIER_NAME[e.t] + '</b> <b>' + _esc(_nlDay(e.i).wd + (e.i ? ' ' + _nlDay(e.i).dm : '')) + '</b> ' + _esc(lab[e.k] || e.k) + ', ' + _esc(e.reg) + ': '
+      + e.codes.slice(0, 6).map(_esc).join(', ') + (e.codes.length > 6 ? ' +' + (e.codes.length - 6) : '') + '</li>';
+  });
+  return h ? '<ul class="nl-hl">' + h + '</ul>'
+    : '<div class="nl-none">No Advisory or Warning level forecast hazards found' + (m.notes.length ? ' in the data that loaded (see the data notes below)' : ' at any site') + ' through ' + _esc(_nlDay(NL_DAYS - 1).long) + '.</div>';
+}
+function _nlBody(ctl){
+  var m = NL.model; if (!m) return '';
+  var iss = m.issued;
+  var z = String(iss.getUTCHours()).padStart(2, '0') + String(iss.getUTCMinutes()).padStart(2, '0') + 'Z';
+  var head = '<div class="nl-mast"><div class="nl-title">' + _esc(NL_TITLE) + '</div>'
+    + '<div class="nl-sub">' + _esc(_nlDay(0).long) + ' through ' + _esc(_nlDay(NL_DAYS - 1).long) + '</div>'
+    + '<div class="nl-meta">Issued ' + _esc(iss.toLocaleString('en-US', {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'})) + ' (' + z + ')'
+    + ' &middot; Forecast hazards only. Active warnings and current conditions are not included; check local sources. Showing ' + NL_TIER_NAME[NL.minTier] + ' and above. Each site’s days are its own local days.</div></div>';
+  var legend = '<div class="nl-legend"><span class="nl-chip" style="background:' + NL_TIER_CLR[1] + '">Monitor</span> be aware '
+    + '<span class="nl-chip" style="background:' + NL_TIER_CLR[2] + '">Advisory</span> prepare '
+    + '<span class="nl-chip" style="background:' + NL_TIER_CLR[3] + '">Warning</span> high impact expected. '
+    + 'These are planning levels from forecast values, not National Weather Service warnings. Numbers in the grids are sites affected.</div>';
+  var sum = '<h2 class="nl-reg">At a glance</h2>' + legend + _nlHeadlines(m)
+    + '<div class="nl-cap">Sites with a forecast hazard, by region</div>'
+    + _nlMatrix(m.regions.map(function(r){ var s = []; r.areas.forEach(function(a){ a.codes.forEach(function(c){ s.push(a.sites[c]); }); }); return { label:r.name, sites:s }; }));
+  var notes = m.notes.length ? '<div class="nl-gap"><b>Data notes</b><ul>' + m.notes.map(function(n){ return '<li>' + _esc(n) + '</li>'; }).join('') + '</ul></div>' : '';
+  var out = _nlSec('head', 'Title block', head, ctl, 'nl-headsec')
+    + _nlSec('sum', 'At a glance', sum, ctl, 'nl-regsec')
+    + (notes ? _nlSec('notes', 'Data notes', notes, ctl, '') : '');
+  m.regions.forEach(function(r){ out += _nlRegionHTML(r, ctl); });
+  out += '<div class="nl-foot">Decision support only. Official forecasts, watches and warnings come from the National Weather Service at <a href="https://www.weather.gov/" target="_blank" rel="noopener">weather.gov</a>. Check local weather sources frequently.</div>';
+  return out;
+}
+var NL_CSS = [
+  '.nl{font-family:Arial,Helvetica,sans-serif;color:#1a2a3a;font-size:13px;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact}',
+  '.nl *{box-sizing:border-box}',
+  '.nl a{color:#1a6ba0}',
+  '.nl-wrap{max-width:820px;margin:0 auto}',
+  '.nl-sec{position:relative}',
+  '.nl-x{position:absolute;top:2px;right:2px;z-index:3;background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700;cursor:pointer;opacity:.9}',
+  '.nl-headsec .nl-x{background:#fff}',
+  '.nl-mast{background:#0E2841;color:#fff;padding:16px 18px;border-radius:6px 6px 0 0}',
+  '.nl-title{font-size:22px;font-weight:700;letter-spacing:.02em}',
+  '.nl-sub{font-size:14px;margin-top:2px;color:#cfe3f5}',
+  '.nl-meta{font-size:10px;margin-top:8px;color:#9fc3e0;line-height:1.5}',
+  '.nl-regsec{background:#fff;border:1px solid #c8d0d8;border-top:none;padding:14px 14px 10px;margin-bottom:12px}',
+  '.nl-reg{font-size:18px;color:#0E2841;border-bottom:3px solid #0E2841;padding-bottom:4px;margin:0 0 10px}',
+  '.nl-reg small{display:block;font-size:11px;font-weight:400;color:#556070;margin-top:2px}',
+  '.nl-cap{font-size:9px;font-weight:700;color:#556070;text-transform:uppercase;letter-spacing:.08em;margin:10px 0 4px}',
+  '.nl-areasec{margin-top:14px}',
+  '.nl-area{font-size:14px;color:#0E2841;background:#eef2f6;padding:5px 8px;margin:0 0 6px;border-left:4px solid #0E2841;break-after:avoid;page-break-after:avoid}',
+  '.nl-area span{font-size:10px;font-weight:400;color:#556070;margin-left:6px}',
+  '.nl-chip{display:inline-block;color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle;text-transform:uppercase;letter-spacing:.04em}',
+  '.nl-legend{font-size:10px;color:#334155;margin:0 0 8px;line-height:1.9}',
+  '.nl-legend .nl-chip{margin-left:0}',
+  '.nl-hl{margin:0 0 8px 16px;padding:0;font-size:12px;line-height:1.7}',
+  '.nl-hl .nl-chip{margin-left:0;margin-right:4px}',
+  '.nl-bh{font-size:11px;font-weight:700;color:#fff;background:#3b5b7a;padding:3px 8px;margin-top:8px;break-after:avoid;page-break-after:avoid}',
+  '.nl-trop{margin:4px 0;padding:6px 8px;font-size:11px;border:1px solid #dde3e9;line-height:1.5}',
+  '.nl-trop.t1{background:#cffafe;color:#155e75}',
+  '.nl-trop.t2{background:#fde68a;color:#78350f}',
+  '.nl-trop.t3{background:#fecaca;color:#7f1d1d;border:2px solid #dc2626}',
+  '.nl-t{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10.5px}',
+  '.nl-t th,.nl-t td{border:1px solid #dde3e9;padding:3px 3px;vertical-align:top;text-align:center}',
+  '.nl-t thead th{background:#f3f6f9;font-size:10px;color:#0E2841}',
+  '.nl-t th.nl-d small{display:block;font-weight:400;color:#556070;font-size:9px}',
+  '.nl-t th.nl-site{width:19%;text-align:left;background:#fafbfc;font-weight:700}',
+  '.nl-t th.nl-site span{display:block;font-weight:400;color:#556070;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+  '.nl-c{line-height:1.25;word-wrap:break-word}',
+  '.nl-c i{display:block;font-size:9px;color:#556070;font-style:italic}',
+  '.nl-c.t1{background:#cffafe;color:#155e75}',
+  '.nl-c.t2{background:#fde68a;color:#78350f;font-weight:700}',
+  '.nl-c.t3{background:#fecaca;color:#7f1d1d;font-weight:700;border:2px solid #dc2626}',
+  '.nl-mx .nl-c b{font-size:12px}',
+  '.nl-src{font-size:9px;color:#556070;margin:3px 0 4px;line-height:1.5}',
+  '.nl-none{font-size:11px;color:#334155;margin:6px 0}',
+  '.nl-gap{font-size:11px;color:#9a3412;background:#fff7ed;border:1px solid #ea580c;border-radius:4px;padding:6px 8px;margin:8px 0}',
+  '.nl-gap ul{margin:4px 0 0 16px}',
+  '.nl-mapgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:8px}',
+  '.nl-fig{margin:0}',
+  '.nl-fig figure{margin:0}',
+  '.nl-fig img{width:100%;display:block;border:1px solid #c8d0d8}',
+  '.nl-fig figcaption{font-size:10px;color:#334155;padding:2px 0 4px}',
+  '.nl-foot{font-size:10px;color:#556070;padding:8px 2px 20px}',
+  '.nl-bar{background:#fff7ed;border:1px solid #ea580c;border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#9a3412}',
+  '.nl-bar button{background:#fff;border:1px solid #ea580c;color:#9a3412;border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700;margin:2px 4px 2px 0;cursor:pointer}',
+  '@media (max-width:520px){.nl-t{font-size:10px}.nl-t th.nl-site{width:17%}.nl-mapgrid{grid-template-columns:1fr}}',
+  '@media print{@page{margin:11mm}.nl-x,.nl-bar{display:none!important}.nl-regsec.nl-pg,.nl-regsec{page-break-before:always;border:none;padding:0}.nl-block,.nl-fig,.nl-t tr{page-break-inside:avoid}.nl-mast{border-radius:0}.nl-headsec+.nl-regsec{page-break-before:avoid;padding-top:12px}.nl-trop{page-break-inside:avoid}}'
+].join('\n');
+
+function _nlSyncTier(){
+  var sel = document.getElementById('news-tier');
+  NL.minTier = (sel && Number(sel.value) === 2) ? 2 : 1;
+}
+function nlRender(){
+  var host = document.getElementById('news-content'), panel = document.getElementById('panel-news');
+  if (!host) return;
+  _nlSyncTier();
+  if (!NL.model) return;
+  if (!document.getElementById('nl-css')) { var st = document.createElement('style'); st.id = 'nl-css'; st.textContent = NL_CSS; document.head.appendChild(st); }
+  var top = panel ? panel.scrollTop : 0;
+  var rem = Object.keys(NL.removed);
+  var bar = rem.length ? '<div class="nl-bar"><b>Removed (' + rem.length + '):</b> ' + rem.map(function(id){ return '<button onclick="nlRestore(\'' + id + '\')">' + _esc(NL.removed[id]) + ' ↺</button>'; }).join('')
+    + '<button onclick="nlRestoreAll()" style="background:#9a3412;color:#fff">Restore all</button></div>' : '';
+  host.innerHTML = '<div class="nl nl-wrap">' + bar + _nlBody(true) + '</div>';
+  if (panel) panel.scrollTop = top;
+  _nlButtons();
+}
+function _nlButtons(){
+  ['news-print-btn', 'news-dl-btn'].forEach(function(id){ var b = document.getElementById(id); if (b) { b.disabled = !NL.model; b.style.opacity = NL.model ? '1' : '.5'; } });
+}
+function nlRemove(id, btn){ NL.removed[id] = (btn && btn.getAttribute('data-label')) || id; nlRender(); }
+function nlRestore(id){ delete NL.removed[id]; nlRender(); }
+function nlRestoreAll(){ NL.removed = {}; nlRender(); }
+function nlOnShow(){ _nlButtons(); }
+
+function _nlDoc(autoPrint){
+  _nlSyncTier();
+  var f = NL.model.issued.toISOString().slice(0, 10);
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + _esc(NL_TITLE) + ' ' + f + '</title><style>body{margin:0;padding:12px;background:#fff}' + NL_CSS + '</style></head><body><div class="nl nl-wrap">'
+    + _nlBody(false) + '</div>'
+    + (autoPrint ? '<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},500);};<\/scr' + 'ipt>' : '') + '</body></html>';
+}
+function nlPrint(){
+  if (!NL.model) return;
+  var w = window.open('', '_blank');
+  if (!w) { alert('The browser blocked the print window. Allow pop-ups for this page, or use Download HTML.'); return; }
+  w.document.open(); w.document.write(_nlDoc(true)); w.document.close();
+}
+function nlDownload(){
+  if (!NL.model) return;
+  var name = 'Forecast_Outlook_' + NL.model.issued.toISOString().slice(0, 10) + '.html';
+  var blob = new Blob([_nlDoc(false)], { type:'text/html' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
 
 // ── Build stamp (v95) ─────────────────────────────────────────────────────────
