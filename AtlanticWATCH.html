@@ -3394,7 +3394,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v97';
+var WATCH_BUILD = 'v98';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -12468,6 +12468,7 @@ function _populateAreaScope() {
 // plus SPC, WPC ERO, SPC fire and WPC WSSI polygons for each day, so a table cell and its map cannot disagree.
 
 var NL_DAYS = 5;                    // today + 4
+var NL_HEAT_MIN_F = 90;             // heat is listed only at a feels-like or air temperature of this or higher (v98); below it is routine
 var NL_TSTM_MIN_POP = 40;           // a plain "thunderstorms" mention below this chance of precipitation is left out
 var NL_FCST_MAX_AGE_MIN = 180;      // forecasts older than this are re-pulled before a build
 var NL_TITLE = 'Daily Forecast Outlook';
@@ -12616,7 +12617,7 @@ function _nlAddHaz(day, h){
   else if (h.kind === 'WIND') { c = _nlCell(day, 'WIND'); c.sus = m.sus; c.gust = m.gust; c.part = h.part || ''; c.t = Math.max(c.t, t); }
   else if (h.kind === 'RAIN') { c = _nlCell(day, 'RAIN'); c.pop = m.pop; c.part = h.part || ''; c.t = Math.max(c.t, t); }
   else if (h.kind === 'WINTER') { c = _nlCell(day, 'WINTER'); c.snow = m.snow; c.ice = m.ice; c.pop = m.pop; c.part = h.part || ''; c.t = Math.max(c.t, t); }
-  else if (h.kind === 'HEAT') { c = _nlCell(day, 'HEAT'); c.v = m.v; c.t = Math.max(c.t, t); }
+  else if (h.kind === 'HEAT') { if (!(m.v >= NL_HEAT_MIN_F)) return; c = _nlCell(day, 'HEAT'); c.v = m.v; c.t = Math.max(c.t, t); }
   else if (h.kind === 'COLD') { c = _nlCell(day, 'COLD'); c.v = m.v; c.t = Math.max(c.t, t); }
   else if (h.kind === 'TROPICAL') { c = _nlCell(day, 'TROPICAL'); c.txt = 'In forecast text'; c.t = Math.max(c.t, t); }
 }
@@ -12748,8 +12749,8 @@ var NL_VALUE_MAPS = [
     bands:function(){ return [[GUIDE.wind.advSus, '#fde047', 'Peak ' + GUIDE.wind.advSus + '-' + (GUIDE.wind.advGust - 1) + ' mph'], [GUIDE.wind.advGust, '#fb923c', 'Peak ' + GUIDE.wind.advGust + '-' + (GUIDE.wind.warnGust - 1) + ' mph'], [GUIDE.wind.warnGust, '#7f1d1d', 'Peak ' + GUIDE.wind.warnGust + ' mph+']]; },
     val:function(c){ var s = (c.sus != null && c.sus >= GUIDE.wind.advSus) ? c.sus : -1, g = (c.gust != null && c.gust >= GUIDE.wind.advGust) ? c.gust : -1, v = Math.max(s, g); return v > 0 ? v : null; } },
   { id:'heat', kind:'HEAT', title:'Forecast Heat', sub:'Peak heat index or air temperature by location, °F', src:['heat','nws'],
-    bands:function(){ return [[GUIDE.heat.moderate, '#fde047', 'Feels like ' + GUIDE.heat.moderate + '-' + (GUIDE.heat.high - 1) + '°F'], [GUIDE.heat.high, '#fb923c', 'Feels like ' + GUIDE.heat.high + '-' + (GUIDE.heat.veryHigh - 1) + '°F'], [GUIDE.heat.veryHigh, '#7f1d1d', 'Feels like ' + GUIDE.heat.veryHigh + '°F+']]; },
-    val:function(c){ return (c.v != null && c.v >= GUIDE.heat.moderate) ? c.v : null; } },
+    bands:function(){ return [[NL_HEAT_MIN_F, '#fb923c', 'Feels like ' + NL_HEAT_MIN_F + '-' + (GUIDE.heat.veryHigh - 1) + '°F'], [GUIDE.heat.veryHigh, '#7f1d1d', 'Feels like ' + GUIDE.heat.veryHigh + '°F+']]; },
+    val:function(c){ return (c.v != null && c.v >= NL_HEAT_MIN_F) ? c.v : null; } },
   { id:'cold', kind:'COLD', title:'Forecast Cold', sub:'Lowest wind chill or air temperature by location, °F', src:['nws'],
     bands:function(){ return [[-999, '#1e3a8a', 'Feels like ' + GUIDE.cold.warning + '°F or colder'], [GUIDE.cold.warning + 1, '#2563eb', 'Feels like ' + (GUIDE.cold.warning + 1) + ' to ' + GUIDE.cold.advisory + '°F'], [GUIDE.cold.advisory + 1, '#7dd3fc', 'Feels like ' + (GUIDE.cold.advisory + 1) + ' to ' + GUIDE.cold.monitor + '°F']]; },
     val:function(c){ return (c.v != null && c.v <= GUIDE.cold.monitor) ? c.v : null; } }
