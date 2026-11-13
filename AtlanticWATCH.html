@@ -3450,7 +3450,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v99';
+var WATCH_BUILD = 'v100';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -12957,7 +12957,7 @@ function _nlCellHTML(k, c){
 var NL_TB_NAMES = ['overnight (12a-6a)', 'morning (6a-12p)', 'afternoon (12p-6p)', 'evening (6p-12a)'];
 function _nlBar(c){
   var tb = c && c.tb, blocks = '', names = [], i;
-  for (i = 0; i < 4; i++) { var on = tb ? !!tb[i] : true; blocks += '<u' + (tb && on ? ' class="on"' : '') + '></u>'; if (on) names.push(NL_TB_NAMES[i]); }
+  for (i = 0; i < 4; i++) { var on = tb ? !!tb[i] : true; blocks += '<u' + (tb && on ? ' class="on b' + i + '"' : '') + '></u>'; if (on) names.push(NL_TB_NAMES[i]); }
   return '<span class="nl-tb' + (tb ? '' : ' any') + '" title="' + (tb ? 'Expected: ' + names.join(', ') : 'Timing within the day is not forecast by the source') + '">' + blocks + '</span>';
 }
 function _nlWorst(site, i){
@@ -13113,7 +13113,7 @@ function _nlBody(ctl){
   var legend = '<div class="nl-legend"><span class="nl-chip" style="background:' + NL_TIER_CLR[1] + '">Monitor</span> be aware '
     + '<span class="nl-chip" style="background:' + NL_TIER_CLR[2] + '">Advisory</span> prepare '
     + '<span class="nl-chip" style="background:' + NL_TIER_CLR[3] + '">Warning</span> high impact expected. '
-    + 'These are planning levels from forecast values, not National Weather Service warnings. Numbers in the grids are sites affected. The bar at the foot of each day cell shows when in the site’s day the hazard is expected: overnight, morning, afternoon, evening. Dark blocks are the expected timing; a hatched bar means the source gives no timing for that day (any time). Beyond about 48 hours, timing is by half day.</div>';
+    + 'These are planning levels from forecast values, not National Weather Service warnings. Numbers in the grids are sites affected.</div><div class="nl-legend">The bar at the foot of each day cell shows when in the site’s day the hazard is expected: <span class="nl-tl"><u class="b0"></u></span>overnight 12a-6a <span class="nl-tl"><u class="b1"></u></span>morning 6a-12p <span class="nl-tl"><u class="b2"></u></span>afternoon 12p-6p <span class="nl-tl"><u class="b3"></u></span>evening 6p-12a. Gray blocks are not expected; a hatched bar means the source gives no timing for that day (any time). Beyond about 48 hours, timing is by half day.</div>';
   var sum = '<h2 class="nl-reg">At a glance</h2>' + legend + _nlHeadlines(m)
     + '<div class="nl-cap">Sites with a forecast hazard, by region</div>'
     + _nlMatrix(m.regions.map(function(r){ var s = []; r.areas.forEach(function(a){ a.codes.forEach(function(c){ s.push(a.sites[c]); }); }); return { label:r.name, sites:s }; }));
@@ -13164,7 +13164,14 @@ var NL_CSS = [
   '.nl-c i{display:block;font-size:9px;color:#556070;font-style:italic}',
   '.nl-tb{display:flex;gap:1px;height:5px;margin-top:4px}',
   '.nl-tb u{flex:1;display:block;text-decoration:none;background:rgba(15,23,42,.14)}',
-  '.nl-tb u.on{background:#0f172a}',
+  '.nl-tb u{box-shadow:inset 0 0 0 1px rgba(15,23,42,.3)}',
+  '.nl-tb u.on.b0{background:#3730a3}',
+  '.nl-tb u.on.b1{background:#eab308}',
+  '.nl-tb u.on.b2{background:#ea580c}',
+  '.nl-tb u.on.b3{background:#9333ea}',
+  '.nl-tl{display:inline-flex;gap:3px;vertical-align:middle;margin:0 2px 0 6px}',
+  '.nl-tl u{display:inline-block;width:11px;height:6px;text-decoration:none;box-shadow:inset 0 0 0 1px rgba(15,23,42,.3)}',
+  '.nl-tl u.b0{background:#3730a3}.nl-tl u.b1{background:#eab308}.nl-tl u.b2{background:#ea580c}.nl-tl u.b3{background:#9333ea}',
   '.nl-tb.any u{background:repeating-linear-gradient(135deg,rgba(15,23,42,.38) 0,rgba(15,23,42,.38) 1px,rgba(15,23,42,.08) 1px,rgba(15,23,42,.08) 3px)}',
   '.nl-c.t1{background:#cffafe;color:#155e75}',
   '.nl-c.t2{background:#fde68a;color:#78350f;font-weight:700}',
