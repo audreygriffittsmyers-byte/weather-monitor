@@ -2757,6 +2757,58 @@ function _extHourPart(d, code){
   return (h >= 6 && h < 18) ? 'd' : 'n';
 }
 function _extPartOf(o){ return (o.d && o.n) ? '' : (o.d ? 'Day' : (o.n ? 'Night' : '')); }
+// v99: time-of-day blocks (0 overnight 12a-6a, 1 morning 6a-12p, 2 afternoon 12p-6p, 3 evening 6p-12a, site local time) in which each hazard is
+// forecast. 12-hour NWS periods light the blocks they span; hourly records (about the next 48 h, and Visual Crossing) are exact and win where they exist.
+var _TB_KINDS = ['tstm', 'wind', 'rain', 'winter', 'heat', 'cold'];
+function _tbSlot(M, key){
+  if (!M[key]) { M[key] = {cov:{}, fine:{}, coarse:{}}; _TB_KINDS.forEach(function(k){ M[key].cov[k] = [0,0,0,0]; M[key].fine[k] = [0,0,0,0]; M[key].coarse[k] = [0,0,0,0]; }); }
+  return M[key];
+}
+function _tbEachHour(code, p, fn){
+  var a = new Date(p.startTime).getTime(), z = p.endTime ? new Date(p.endTime).getTime() : a + 3600000;
+  if (isNaN(a)) return;
+  if (isNaN(z) || z <= a) z = a + 3600000;
+  var fine = (z - a) <= 3 * 3600000;
+  a = Math.floor(a / 3600000) * 3600000;
+  for (var t = a, n = 0; t < z && n < 36; t += 3600000, n++) {
+    var d = new Date(t), lead = _siteDayLead(d, code);
+    if (lead < 0 || lead > 7) continue;
+    var h;
+    try { h = parseInt(d.toLocaleString('en-US', {hour:'numeric', hour12:false, timeZone:SITE_TZ[code] || undefined}), 10); } catch (e) { h = d.getHours(); }
+    if (!(h >= 0)) continue;
+    if (h > 23) h = 0;
+    fn(_extDateKey(_bLeadDate(lead)), Math.floor(h / 6), fine);
+  }
+}
+function _tbFlags(p, code){
+  var t = (p.shortForecast || '') + ' ' + (p.detailedForecast || '');
+  var g = Math.max(_extMph(p.windGust), _extMph(p._vcxGust), _extTextGust(t), _extGridGust(code, p.startTime, p.endTime));
+  var f = {tstm:/thunder/i.test(t), rain:/flood|heavy rain|torrential|excessive rain/i.test(t), winter:/snow|sleet|wintry|freezing|ice/i.test(t),
+           wind:(_extMph(p.windSpeed) >= GUIDE.wind.advSus || g >= GUIDE.wind.advGust), heat:false, cold:false};
+  if (p.temperature != null) {
+    try {
+      var ff = _pFeels(p), hv = ff.hi != null ? ff.hi : p.temperature, cv = (ff.wc != null && ff.wc < p.temperature) ? ff.wc : p.temperature;
+      f.heat = hv >= GUIDE.heat.high; f.cold = cv <= GUIDE.cold.monitor;
+    } catch (e) {}
+  }
+  return f;
+}
+function _tbMark(M, code, p, hourlyLayer){
+  var f = _tbFlags(p, code);
+  _tbEachHour(code, p, function(key, blk, isFine){
+    var s = _tbSlot(M, key), fine = hourlyLayer || isFine;
+    _TB_KINDS.forEach(function(k){
+      if (fine) { s.cov[k][blk] = 1; if (f[k]) s.fine[k][blk] = 1; }
+      else if (f[k]) s.coarse[k][blk] = 1;
+    });
+  });
+}
+function _tbFinal(M, key, kind){
+  var s = M && M[key]; if (!s) return null;
+  var out = [0, 0, 0, 0], any = 0;
+  for (var i = 0; i < 4; i++) { out[i] = s.cov[kind][i] ? s.fine[kind][i] : s.coarse[kind][i]; if (out[i]) any = 1; }
+  return any ? out : null;
+}
 // Per-location 7-day hazard picture, built from the NWS periods already held.
 function buildExtOutlook(code, opt){
   opt = opt || {};   // v97: {minLead, maxLead, allKinds}; the newsletter asks for leads 0-4 and every hazard kind
@@ -2766,7 +2818,7 @@ function buildExtOutlook(code, opt){
   var periods = (forecastData[code] && forecastData[code].length)
     ? forecastData[code]
     : ((vcxData[code] && vcxData[code].hours) || []);
-  var byDay = {};
+  var byDay = {}, _tbM = {};   // v99: _tbM holds time-of-day blocks per day and hazard
 
   periods.forEach(function(p){
     if (!p || !p.startTime) return;
@@ -2801,10 +2853,12 @@ function buildExtOutlook(code, opt){
     if (/snow|sleet|wintry|freezing|ice/i.test(t)) b.pt.winter[_pp]++;
     var _pg = Math.max(_extMph(p.windGust), _extMph(p._vcxGust), _extTextGust(t), _extGridGust(code, p.startTime, p.endTime));
     if (_extMph(p.windSpeed) >= GUIDE.wind.advSus || _pg >= GUIDE.wind.advGust) b.pt.wind[_pp]++;
+    try { _tbMark(_tbM, code, p, false); } catch (e) {}   // v99
     var nm = _extStormName(t);
     if (nm) b.names[nm] = 1;
   });
 
+  try { (hourlyData[code] || []).forEach(function(p){ if (p && p.startTime) _tbMark(_tbM, code, p, true); }); } catch (e) {}   // v99: hourly records refine the blocks
   var _gSnow = _extGridDayAccum(code, 'snow'), _gIce = _extGridDayAccum(code, 'ice');
   var out = [];
   Object.keys(byDay).sort().forEach(function(key){
@@ -2862,6 +2916,8 @@ function buildExtOutlook(code, opt){
       else if (h.kind === 'TSTM') { h.m = {pop:b.pop}; h.part = _extPartOf(b.pt.tstm); }
       else if (h.kind === 'HEAT') h.m = {v:Math.round(_hv)};
       else if (h.kind === 'COLD') h.m = {v:Math.round(_cv)};
+      var _tk = {WIND:'wind', WINTER:'winter', RAIN:'rain', TSTM:'tstm', HEAT:'heat', COLD:'cold'}[h.kind];
+      if (_tk) h.tb = _tbFinal(_tbM, key, _tk);   // v99: [overnight, morning, afternoon, evening] or null when timing is unknown
     });
     hz = hz.filter(function(h){ return opt.allKinds || EXT_KINDS_ON[h.kind]; });
     if (names.length) {
@@ -3394,7 +3450,7 @@ function _fcstShort(now){
 }
 Object.defineProperty(BRIEF_DAY_LABEL, 'fc', { enumerable:true, get:function(){ return 'Forecast ' + _fcstShort(); } });
 
-var WATCH_BUILD = 'v98';
+var WATCH_BUILD = 'v99';
 function _briefIssuedLine(){
   // v48: wording restored per owner. Briefings go out once per period, so the
   // text says so and tells bases to monitor conditions themselves.
@@ -12610,15 +12666,16 @@ function _nlKeyAt(code, feats, pr){
 
 // ── Per-site model ──────────────────────────────────────────────────────────
 function _nlCell(day, k){ return day[k] || (day[k] = { t:0 }); }
+function _nlTbUnion(c, tb){ if (!tb) return; c.tb = c.tb || [0,0,0,0]; for (var i = 0; i < 4; i++) if (tb[i]) c.tb[i] = 1; }
 function _nlAddHaz(day, h){
   var t = EXT_RANK[h.sev] || 1, m = h.m || {}, c;
   if (h.kind === 'SEVERE') { c = _nlCell(day, 'STORMS'); c.sev = m.txt || ''; c.t = Math.max(c.t, t); }
-  else if (h.kind === 'TSTM') { if (!(m.pop >= NL_TSTM_MIN_POP)) return; c = _nlCell(day, 'STORMS'); c.pop = m.pop; c.part = h.part || ''; c.t = Math.max(c.t, t); }
-  else if (h.kind === 'WIND') { c = _nlCell(day, 'WIND'); c.sus = m.sus; c.gust = m.gust; c.part = h.part || ''; c.t = Math.max(c.t, t); }
-  else if (h.kind === 'RAIN') { c = _nlCell(day, 'RAIN'); c.pop = m.pop; c.part = h.part || ''; c.t = Math.max(c.t, t); }
-  else if (h.kind === 'WINTER') { c = _nlCell(day, 'WINTER'); c.snow = m.snow; c.ice = m.ice; c.pop = m.pop; c.part = h.part || ''; c.t = Math.max(c.t, t); }
-  else if (h.kind === 'HEAT') { if (!(m.v >= NL_HEAT_MIN_F)) return; c = _nlCell(day, 'HEAT'); c.v = m.v; c.t = Math.max(c.t, t); }
-  else if (h.kind === 'COLD') { c = _nlCell(day, 'COLD'); c.v = m.v; c.t = Math.max(c.t, t); }
+  else if (h.kind === 'TSTM') { if (!(m.pop >= NL_TSTM_MIN_POP)) return; c = _nlCell(day, 'STORMS'); c.pop = m.pop; c.part = h.part || ''; _nlTbUnion(c, h.tb); c.t = Math.max(c.t, t); }
+  else if (h.kind === 'WIND') { c = _nlCell(day, 'WIND'); c.sus = m.sus; c.gust = m.gust; c.part = h.part || ''; _nlTbUnion(c, h.tb); c.t = Math.max(c.t, t); }
+  else if (h.kind === 'RAIN') { c = _nlCell(day, 'RAIN'); c.pop = m.pop; c.part = h.part || ''; _nlTbUnion(c, h.tb); c.t = Math.max(c.t, t); }
+  else if (h.kind === 'WINTER') { c = _nlCell(day, 'WINTER'); c.snow = m.snow; c.ice = m.ice; c.pop = m.pop; c.part = h.part || ''; _nlTbUnion(c, h.tb); c.t = Math.max(c.t, t); }
+  else if (h.kind === 'HEAT') { if (!(m.v >= NL_HEAT_MIN_F)) return; c = _nlCell(day, 'HEAT'); c.v = m.v; _nlTbUnion(c, h.tb); c.t = Math.max(c.t, t); }
+  else if (h.kind === 'COLD') { c = _nlCell(day, 'COLD'); c.v = m.v; _nlTbUnion(c, h.tb); c.t = Math.max(c.t, t); }
   else if (h.kind === 'TROPICAL') { c = _nlCell(day, 'TROPICAL'); c.txt = 'In forecast text'; c.t = Math.max(c.t, t); }
 }
 function _nlTropAt(code){
@@ -12835,10 +12892,10 @@ async function _nlAddMaps(model, P, say){
     reg.areas.forEach(function(a){ Object.keys(a.sites).forEach(function(c){ allSites[c] = a.sites[c]; }); });
     frames.forEach(function(fr){
       NL_PRODUCTS.forEach(function(pr, pi){
-        pr.days.forEach(function(d){ try { var m = _nlPolyMap(reg, fr, pr, d, P, pi + 1); if (m) maps.push(m); } catch (e) { console.warn('newsletter map ' + pr.id + d, e); } });
+        pr.days.filter(function(d){ return d === 1; }).forEach(function(d){ try { var m = _nlPolyMap(reg, fr, pr, d, P, pi + 1); if (m) maps.push(m); } catch (e) { console.warn('newsletter map ' + pr.id + d, e); } });
       });
       NL_VALUE_MAPS.forEach(function(vm, vi){
-        for (var i = 0; i < NL_DAYS; i++) { try { var m = _nlValueMap(reg, fr, vm, i, allSites, 10 + vi); if (m) maps.push(m); } catch (e) { console.warn('newsletter map ' + vm.id + i, e); } }
+        for (var i = 0; i < 1; i++) { try { var m = _nlValueMap(reg, fr, vm, i, allSites, 10 + vi); if (m) maps.push(m); } catch (e) { console.warn('newsletter map ' + vm.id + i, e); } }
       });
     });
     try { maps = maps.concat(_nlTropMaps(reg)); } catch (e) { console.warn('newsletter tropical map', e); }
@@ -12893,8 +12950,15 @@ function _nlCellHTML(k, c){
   else if (k === 'HEAT' || k === 'COLD') L.push(c.v + '°');
   else if (k === 'TROPICAL') L.push(c.txt);
   var h = L.map(_esc).join('<br>');
-  if (c.part && (k === 'STORMS' || k === 'WIND' || k === 'RAIN' || k === 'WINTER')) h += '<br><i>' + c.part + '</i>';
   return h;
+}
+// Time-of-day bar at the foot of a day cell: overnight, morning, afternoon, evening (site local time). Dark blocks are the forecast timing;
+// a hatched bar means the source gives no timing for that day (treat as any time).
+var NL_TB_NAMES = ['overnight (12a-6a)', 'morning (6a-12p)', 'afternoon (12p-6p)', 'evening (6p-12a)'];
+function _nlBar(c){
+  var tb = c && c.tb, blocks = '', names = [], i;
+  for (i = 0; i < 4; i++) { var on = tb ? !!tb[i] : true; blocks += '<u' + (tb && on ? ' class="on"' : '') + '></u>'; if (on) names.push(NL_TB_NAMES[i]); }
+  return '<span class="nl-tb' + (tb ? '' : ' any') + '" title="' + (tb ? 'Expected: ' + names.join(', ') : 'Timing within the day is not forecast by the source') + '">' + blocks + '</span>';
 }
 function _nlWorst(site, i){
   var w = 0, d = site.days[i];
@@ -12925,7 +12989,7 @@ function _nlTable(hz, rows){
   var body = rows.map(function(r){
     var f = _bFbo(r.code);
     return '<tr><th class="nl-site"><a href="' + _nlSiteUrl(r.code) + '" target="_blank" rel="noopener">' + _esc(r.code) + '</a><span>' + _esc(f.city || '') + '</span></th>'
-      + r.cells.map(function(c){ return c ? '<td class="nl-c t' + c.t + '">' + _nlCellHTML(hz.k, c) + '</td>' : '<td class="nl-c"></td>'; }).join('') + '</tr>';
+      + r.cells.map(function(c){ return c ? '<td class="nl-c t' + c.t + '">' + _nlCellHTML(hz.k, c) + _nlBar(c) + '</td>' : '<td class="nl-c"></td>'; }).join('') + '</tr>';
   }).join('');
   return '<table class="nl-t"><thead><tr><th class="nl-site">Site</th>' + _nlDayHeads() + '</tr></thead><tbody>' + body + '</tbody></table>';
 }
@@ -13006,7 +13070,7 @@ function _nlRegionHTML(reg, ctl){
       var srcs = _nlSrcLine(m.src, '');
       return _nlSec(m.id, m.title, '<figure><img src="' + m.dataUrl + '" alt="' + _esc(m.title) + '"/><figcaption>' + _esc(m.title) + srcs + '</figcaption></figure>', ctl, 'nl-fig');
     }).join('');
-    h += _nlSec(reg.key + ':maps', reg.name + ' maps', '<h3 class="nl-area">Maps</h3><div class="nl-mapgrid">' + figs + '</div>', ctl, 'nl-mapsec');
+    h += _nlSec(reg.key + ':maps', reg.name + ' maps', '<h3 class="nl-area">Maps for today</h3><div class="nl-mapgrid">' + figs + '</div>', ctl, 'nl-mapsec');
   }
   return _nlSec(reg.key, reg.name + ' region', h, ctl, 'nl-regsec');
 }
@@ -13049,7 +13113,7 @@ function _nlBody(ctl){
   var legend = '<div class="nl-legend"><span class="nl-chip" style="background:' + NL_TIER_CLR[1] + '">Monitor</span> be aware '
     + '<span class="nl-chip" style="background:' + NL_TIER_CLR[2] + '">Advisory</span> prepare '
     + '<span class="nl-chip" style="background:' + NL_TIER_CLR[3] + '">Warning</span> high impact expected. '
-    + 'These are planning levels from forecast values, not National Weather Service warnings. Numbers in the grids are sites affected.</div>';
+    + 'These are planning levels from forecast values, not National Weather Service warnings. Numbers in the grids are sites affected. The bar at the foot of each day cell shows when in the site’s day the hazard is expected: overnight, morning, afternoon, evening. Dark blocks are the expected timing; a hatched bar means the source gives no timing for that day (any time). Beyond about 48 hours, timing is by half day.</div>';
   var sum = '<h2 class="nl-reg">At a glance</h2>' + legend + _nlHeadlines(m)
     + '<div class="nl-cap">Sites with a forecast hazard, by region</div>'
     + _nlMatrix(m.regions.map(function(r){ var s = []; r.areas.forEach(function(a){ a.codes.forEach(function(c){ s.push(a.sites[c]); }); }); return { label:r.name, sites:s }; }));
@@ -13098,6 +13162,10 @@ var NL_CSS = [
   '.nl-t th.nl-site span{display:block;font-weight:400;color:#556070;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
   '.nl-c{line-height:1.25;word-wrap:break-word}',
   '.nl-c i{display:block;font-size:9px;color:#556070;font-style:italic}',
+  '.nl-tb{display:flex;gap:1px;height:5px;margin-top:4px}',
+  '.nl-tb u{flex:1;display:block;text-decoration:none;background:rgba(15,23,42,.14)}',
+  '.nl-tb u.on{background:#0f172a}',
+  '.nl-tb.any u{background:repeating-linear-gradient(135deg,rgba(15,23,42,.38) 0,rgba(15,23,42,.38) 1px,rgba(15,23,42,.08) 1px,rgba(15,23,42,.08) 3px)}',
   '.nl-c.t1{background:#cffafe;color:#155e75}',
   '.nl-c.t2{background:#fde68a;color:#78350f;font-weight:700}',
   '.nl-c.t3{background:#fecaca;color:#7f1d1d;font-weight:700;border:2px solid #dc2626}',
