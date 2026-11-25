@@ -229,7 +229,11 @@ function chipLabel(h, long){
   if (h.k === 'flood' && /flood warning/i.test(x)) return long ? 'Flood warning' : 'Flood warning';
   return long ? KIND[h.k].label : KIND[h.k].short;
 }
-function chipText(h, long){ return h.fold ? 'Also watching' : chipLabel(h, long) + ': ' + TIER[h.t].word; }
+function chipText(h, long){
+  if (h.fold) return 'Also watching';
+  var l = chipLabel(h, long);
+  return l.toLowerCase().slice(-TIER[h.t].word.length) === TIER[h.t].word ? l : l + ': ' + TIER[h.t].word;
+}
 // v107: Monitor-only items fold into one "Also watching" line per site so nothing is hidden and nothing is repeated.
 function foldHaz(list){
   var main = list.filter(function(h){ return h.t >= 2; }), mon = list.filter(function(h){ return h.t < 2; });
@@ -259,6 +263,10 @@ function pickMap(kind, p){
   DATA.maps.forEach(function(m){ if (re.test(m.key) && (!best || (best.regional && !m.regional))) best = m; });
   return best;
 }
+function alertTxt(code, sp){
+  var it = null; haz(code, sp.p).forEach(function(h){ if (h.k === sp.kind && h.t === sp.tier && !it) it = h; });
+  return it && it.x ? it.x : siteName(code);
+}
 function areaOf(code){ return (DATA.sites[code] && DATA.sites[code].area) || 'Corporate'; }
 
 /* ---------- card: hazard (posted at affected sites) ---------- */
@@ -279,7 +287,7 @@ function cardHazard(sp){
   if (map) {
     s += '<defs><clipPath id="mc"><rect x="40" y="240" width="330" height="270" rx="8"/></clipPath></defs>';
     s += R(40, 240, 330, 270, {fill:C.wash});
-    s += '<image x="40" y="240" width="330" height="270" preserveAspectRatio="xMidYMid slice" clip-path="url(#mc)" href="' + map.dataUrl + '"/>';
+    s += '<image x="40" y="240" width="330" height="270" preserveAspectRatio="xMidYMid meet" clip-path="url(#mc)" href="' + map.dataUrl + '"/>';
     s += R(40, 240, 330, 270, {rx:8, stroke:C.slate, sw:2});
     s += T(40, 530, 'Map from WATCH at issue time', {size:12, fill:C.tarmac});
   }
@@ -287,7 +295,7 @@ function cardHazard(sp){
   s += T(cols.sx, 262, 'Affected sites (' + sp.codes.length + ')', {fam:HEAD, size:24, fill:C.twilight});
   var byArea = {}; sp.codes.forEach(function(c){ var a = areaOf(c); (byArea[a] = byArea[a] || []).push(c); });
   var areas = Object.keys(byArea).sort(); var y = 290, maxY = 520, shown = 0, total = sp.codes.length, ai;
-  var perLine = total <= 9;   // few sites: one per line with the city, easier to read from a distance
+  var perLine = total <= 9, otherTxt = sp.kind === 'other' && total <= 9;   // few sites: one per line with the city, easier to read from a distance
   for (ai = 0; ai < areas.length; ai++) {
     var a = areas[ai], codes = byArea[a].sort();
     var lines = perLine ? codes : wrap(codes.join('  '), 17, 700, BODY, cols.sw, 6);
@@ -295,7 +303,7 @@ function cardHazard(sp){
     if (y + need > maxY) break;
     s += T(cols.sx, y, a === 'Corporate' ? 'Corporate' : a + ' area', {size:14, weight:600, fill:C.jade});
     lines.forEach(function(l, i){
-      if (perLine) s += T(cols.sx, y + 22 + i * lh2, l, {size:18, weight:700, fill:C.twilight}) + T(cols.sx + 56, y + 22 + i * lh2, clip1(siteName(l), 16, 400, BODY, cols.sw - 60), {size:16, fill:C.tarmac});
+      if (perLine) s += T(cols.sx, y + 22 + i * lh2, l, {size:18, weight:700, fill:C.twilight}) + T(cols.sx + 56, y + 22 + i * lh2, clip1(otherTxt ? alertTxt(l, sp) : siteName(l), 16, 400, BODY, cols.sw - 60), {size:16, fill:C.tarmac});
       else s += T(cols.sx, y + 20 + i * 21, l, {size:17, weight:700, fill:C.twilight});
     });
     y += need; shown += codes.length;
@@ -334,14 +342,14 @@ function hazChips(list, x, y, maxW, maxN){
   var s = '', f = list[0];
   s += chip(x, y, chipText(f, false), f.t, {size:13, h:22, maxW:maxW}).svg;
   if (list.length > 1) {
-    var rest = list.slice(1).map(function(h){ return h.fold ? 'also: ' + h.x : chipLabel(h, false).toLowerCase() + ' ' + TIER[h.t].word.toLowerCase(); }).join(', ');
-    s += T(x, y + 40, clip1('And ' + rest, 12, 400, BODY, maxW), {size:12, fill:C.tarmac});
+    var rest = list.slice(1).map(function(h){ return h.fold ? h.x + ' (monitor)' : chipLabel(h, false).toLowerCase() + ' (' + TIER[h.t].word + ')'; }).join(', ');
+    s += T(x, y + 40, clip1('Also: ' + rest, 12, 400, BODY, maxW), {size:12, fill:C.tarmac});
   }
   return s;
 }
 
 /* ---------- card: area, 3-day overview ---------- */
-function cardAreaOverview(area, codes, page, pages){
+function cardAreaOverview(area, codes, page, pages, clearCodes){
   var s = '', title = area === 'Corporate' ? 'Corporate' : area + ' area';
   s += T(40, 142, title, {fam:HEAD, size:38, fill:C.twilight});
   s += T(40, 168, '3-day weather outlook  ·  ' + codes.length + ' location' + (codes.length === 1 ? '' : 's') + (pages > 1 ? '  ·  Page ' + page + ' of ' + pages : ''), {size:17, fill:C.tarmac});
@@ -367,6 +375,14 @@ function cardAreaOverview(area, codes, page, pages){
       else s += hazChips(list, px, y + 6, pw - 20, 2);
     }
   });
+  if (clearCodes && clearCodes.length) {
+    var cy = ry + codes.length * rh + 6, room = Math.floor((552 - cy) / 17), ctxt = 'No hazards expected in the next 3 days: ' + clearCodes.join(', ');
+    if (room >= 1) {
+      var cl = wrap(ctxt, 14, 400, BODY, 1100, room);
+      if (cl.length >= room && cl.join(' ').length < ctxt.length) cl = ['No hazards expected in the next 3 days at ' + clearCodes.length + ' other location' + (clearCodes.length === 1 ? '' : 's') + '.'];
+      cl.forEach(function(l, i){ s += T(52, cy + 14 + i * 17, l, {size:14, fill:C.jade, weight:600}); });
+    }
+  }
   return {svg:frame(s, ''), name:'WATCH_area_' + area.replace(/\W+/g, '') + '_3day' + (pages > 1 ? '_p' + page : ''), title:title + ': 3-day outlook' + (pages > 1 ? ' (page ' + page + ' of ' + pages + ')' : '')};
 }
 
@@ -478,7 +494,7 @@ function cardLocDetail(code, p){
     var ls = wrap(h.x || '', 16, 400, BODY, 620, 2), rh = 44 + Math.max(1, ls.length) * 20 + (h.u ? 20 : 0) + 8;
     if (y + rh > 552) { rh = 552 - y + 6; if (rh < 60) return; }
     s += R(40, y, 660, rh - 6, {fill:'#fff', stroke:C.slate, sw:2, rx:8});
-    var c = chip(54, y + 10, h.fold ? 'Also watching' : chipLabel(h, true) + ': ' + TIER[h.t].word, h.t, {size:16, h:28, maxW:628}); s += c.svg;
+    var c = chip(54, y + 10, chipText(h, true), h.t, {size:16, h:28, maxW:628}); s += c.svg;
     ls.forEach(function(l, j){ s += T(54, y + 56 + j * 20, l, {size:16, fill:C.twilight}); });
     if (h.u) s += T(54, y + 56 + Math.max(1, ls.length) * 20, 'Until ' + h.u, {size:14, weight:600, fill:C.blue});
     y += rh;
@@ -524,7 +540,9 @@ function areaCards(area, view){
   if (view === 'ov') {
     var anyHaz = codes.some(function(c){ return [0, 1, 2].some(function(q){ return haz(c, q).length || gapOf(c, q); }); });
     if (!anyHaz) return out;   // v107: no card for an area with nothing to say
-    paginate(codes, function(){ return 56; }, 6 * 56).forEach(function(pg, i, all){ out.push(cardAreaOverview(area, pg, i + 1, all.length)); });
+    var hzo = codes.filter(function(c){ return [0, 1, 2].some(function(q){ return haz(c, q).length || gapOf(c, q); }); });
+    var clro = codes.filter(function(c){ return hzo.indexOf(c) < 0; });
+    paginate(hzo, function(){ return 56; }, (clro.length ? 5 : 6) * 56).forEach(function(pg, i, all){ out.push(cardAreaOverview(area, pg, i + 1, all.length, i === all.length - 1 ? clro : null)); });
   } else {
     var p = Number(view);
     var hz = codes.filter(function(c){ return haz(c, p).length || gapOf(c, p); });
