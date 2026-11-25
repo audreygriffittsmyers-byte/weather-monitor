@@ -221,6 +221,23 @@ function haz(code, p){
   h.sort(function(a, b){ return b.t - a.t || KIND_ORDER.indexOf(a.k) - KIND_ORDER.indexOf(b.k); });
   return h;
 }
+function chipLabel(h, long){
+  if (h.fold) return 'Also watching';
+  var x = String(h.x || '');
+  if (h.k === 'other' && /special weather statement/i.test(x)) return long ? 'Special weather statement' : 'Weather statement';
+  if (h.k === 'flood' && /flood watch/i.test(x)) return long ? 'Flood watch' : 'Flood watch';
+  if (h.k === 'flood' && /flood warning/i.test(x)) return long ? 'Flood warning' : 'Flood warning';
+  return long ? KIND[h.k].label : KIND[h.k].short;
+}
+function chipText(h, long){ return h.fold ? 'Also watching' : chipLabel(h, long) + ': ' + TIER[h.t].word; }
+// v107: Monitor-only items fold into one "Also watching" line per site so nothing is hidden and nothing is repeated.
+function foldHaz(list){
+  var main = list.filter(function(h){ return h.t >= 2; }), mon = list.filter(function(h){ return h.t < 2; });
+  if (mon.length < 2) return list.slice();
+  var names = mon.map(function(h){ return chipLabel(h, false).toLowerCase(); });
+  return main.concat([{k:mon[0].k, t:1, fold:true, x:names.join(', ')}]);
+}
+function hazFold(code, p){ return foldHaz(haz(code, p)); }
 function gapOf(code, p){ var s = DATA.sites[code] || {}; return p === 0 ? !!s.gap0 : !!s.gapF; }
 function siteName(code){ var s = DATA.sites[code] || {}; return s.city ? s.city + (s.state ? ', ' + s.state : '') : ''; }
 function periodName(p){ return DATA.periods[p].name; }
@@ -269,9 +286,9 @@ function cardHazard(sp){
   // sites grouped by area
   s += T(cols.sx, 262, 'Affected sites (' + sp.codes.length + ')', {fam:HEAD, size:24, fill:C.twilight});
   var byArea = {}; sp.codes.forEach(function(c){ var a = areaOf(c); (byArea[a] = byArea[a] || []).push(c); });
-  var areas = Object.keys(byArea).sort(); var y = 290, maxY = 548, shown = 0, total = sp.codes.length;
+  var areas = Object.keys(byArea).sort(); var y = 290, maxY = 520, shown = 0, total = sp.codes.length, ai;
   var perLine = total <= 9;   // few sites: one per line with the city, easier to read from a distance
-  for (var ai = 0; ai < areas.length; ai++) {
+  for (ai = 0; ai < areas.length; ai++) {
     var a = areas[ai], codes = byArea[a].sort();
     var lines = perLine ? codes : wrap(codes.join('  '), 17, 700, BODY, cols.sw, 6);
     var lh2 = perLine ? 24 : 21, need = 18 + lines.length * lh2 + 8;
@@ -283,7 +300,11 @@ function cardHazard(sp){
     });
     y += need; shown += codes.length;
   }
-  if (shown < total) s += T(cols.sx, 556, '+ more sites. See the area sheets.', {size:13, fill:C.tarmac, italic:true});
+  if (shown < total) {
+    var restCodes = []; areas.forEach(function(a2, i2){ if (i2 >= ai) byArea[a2].sort().forEach(function(c3){ restCodes.push(c3); }); });
+    var rl = wrap('Also: ' + restCodes.join('  '), 13, 600, BODY, cols.sw, Math.max(1, Math.floor((556 - y) / 16)));
+    rl.forEach(function(l, i3){ s += T(cols.sx, y + 4 + i3 * 16, l, {size:13, weight:600, fill:C.tarmac}); });
+  }
   // divider and actions
   s += R(cols.ax - 16, 240, 1, 300, {fill:C.slate});
   s += T(cols.ax, 262, 'What to do', {fam:HEAD, size:24, fill:C.twilight});
@@ -309,12 +330,13 @@ function legend(x, y){
   return s;
 }
 function hazChips(list, x, y, maxW, maxN){
-  var s = '', n = 0, pitch = 26;
-  for (var i = 0; i < list.length && n < maxN; i++) {
-    var h = list[i], c = chip(x, y + n * pitch, KIND[h.k].short + ': ' + TIER[h.t].word, h.t, {size:13, h:22, maxW:maxW});
-    s += c.svg; n++;
+  // first chip is the worst hazard; everything else is named on a second line so nothing is hidden
+  var s = '', f = list[0];
+  s += chip(x, y, chipText(f, false), f.t, {size:13, h:22, maxW:maxW}).svg;
+  if (list.length > 1) {
+    var rest = list.slice(1).map(function(h){ return h.fold ? 'also: ' + h.x : chipLabel(h, false).toLowerCase() + ' ' + TIER[h.t].word.toLowerCase(); }).join(', ');
+    s += T(x, y + 40, clip1('And ' + rest, 12, 400, BODY, maxW), {size:12, fill:C.tarmac});
   }
-  if (list.length > n) { var lastW = mw(KIND[list[n - 1].k].short + ': ' + TIER[list[n - 1].t].word, 13, 700, BODY) + 30; s += T(x + lastW + 4, y + (n - 1) * pitch + 16, '+ ' + (list.length - n) + ' more', {size:12, fill:C.tarmac, italic:true}); }
   return s;
 }
 
@@ -339,17 +361,17 @@ function cardAreaOverview(area, codes, page, pages){
     s += T(x0 + 12, y + 26, code, {size:24, weight:700, fill:C.twilight});
     s += T(x0 + 12, y + 45, clip1(siteName(code), 13, 400, BODY, sw - 20), {size:13, fill:C.tarmac});
     for (var p = 0; p < 3; p++) {
-      var px = 40 + sw + p * pw + 10, list = haz(code, p);
+      var px = 40 + sw + p * pw + 10, list = hazFold(code, p);
       if (gapOf(code, p) && !list.length) s += T(px, y + 33, 'Data unavailable', {size:14, weight:600, fill:C.merlot, italic:true});
       else if (!list.length) s += T(px, y + 33, 'No hazards', {size:14, fill:C.warm});
-      else s += hazChips(list, px, y + 4, pw - 20, 2);
+      else s += hazChips(list, px, y + 6, pw - 20, 2);
     }
   });
   return {svg:frame(s, ''), name:'WATCH_area_' + area.replace(/\W+/g, '') + '_3day' + (pages > 1 ? '_p' + page : ''), title:title + ': 3-day outlook' + (pages > 1 ? ' (page ' + page + ' of ' + pages + ')' : '')};
 }
 
 /* ---------- card: area, one period in detail ---------- */
-function cardAreaDetail(area, codes, p, page, pages){
+function cardAreaDetail(area, codes, p, page, pages, clearCodes){
   var s = '', title = area === 'Corporate' ? 'Corporate' : area + ' area';
   s += T(40, 142, title, {fam:HEAD, size:38, fill:C.twilight});
   s += T(40, 168, periodName(p) + '  ·  ' + periodDate(p) + '  ·  ' + codes.length + ' location' + (codes.length === 1 ? '' : 's') + (pages > 1 ? '  ·  Page ' + page + ' of ' + pages : ''), {size:17, fill:C.tarmac});
@@ -358,26 +380,33 @@ function cardAreaDetail(area, codes, p, page, pages){
   s += R(40, y, 1120, 34, {fill:C.twilight, rx:6}) + T(52, y + 23, 'Location', {size:15, weight:700, fill:'#fff'}) + T(40 + sw + 10, y + 23, 'What to expect', {size:15, weight:700, fill:'#fff'});
   y += 38;
   codes.forEach(function(code, i){
-    var list = haz(code, p).slice(0, 3), extra = haz(code, p).length - list.length;
-    var rows = Math.max(1, list.length) + (extra > 0 ? 1 : 0), rh = Math.max(52, rows * 29 + 10);
+    var list = hazFold(code, p), extra = 0;
+    var rows = Math.max(1, list.length), rh = Math.max(52, rows * 29 + 10);
     s += R(40, y, 1120, rh - 2, {fill:i % 2 ? C.wash : '#fff'});
     s += T(52, y + 27, code, {size:24, weight:700, fill:C.twilight});
     s += T(52, y + 45, clip1(siteName(code), 13, 400, BODY, sw - 20), {size:13, fill:C.tarmac});
     var tx = 40 + sw + 10;
     if (!list.length) s += T(tx, y + 29, gapOf(code, p) ? 'Data unavailable. Check this site directly.' : 'No hazards expected', {size:15, weight:gapOf(code, p) ? 600 : 400, fill:gapOf(code, p) ? C.merlot : C.warm, italic:gapOf(code, p)});
     list.forEach(function(h, j){
-      var c = chip(tx, y + 5 + j * 29, KIND[h.k].short + ': ' + TIER[h.t].word, h.t, {size:13, h:24, maxW:230});
+      var c = chip(tx, y + 5 + j * 29, chipText(h, false), h.t, {size:13, h:24, maxW:230});
       s += c.svg;
       s += T(tx + c.w + 10, y + 22 + j * 29, clip1(h.x || '', 14, 400, BODY, 1160 - (tx + c.w + 10) - 10), {size:14, fill:C.twilight});
     });
-    if (extra > 0) s += T(tx, y + 20 + list.length * 29, '+ ' + extra + ' more', {size:12, fill:C.tarmac, italic:true});
     y += rh;
   });
+  if (clearCodes && clearCodes.length) {
+    var room = Math.floor((552 - y - 6) / 17), txt = 'No hazards expected: ' + clearCodes.join(', ');
+    if (room >= 1) {
+      var ls = wrap(txt, 14, 400, BODY, 1100, room);
+      if (ls.length >= room && ls.join(' ').length < txt.length) ls = ['No hazards expected at ' + clearCodes.length + ' other location' + (clearCodes.length === 1 ? '' : 's') + '.'];
+      ls.forEach(function(l, i){ s += T(52, y + 20 + i * 17, l, {size:14, fill:C.jade, weight:600}); });
+    }
+  }
   return {svg:frame(s, ''), name:'WATCH_area_' + area.replace(/\W+/g, '') + '_' + ['24h','48h','72h'][p] + (pages > 1 ? '_p' + page : ''), title:title + ': ' + periodName(p).toLowerCase() + (pages > 1 ? ' (page ' + page + ' of ' + pages + ')' : '')};
 }
 function areaRowHeight(code, p){
-  var n = haz(code, p).length, shown = Math.min(n, 3), rows = Math.max(1, shown) + (n > 3 ? 1 : 0);
-  return Math.max(52, rows * 29 + 10);
+  var n = hazFold(code, p).length;
+  return Math.max(52, Math.max(1, n) * 29 + 10);
 }
 
 /* ---------- card: one location, 3-day overview ---------- */
@@ -393,7 +422,7 @@ function cardLocOverview(code){
   s += legend(620, 124);
   var cw = 360, gap = 20, y0 = 186;
   for (var p = 0; p < 3; p++) {
-    var x = 40 + p * (cw + gap), list = haz(code, p), gp = gapOf(code, p);
+    var x = 40 + p * (cw + gap), list = hazFold(code, p), gp = gapOf(code, p);
     s += R(x, y0, cw, 250, {fill:'#fff', stroke:C.slate, sw:2, rx:8});
     s += R(x, y0, cw, 46, {fill:C.twilight, rx:8}) + R(x, y0 + 30, cw, 16, {fill:C.twilight});
     s += T(x + 14, y0 + 21, periodName(p), {size:17, weight:700, fill:'#fff'}) + T(x + 14, y0 + 38, periodDate(p), {size:13, fill:'#fff', op:.85});
@@ -401,16 +430,15 @@ function cardLocOverview(code){
       s += T(x + cw / 2, y0 + 140, gp ? 'Data unavailable' : 'No hazards expected', {size:20, weight:600, fill:gp ? C.merlot : C.jade, anchor:'middle', italic:gp});
       if (gp) s += T(x + cw / 2, y0 + 166, 'Check this site directly.', {size:14, fill:C.tarmac, anchor:'middle'});
     } else {
-      var yy = y0 + 60, shown = list.slice(0, 3);
+      var yy = y0 + 60, shown = list.slice(0, 4);
       var drawn = 0;
       shown.forEach(function(h){
         var ls = wrap(h.x || '', 14, 400, BODY, cw - 28, 2), need = 40 + Math.max(1, ls.length) * 17 + 6;
         if (yy + need > y0 + 232) return;
-        var c = chip(x + 14, yy, KIND[h.k].short + ': ' + TIER[h.t].word, h.t, {size:14, h:26, maxW:cw - 28}); s += c.svg;
+        var c = chip(x + 14, yy, chipText(h, false), h.t, {size:14, h:26, maxW:cw - 28}); s += c.svg;
         ls.forEach(function(l, j){ s += T(x + 14, yy + 44 + j * 17, l, {size:14, fill:C.twilight}); });
         yy += need; drawn++;
       });
-      if (list.length > drawn) s += T(x + 14, y0 + 242, '+ ' + (list.length - drawn) + ' more. See the detail sheet.', {size:12, fill:C.tarmac, italic:true});
     }
   }
   // actions strip for the worst hazard in the 3 days
@@ -434,7 +462,7 @@ function cardLocOverview(code){
 
 /* ---------- card: one location, one period in detail ---------- */
 function cardLocDetail(code, p){
-  var s = '', sub = siteName(code), list = haz(code, p);
+  var s = '', sub = siteName(code), list = hazFold(code, p);
   s += T(40, 144, code + (sub ? '  ·  ' + sub : ''), {fam:HEAD, size:40, fill:C.twilight});
   s += T(40, 170, periodName(p) + '  ·  ' + periodDate(p) + '  ·  ' + (areaOf(code) === 'Corporate' ? 'Corporate' : areaOf(code) + ' area'), {size:17, fill:C.tarmac});
   s += legend(620, 124);
@@ -445,21 +473,21 @@ function cardLocDetail(code, p){
     s += T(600, 380, gp ? 'Check this site directly before making any call.' : 'Keep your normal weather checks and watch for changes.', {size:20, fill:C.tarmac, anchor:'middle'});
     return {svg:frame(s, ''), name:'WATCH_' + code.replace(/\W+/g, '') + '_' + ['24h','48h','72h'][p], title:code + ': ' + periodName(p).toLowerCase()};
   }
-  var y = 196, shown = list.slice(0, 4);
+  var y = 196, shown = list.slice(0, 5);
   shown.forEach(function(h){
     var ls = wrap(h.x || '', 16, 400, BODY, 620, 2), rh = 44 + Math.max(1, ls.length) * 20 + (h.u ? 20 : 0) + 8;
-    if (y + rh > 552) return;
+    if (y + rh > 552) { rh = 552 - y + 6; if (rh < 60) return; }
     s += R(40, y, 660, rh - 6, {fill:'#fff', stroke:C.slate, sw:2, rx:8});
-    var c = chip(54, y + 10, KIND[h.k].label + ': ' + TIER[h.t].word, h.t, {size:16, h:28, maxW:628}); s += c.svg;
+    var c = chip(54, y + 10, h.fold ? 'Also watching' : chipLabel(h, true) + ': ' + TIER[h.t].word, h.t, {size:16, h:28, maxW:628}); s += c.svg;
     ls.forEach(function(l, j){ s += T(54, y + 56 + j * 20, l, {size:16, fill:C.twilight}); });
     if (h.u) s += T(54, y + 56 + Math.max(1, ls.length) * 20, 'Until ' + h.u, {size:14, weight:600, fill:C.blue});
     y += rh;
   });
-  if (list.length > shown.length) s += T(54, 556, '+ ' + (list.length - shown.length) + ' more hazards', {size:13, fill:C.tarmac, italic:true});
-  var top = list[0];
+  var top = list[0].fold ? list[0] : list[0];
+  if (top.fold) top = {k:'other', t:1};
   s += R(724, 196, 436, 356, {fill:C.wash, rx:8});
   s += T(742, 226, 'What to do', {fam:HEAD, size:24, fill:C.twilight});
-  s += T(742, 248, KIND[top.k].label + ', ' + TIER[top.t].word, {size:14, weight:600, fill:C.jade});
+  s += T(742, 248, (top.k === 'other' && top.t === 1 ? 'Watching' : chipLabel(top, true)) + ', ' + TIER[top.t].word, {size:14, weight:600, fill:C.jade});
   var ay = 278;
   var allActs = actionsFor(top.k, top.t, true), shownActs = 0;
   allActs.slice(0, 5).forEach(function(a, i){
@@ -483,16 +511,27 @@ function paginate(codes, heightFn, maxH){
     cur.push(c); h += rh;
   });
   if (cur.length) pages.push(cur);
+  // v107: never leave a lone site on the last page when the page before it can spare one
+  if (pages.length > 1 && pages[pages.length - 1].length === 1) {
+    var prev = pages[pages.length - 2], last = pages[pages.length - 1];
+    if (prev.length > 2) { last.unshift(prev.pop()); }
+  }
   return pages;
 }
 function areaCards(area, view){
   var codes = (DATA.areas[area] || []).slice().sort(); var out = [];
   if (!codes.length) return out;
   if (view === 'ov') {
+    var anyHaz = codes.some(function(c){ return [0, 1, 2].some(function(q){ return haz(c, q).length || gapOf(c, q); }); });
+    if (!anyHaz) return out;   // v107: no card for an area with nothing to say
     paginate(codes, function(){ return 56; }, 6 * 56).forEach(function(pg, i, all){ out.push(cardAreaOverview(area, pg, i + 1, all.length)); });
   } else {
     var p = Number(view);
-    paginate(codes, function(c){ return areaRowHeight(c, p); }, 326).forEach(function(pg, i, all){ out.push(cardAreaDetail(area, pg, p, i + 1, all.length)); });
+    var hz = codes.filter(function(c){ return haz(c, p).length || gapOf(c, p); });
+    var clr = codes.filter(function(c){ return hz.indexOf(c) < 0; });
+    if (!hz.length) return out;   // v107: a fully clear day gets no card
+    var pgs = paginate(hz, function(c){ return areaRowHeight(c, p); }, 296);
+    pgs.forEach(function(pg, i, all){ out.push(cardAreaDetail(area, pg, p, i + 1, all.length, i === all.length - 1 ? clr : null)); });
   }
   return out;
 }
@@ -540,7 +579,7 @@ function render(){
   if (!CUR.length) {
     if (S.tab === 'hazard') msg = 'No hazards at the selected levels for ' + periodName(S.p).toLowerCase() + '. Turn on Monitor to see awareness-only items.';
     else if (S.tab === 'loc') msg = parseCodes(S.locs).length ? 'No matching location codes. Check the spelling.' : 'Type one or more location codes to build their sheets.';
-    else msg = 'No locations found for this area.';
+    else msg = 'No hazards in any area for this period. Nothing to post.';
     g.innerHTML = '<div class="empty">' + esc(msg) + '</div>';
   } else {
     g.innerHTML = CUR.map(function(c, i){
